@@ -13,7 +13,7 @@
 | GEN-006 | 생성기의 출력물을 손으로 고치지 않는다. 생성기를 고친다. | 같은 문서 |
 | PRV-004 | 위반 샘플과 테스트 데이터에도 실존 인명·학교명·연락처를 쓰지 않는다. | [privacy.md](../docs/spec/privacy.md#4-규칙) |
 
-`tools/checks/**`, `tools/eslint-plugin-deck/**`, `tools/hooks/**`는 보호 경로다(Phase 7부터 훅으로 차단). 수정이 필요하면 GEN-001에 따라 멈추고 보고한다. 단, 사람이 승인한 작업에서 검사를 **강화**하는 변경은 할 수 있다.
+`tools/checks/**`, `tools/eslint-plugin-deck/**`, `tools/hooks/**`는 보호 경로다(Claude Code 훅이 차단, `tools/hooks/guard-protected.mjs`). 수정이 필요하면 GEN-001에 따라 멈추고 보고한다. 단, 사람이 승인한 작업에서 검사를 **강화**하는 변경은 할 수 있다.
 
 ## 작업 체크리스트
 

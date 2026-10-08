@@ -2,7 +2,14 @@
 
 이 디렉터리에는 덱에 올라가는 도구(모듈)가 있다. 새 도구를 만드는 작업 대부분이 여기서 일어난다. 루트 [AGENTS.md](../AGENTS.md) 규칙을 모두 따르며 아래 규칙을 추가한다.
 
-모범 사례는 레퍼런스 모듈 `modules/timer`다(Phase 6에서 생성). 새 모듈을 만들기 전에 timer의 구조와 규칙 ID 주석을 먼저 읽는다.
+모범 사례는 레퍼런스 모듈 `modules/timer`다. 새 모듈을 만들기 전에 timer의 구조와 규칙 ID 주석을 먼저 읽는다. Claude Code에서는 `add-module` 스킬이 이 절차를 안내한다.
+
+| timer 파일 | 보여 주는 패턴 |
+|---|---|
+| `src/main.tsx` | `connect()` 후 `DeckProvider`로 렌더(BRG-003, UI-004) |
+| `src/timer.ts` + `timer.test.ts` | 호스트 없이 테스트하는 순수 로직(MOD-015) |
+| `src/presets.ts` + `presets.test.ts` | storage 캡 사용과 `createMockHost` 테스트(MOD-009, MOD-015) |
+| `src/App.tsx` | `@deck/ui`·토큰만 쓰는 UI, 키보드 조작, window 캡(MOD-010, UI-005) |
 
 ## 모듈 추가 절차
 

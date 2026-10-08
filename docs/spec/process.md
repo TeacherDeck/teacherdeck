@@ -53,7 +53,7 @@ GEN-005의 정지 조건에 해당하면 즉시 멈추고 아래 형식의 제�
 
 ### GEN — 일반
 
-- **GEN-001** [MUST NOT] 스펙·스키마·검사기를 코드에 맞춰 고치지 않는다. 코드와 spec이 다르면 코드가 틀린 것이다. 스펙 변경은 DOC-002로만 한다. — 강제: 훅(보호 경로)(Phase 7에서 구현), CODEOWNERS(Phase 7에서 구현)
+- **GEN-001** [MUST NOT] 스펙·스키마·검사기를 코드에 맞춰 고치지 않는다. 코드와 spec이 다르면 코드가 틀린 것이다. 스펙 변경은 DOC-002로만 한다. — 강제: 훅(보호 경로), CODEOWNERS
 - **GEN-002** [MUST] 하위 AGENTS.md는 상위 규칙을 추가·강화만 한다. 충돌을 발견하면 정지한다. — 강제: [manual]
 - **GEN-003** [MUST] 완료 선언 전 `pnpm verify`를 통과한다. 우회 목적의 `eslint-disable`, `@ts-ignore`/`@ts-expect-error`, `#[allow(...)]`, 테스트 skip/only/`#[ignore]`, 검사 완화를 쓰지 않는다. — 강제: eslint `noInlineConfig`, `ban-ts-comment`, vitest 린트, `check-suppressions`
 - **GEN-004** [MUST] `crates/*`, `apps/desktop`, `packages/*`에 런타임 의존성을 추가하려면 사람 승인을 받는다. 모든 의존성은 라이선스 allowlist를 통과해야 한다. — 강제: cargo-deny, `check-licenses`, [manual]
@@ -66,11 +66,11 @@ GEN-005의 정지 조건에 해당하면 즉시 멈추고 아래 형식의 제�
   - GEN-004에 해당하는 의존성 추가
   - 사용자 파일을 삭제하거나 덮어쓰는 동작 도입
 
-  — 강제: 훅(보호 경로)(Phase 7에서 구현), [manual]
-- **GEN-006** [MUST NOT] 생성물(`schema/**`, `**/generated/**`, spec의 생성 표)을 손으로 수정하지 않는다. 생성기를 고치고 `pnpm gen`을 실행한다. — 강제: `check-gen`(재생성 후 diff), 훅(Phase 7에서 구현)
-- **GEN-007** [MUST NOT] About/크레딧 화면, AUTHORS, LICENSE*, SPDX 헤더, 모듈 authors의 저자 표기를 삭제하거나 약화하지 않는다. — 강제: 훅(Phase 7에서 구현), `check-spdx`, About 화면 테스트(Phase 5에서 구현)
+  — 강제: 훅(보호 경로), [manual]
+- **GEN-006** [MUST NOT] 생성물(`schema/**`, `**/generated/**`, spec의 생성 표)을 손으로 수정하지 않는다. 생성기를 고치고 `pnpm gen`을 실행한다. — 강제: `check-gen`(재생성 후 비교), 훅
+- **GEN-007** [MUST NOT] About/크레딧 화면, AUTHORS, LICENSE*, SPDX 헤더, 모듈 authors의 저자 표기를 삭제하거나 약화하지 않는다. — 강제: 훅, `check-spdx`, About 화면 테스트
 - **GEN-008** [MUST] 모든 소스 파일에 SPDX 헤더를 둔다. 대상은 코드·설정 파일이며 Markdown 문서는 제외한다. 헤더 형식은 [README.md](README.md#4-spdx-헤더)를 따른다. — 강제: `check-spdx`
-- **GEN-009** [MUST] Conventional Commits 형식과 `Signed-off-by`를 지킨다. 커밋 하나에 관심사 하나만 담는다. — 강제: lefthook commit-msg, CI(Phase 7에서 구현)
+- **GEN-009** [MUST] Conventional Commits 형식과 `Signed-off-by`를 지킨다. 커밋 하나에 관심사 하나만 담는다. — 강제: lefthook commit-msg, CI `check-commits`
 - **GEN-010** [MUST] 식별자·커밋 메시지는 영어로, 문서·UI 문구는 한국어로 쓴다. — 강제: [manual]
 
 ### DOC — 문서

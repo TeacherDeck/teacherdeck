@@ -1,6 +1,6 @@
 # .github — CI/CD 지침
 
-GitHub Actions 워크플로, CODEOWNERS, Dependabot 설정이 있다. 루트 [AGENTS.md](../AGENTS.md) 규칙을 모두 따르며 아래 규칙을 추가한다. 워크플로와 CODEOWNERS는 Phase 7에서 만든다.
+GitHub Actions 워크플로, CODEOWNERS, Dependabot 설정이 있다. 루트 [AGENTS.md](../AGENTS.md) 규칙을 모두 따르며 아래 규칙을 추가한다.
 
 ## 규칙
 

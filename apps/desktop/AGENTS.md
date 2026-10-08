@@ -19,6 +19,17 @@
 | UI-001~008 | 셸 UI도 디자인 규칙을 모두 따른다. | [design-system.md](../../docs/spec/design-system.md#8-규칙) |
 | GEN-007 | About/크레딧 화면의 저자 표기를 지우거나 약화하지 않는다. | [process.md](../../docs/spec/process.md#5-규칙) |
 
+## 파일 지도
+
+| 위치 | 내용 |
+|---|---|
+| `src/host.ts` | Rust 명령 호출(`@tauri-apps/api`는 여기서만) |
+| `src/bridge/ModuleBridge.ts` | 브리지 셸 측 규칙(BRG-001·003·006·007). React와 분리돼 단위 테스트한다 |
+| `src/bridge/keepAlive.ts` | keepAlive LRU |
+| `src/App.tsx` | 내비 레일, 페이지 전환, 테마 push, `fs.dropped` 전달 |
+| `src/pages/` | 덱(Home), 모듈 화면(ModuleHost), 설정, 정보(About, GEN-007 테스트), UI 갤러리(dev) |
+| `src/generated/` | Rust에서 생성한 타입과 서드파티 목록(GEN-006) |
+
 ## keepAlive 관리
 
 - `ui.keepAlive: true` 모듈은 화면을 전환해도 iframe을 숨긴 채 유지한다. 최대 3개이며 LRU로 내린다.

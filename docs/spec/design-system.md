@@ -22,7 +22,7 @@ Windows 11 Fluent 2를 따르고 PowerToys 설정 앱 구조를 레퍼런스로 
 - 셸 창은 투명 배경에 `window-vibrancy`로 Mica를 적용한다. 셸 루트와 iframe 배경은 투명하다.
 - 표면(카드, 패널)은 Fluent 레이어 토큰으로 표현한다.
 - Windows 10에서는 Mica가 없으므로 불투명 배경으로 폴백한다. 이 정보는 `ThemePayload.mica`로 모듈에 전달된다.
-- 구현 시 `banatic/Hypercool`의 기존 Mica 구현(`src-tauri/src/commands/window.rs` 등)을 먼저 읽고 맞춘다(Phase 4).
+- 구현 시 `banatic/Hypercool`의 기존 Mica 구현(`src-tauri/src/commands/window.rs` 등)을 참고했다. TeacherDeck은 `window-vibrancy`의 Mica API만 써서 `unsafe` 없이 구현한다(`src-tauri/src/platform.rs`).
 
 ## 4. 폰트
 
@@ -43,7 +43,7 @@ GPLv3의 Appropriate Legal Notices를 겸한다. 다음을 모두 보여 준다.
 
 ## 6. `@deck/ui` 컴포넌트
 
-부트스트랩 범위의 컴포넌트는 다음과 같다(Phase 5에서 구현).
+부트스트랩 범위의 컴포넌트는 다음과 같다(`packages/ui`). 새 컴포넌트는 `COMPONENTS`에 추가해야 하고, 셸 UI 갤러리에 없으면 typecheck가 실패한다.
 
 | 컴포넌트 | 용도 |
 |---|---|
@@ -73,8 +73,8 @@ UI-007을 따른다. 예시:
 - **UI-001** [MUST NOT] Fluent UI React v9 외의 컴포넌트 라이브러리를 추가하지 않는다. — 강제: eslint `no-restricted-imports`, GEN-004
 - **UI-002** [MUST NOT] 색·간격·반경·그림자·폰트 패밀리를 하드코딩하지 않는다. Fluent 토큰과 `@deck/ui` 토큰만 쓴다. — 강제: eslint `deck/no-raw-style-values`
 - **UI-003** [MUST] 아이콘은 `@fluentui/react-icons`만 쓴다(모듈 `icon.svg` 제외). — 강제: eslint
-- **UI-004** [MUST] 셸과 모듈의 루트 배경은 투명(Mica)이고, 표면은 레이어 토큰으로 표현한다. Win10에서는 불투명으로 폴백한다. — 강제: `DeckProvider` 기본값(Phase 5에서 구현), [manual]
-- **UI-005** [MUST] 키보드만으로 전부 조작할 수 있고, 포커스가 보이며, 텍스트 150%·DPI 200%에서 잘림이 없고, 대비가 WCAG AA를 만족한다. — 강제: [manual] 체크리스트, 가능 시 axe 테스트(Phase 5에서 구현)
+- **UI-004** [MUST] 셸과 모듈의 루트 배경은 투명(Mica)이고, 표면은 레이어 토큰으로 표현한다. Win10에서는 불투명으로 폴백한다. — 강제: `DeckProvider` 기본값, [manual]
+- **UI-005** [MUST] 키보드만으로 전부 조작할 수 있고, 포커스가 보이며, 텍스트 150%·DPI 200%에서 잘림이 없고, 대비가 WCAG AA를 만족한다. — 강제: [manual] 체크리스트, axe 자동 테스트는 미구현
 - **UI-006** [MUST NOT] `@deck/ui`에 있는 패턴을 모듈에서 재구현하지 않는다. 없으면 `@deck/ui`에 추가를 제안한다. — 강제: [manual]
 - **UI-007** [MUST] 문구 규칙.
   - 해요체로 짧게 쓴다.

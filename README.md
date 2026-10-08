@@ -2,7 +2,7 @@
 
 선생님들이 자주 쓰는 작은 Windows 도구를 하나의 앱("덱")에 모아 두는 무료 오픈소스 프로젝트예요. 한 번 설치하면 업데이트로 새 도구가 계속 추가돼요.
 
-> **개발 초기 단계예요.** 지금은 규격, 개발 지침, 검사 도구만 있고 앱은 아직 실행할 수 없어요.
+> **개발 초기 단계예요.** 앱 골격과 첫 도구(타이머)가 있어요. 아직 정식 릴리스는 없어요.
 
 ## 무엇을 하나요
 
@@ -49,7 +49,16 @@ pnpm verify:fast     # lint + typecheck + 모듈 검사 (커밋할 때 자동 �
 pnpm gen             # 생성물 갱신
 ```
 
-앱 실행(`pnpm tauri dev`)과 설치본 빌드(`pnpm tauri build`)는 호스트가 생긴 뒤에 쓸 수 있어요. 비밀값 검사를 위해 [gitleaks](https://github.com/gitleaks/gitleaks) 설치를 권장해요(`winget install Gitleaks.Gitleaks`).
+앱을 실행하고 설치본을 만들어요.
+
+```powershell
+pnpm tauri dev       # 개발 실행 (기본 모듈을 번들한 뒤 실행해요)
+pnpm tauri build     # NSIS 설치본: target/release/bundle/nsis/
+```
+
+새 도구를 만들 때는 `pnpm new:module <id>`로 시작해요. 자세한 절차는 [modules/AGENTS.md](modules/AGENTS.md)에 있어요.
+
+비밀값 검사를 위해 [gitleaks](https://github.com/gitleaks/gitleaks) 설치를 권장해요(`winget install Gitleaks.Gitleaks`).
 
 ## 기여하기
 

@@ -18,6 +18,17 @@
 | MOD-007 | `deck.has()` 확인 없이 optional 캡을 부르면 경고 로그를 남긴다. | 같은 문서 |
 | VER-006 | 지원 브리지 프로토콜 버전과 SDK semver를 노출한다. | [versioning.md](../../docs/spec/versioning.md#4-규칙) |
 
+## 사용법
+
+```ts
+import { connect } from "@deck/sdk";
+const deck = await connect();            // hello → init (BRG-003)
+await deck.storage.set("key", value);    // 선언한 캡만 호출 가능 (MOD-006)
+if (deck.has("fs")) await deck.fs.pickFiles(); // optional 캡 (MOD-007)
+```
+
+모듈 테스트는 `@deck/sdk/testing`의 `createMockHost`를 쓴다. 프로토콜 정의는 `src/protocol.ts`, 생성 타입은 `src/generated/`(손으로 고치지 않는다)에 있다.
+
 ## 작업 체크리스트
 
 - [ ] mock host 계약 테스트가 BRG-001~009를 커버한다

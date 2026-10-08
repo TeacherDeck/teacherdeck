@@ -13,14 +13,24 @@
 
 ## 2. v1 레지스트리
 
-> 이 표는 Phase 1에서 수기로 작성했다. Phase 4에서 Rust 레지스트리의 생성물로 전환한다(CAP-010). 전환 후에는 손으로 고치지 않는다(GEN-006).
+> 아래 표는 deck-core `caps::REGISTRY`(원천, VER-002)에서 `pnpm gen`이 만든다(CAP-010). 인자·결과 타입은 `packages/sdk/src/generated/`, 기계용 레지스트리는 `schema/capabilities.json`이다. `(long)` 메서드는 SDK 기본 타임아웃(30초)이 적용되지 않는다(BRG-004).
 
-| 캡 | 버전 | 메서드 |
-|---|---|---|
-| `system` | 1.0.0 | `info() → { appVersion, os: { name, version, build }, locale }` |
-| `storage` | 1.0.0 | `get(key) → value \| null`, `set(key, value)`, `delete(key)`, `keys() → string[]` |
-| `fs` | 1.0.0 | `pickFiles({ multiple?, filters? }) → FileHandleInfo[]`, `pickFolder() → FolderHandleInfo \| null`, `stat(handle)`, `reveal(handle)` |
-| `window` | 1.0.0 | `setAlwaysOnTop(bool)`, `setFullscreen(bool)` |
+<!-- cap-registry:start -->
+<!-- 생성물: `pnpm gen`(deck-core caps::REGISTRY). 손으로 고치지 마세요(GEN-006). -->
+| 캡 | 버전 | 메서드 | 설명 |
+|---|---|---|---|
+| `system` | 1.0.0 | `info` | 앱 버전, OS 이름·버전·빌드, 로캘 |
+| `storage` | 1.0.0 | `get` | 키의 값, 없으면 null |
+|  |  | `set` | 키에 값 저장(256KB 이하) |
+|  |  | `delete` | 키 삭제 |
+|  |  | `keys` | 저장된 키 목록 |
+| `fs` | 1.0.0 | `pickFiles` (long) | 파일 선택 대화상자 → FileHandleInfo[] |
+|  |  | `pickFolder` (long) | 폴더 선택 대화상자 → FolderHandleInfo \| null |
+|  |  | `stat` | 핸들의 최신 정보 |
+|  |  | `reveal` | 탐색기에서 파일 위치 열기 |
+| `window` | 1.0.0 | `setAlwaysOnTop` | 항상 위 켜기·끄기 |
+|  |  | `setFullscreen` | 전체화면 켜기·끄기 |
+<!-- cap-registry:end -->
 
 ### 2.1 `storage`
 
@@ -32,7 +42,8 @@
 ### 2.2 `fs`
 
 - `FileHandleInfo = { handle, name, ext, size, modifiedAt }`
-- `FolderHandleInfo`의 필드는 Phase 4에서 Rust 원천으로 확정한다. 경로는 포함하지 않는다.
+- `FolderHandleInfo = { handle, name }`. 경로는 포함하지 않는다.
+- `modifiedAt`은 Unix epoch 기준 밀리초다.
 - 핸들은 불투명 랜덤 문자열이며 (모듈 id, 앱 세션) 범위에서만 유효하다. 다른 모듈이나 다음 세션에서 쓰면 `PERMISSION_DENIED` 또는 `NOT_FOUND`를 반환한다.
 - 경로는 절대 반환하지 않는다. `name`은 사용자가 고른 파일의 표시용 이름이며 로그에 남기지 않는다(PRV-003).
 - v1에는 파일 내용을 읽거나 쓰는 메서드가 없다. [5절](#5-예정-캡)을 본다.
@@ -72,13 +83,13 @@
 
 ## 6. 규칙
 
-- **CAP-001** [MUST] 캡은 범용 프리미티브로 설계한다. 특정 도구 전용 메서드를 만들지 않는다. 먼저 기존 캡 조합이나 모듈 측 WASM으로 해결할 수 없는지 검토한다. — 강제: [manual] 리뷰, add-capability skill(Phase 7에서 구현)
-- **CAP-002** [MUST NOT] 파일 경로를 인자로 받거나 결과로 반환하지 않는다. 핸들만 쓴다. — 강제: 타입 리뷰, 테스트(Phase 4에서 구현)
-- **CAP-003** [MUST NOT] 대용량 바이너리(>1MB)를 브리지로 보내지 않는다. `deckmod` 리소스 URL을 쓴다. — 강제: 브리지 크기 제한 BRG-007(Phase 5에서 구현)
+- **CAP-001** [MUST] 캡은 범용 프리미티브로 설계한다. 특정 도구 전용 메서드를 만들지 않는다. 먼저 기존 캡 조합이나 모듈 측 WASM으로 해결할 수 없는지 검토한다. — 강제: [manual] 리뷰, add-capability skill
+- **CAP-002** [MUST NOT] 파일 경로를 인자로 받거나 결과로 반환하지 않는다. 핸들만 쓴다. — 강제: 타입 리뷰(deck-core `caps/fs.rs`에 경로 필드 없음), 핸들 테이블 테스트
+- **CAP-003** [MUST NOT] 대용량 바이너리(>1MB)를 브리지로 보내지 않는다. `deckmod` 리소스 URL을 쓴다. — 강제: 브리지 크기 제한 BRG-007
 - **CAP-004** [MUST] 버전 규칙: 메서드·선택 인자·결과 필드 추가는 minor, 그 외는 major다. major 변경 시 이전 major 핸들러를 최소 2회의 앱 minor 릴리스 동안 유지하고 ADR을 쓴다. — 강제: [manual], 레지스트리 diff 리뷰
-- **CAP-005** [MUST] 새 캡이나 major 변경은 사람 승인을 받는다(GEN-005). — 강제: 훅(레지스트리 생성물 보호)(Phase 7에서 구현), [manual]
-- **CAP-006** [MUST] 모든 메서드 인자·결과는 Rust 구조체로 정의하고 ts-rs로 TS 타입을 export한다. `serde_json::Value`는 디스패치 경계에서만 쓴다. — 강제: `check-gen`(캡 타입 생성은 Phase 4에서 구현)
-- **CAP-007** [MUST] 에러는 `ErrorCode` enum과 메시지로 반환하며, 메시지에 경로·파일명·사용자 데이터를 넣지 않는다(PRV-003). — 강제: 테스트(Phase 4에서 구현), [manual]
-- **CAP-008** [MUST] 모듈 권한 검사(설치·활성 여부, 선언 캡, 버전)는 Rust에서 매 호출마다 수행한다. 셸 검사는 보조일 뿐이다. — 강제: 권한 거부 테스트(Phase 4에서 구현)
-- **CAP-009** [MUST] 각 캡은 정상·권한 거부·잘못된 인자 테스트를 갖춘다. — 강제: [manual] 리뷰, 커버리지 보고(Phase 4에서 구현)
-- **CAP-010** [MUST] `capabilities.md`의 레지스트리 표와 `schema/capabilities.json`은 Rust 레지스트리에서 생성한다. — 강제: `check-gen`(레지스트리 생성기는 Phase 4에서 구현)
+- **CAP-005** [MUST] 새 캡이나 major 변경은 사람 승인을 받는다(GEN-005). — 강제: 훅(레지스트리 생성물 보호), CODEOWNERS, [manual]
+- **CAP-006** [MUST] 모든 메서드 인자·결과는 Rust 구조체로 정의하고 ts-rs로 TS 타입을 export한다. `serde_json::Value`는 디스패치 경계에서만 쓴다. — 강제: `check-gen`
+- **CAP-007** [MUST] 에러는 `ErrorCode` enum과 메시지로 반환하며, 메시지에 경로·파일명·사용자 데이터를 넣지 않는다(PRV-003). — 강제: 호스트 브리지 테스트, [manual]
+- **CAP-008** [MUST] 모듈 권한 검사(설치·활성 여부, 선언 캡, 버전)는 Rust에서 매 호출마다 수행한다. 셸 검사는 보조일 뿐이다. — 강제: 권한 거부 테스트(`src-tauri/src/bridge.rs`)
+- **CAP-009** [MUST] 각 캡은 정상·권한 거부·잘못된 인자 테스트를 갖춘다. — 강제: `every_registry_method_has_a_route` 테스트, [manual] 리뷰(커버리지 보고는 미구현)
+- **CAP-010** [MUST] `capabilities.md`의 레지스트리 표와 `schema/capabilities.json`은 Rust 레지스트리에서 생성한다. — 강제: `check-gen`

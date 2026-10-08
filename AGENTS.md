@@ -42,7 +42,7 @@ docs/spec/                    규범 문서 (규칙 정의)
 docs/adr/                     아키텍처 결정 기록
 ```
 
-아직 없는 디렉터리(셸, 호스트, SDK, UI, 모듈)는 부트스트랩 Phase 4~6에서 생긴다. `generated/` 디렉터리만 먼저 있다.
+Claude Code 스킬: 새 도구는 `add-module`, 호스트 기능은 `add-capability`, 규격 변경은 `change-spec`(`.claude/skills/`).
 
 ## 작업별 필독 문서
 
@@ -124,7 +124,7 @@ docs/adr/                     아키텍처 결정 기록
 | `pnpm check:<이름>` | 검사기 하나만 실행(gen, modules, spdx, versions, docs, security, licenses, suppressions) |
 | `pnpm sync-versions` | 앱 버전을 Cargo.toml에 반영 (VER-001) |
 | `pnpm synthetic` | 합성 테스트 데이터 생성 (PRV-004) |
-| `pnpm new:module <id>` | 새 모듈 생성 (MOD-001, Phase 6부터) |
-| `pnpm pack:module` | `.deckmod` 패키지 생성 (Phase 6부터) |
-| `pnpm tauri dev` / `pnpm tauri build` | 앱 실행 / 설치본 빌드 (Phase 4부터) |
+| `pnpm new:module <id>` | 새 모듈 생성 (MOD-001) |
+| `pnpm pack:module <id>` / `pnpm bundle:modules` | `.deckmod` 패키지 / 기본 모듈 번들 생성 |
+| `pnpm tauri dev` / `pnpm tauri build` | 앱 실행 / NSIS 설치본 빌드 |
 | `git commit -s` | DCO 서명 커밋 (GEN-009) |

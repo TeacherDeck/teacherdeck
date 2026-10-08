@@ -28,13 +28,13 @@
 ## 3. 규칙
 
 - **SEC-001** [MUST] 셸 webview는 로컬 번들만 로드하며 CSP를 설정한다. 원격 URL을 로드하지 않는다. — 강제: tauri.conf 검사 `check-security`
-- **SEC-002** [MUST] 모듈은 셸과 다른 origin에서만 서빙한다. 셸 origin에서 모듈 코드를 서빙하거나 셸 문서에 모듈 스크립트를 주입하지 않는다. iframe `allow-same-origin`이 안전하다는 전제가 이 규칙이다. — 강제: 프로토콜 테스트(Phase 4에서 구현)
+- **SEC-002** [MUST] 모듈은 셸과 다른 origin에서만 서빙한다. 셸 origin에서 모듈 코드를 서빙하거나 셸 문서에 모듈 스크립트를 주입하지 않는다. iframe `allow-same-origin`이 안전하다는 전제가 이 규칙이다. — 강제: origin 상수(`origins.rs`), 프로토콜 CSP 테스트
 - **SEC-003** [MUST] Tauri ACL은 셸 메인 창에만, 최소 권한으로 준다. 프론트엔드에 fs/shell/http 플러그인 권한을 주지 않는다. OS 접근은 Rust 캡을 경유한다. — 강제: `check-security`
-- **SEC-004** [MUST] 모듈 origin에서 Tauri IPC에 접근할 수 없어야 하며, 이를 검증하는 테스트나 절차를 유지한다. — 강제: 검증 절차 문서화(Phase 4에서 구현)
-- **SEC-005** [MUST] `deckmod` 프로토콜은 정규화 후 해당 모듈 루트 하위만 서빙한다. `..`, 퍼센트 인코딩 우회, 심볼릭 링크를 거부하고, 지정 CSP와 `nosniff` 헤더를 붙인다. — 강제: 프로토콜 테스트(Phase 4에서 구현)
+- **SEC-004** [MUST] 모듈 origin에서 Tauri IPC에 접근할 수 없어야 하며, 이를 검증하는 테스트나 절차를 유지한다. — 강제: 검증 절차 [sec-004.md](../security/sec-004.md)
+- **SEC-005** [MUST] `deckmod` 프로토콜은 정규화 후 해당 모듈 루트 하위만 서빙한다. `..`, 퍼센트 인코딩 우회, 심볼릭 링크를 거부하고, 지정 CSP와 `nosniff` 헤더를 붙인다. — 강제: 프로토콜 테스트(`src-tauri/src/protocol.rs`)
 - **SEC-006** [MUST] 패키지 설치 시 zip-slip·크기·SHA256SUMS를 검증하고, 원격 카탈로그 도입 시 서명 검증을 추가한다. — 강제: deck-core `package.rs` 테스트
 - **SEC-007** [MUST] 릴리스 빌드에서 devtools를 비활성화한다. — 강제: `check-security`
 - **SEC-008** [MUST] updater는 서명을 검증하고, 자동 재시작하지 않는다(사용자 동의 후 적용). — 강제: 코드 리뷰
-- **SEC-009** [MUST NOT] 비밀값(키, 토큰)을 레포에 두지 않는다. — 강제: gitleaks lefthook, GitHub push protection(사람 설정), `.claude` deny(Phase 7에서 구현)
+- **SEC-009** [MUST NOT] 비밀값(키, 토큰)을 레포에 두지 않는다. — 강제: gitleaks lefthook, GitHub push protection(사람 설정), `.claude/settings.json` deny
 - **SEC-010** [MUST] deck-core는 `#![forbid(unsafe_code)]`를 둔다. 호스트의 Win32 FFI는 별도 모듈로 분리하고 안전성 주석과 리뷰를 거친다. — 강제: 컴파일러, [manual]
 - **SEC-011** [MUST] 의존성 라이선스·보안 권고 검사를 통과한다. — 강제: cargo-deny, npm license check
