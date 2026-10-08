@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Additional terms: see LICENSE-ADDITIONAL-TERMS
+# New dependencies still need human approval and the license allowlist (GEN-004, SEC-011).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      npm-minor:
+        update-types: [minor, patch]
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      cargo-minor:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

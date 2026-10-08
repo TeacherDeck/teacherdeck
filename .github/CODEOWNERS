@@ -1,0 +1,18 @@
+# Required reviews for protected areas (CI-006, GEN-001, GEN-007). Original authors only.
+/.github/                                   @banatic @rochelobeJYJ
+/LICENSE                                    @banatic @rochelobeJYJ
+/LICENSE-ADDITIONAL-TERMS                   @banatic @rochelobeJYJ
+/AUTHORS                                    @banatic @rochelobeJYJ
+/TRADEMARK.md                               @banatic @rochelobeJYJ
+/schema/                                    @banatic @rochelobeJYJ
+/docs/spec/                                 @banatic @rochelobeJYJ
+/tools/checks/                              @banatic @rochelobeJYJ
+/tools/eslint-plugin-deck/                  @banatic @rochelobeJYJ
+/tools/hooks/                               @banatic @rochelobeJYJ
+/eslint.config.js                           @banatic @rochelobeJYJ
+/deny.toml                                  @banatic @rochelobeJYJ
+/.claude/settings.json                      @banatic @rochelobeJYJ
+/apps/desktop/src-tauri/capabilities/       @banatic @rochelobeJYJ
+/apps/desktop/src-tauri/tauri.conf.json     @banatic @rochelobeJYJ
+/apps/desktop/src-tauri/tauri.release.conf.json @banatic @rochelobeJYJ
+/apps/desktop/src-tauri/src/protocol.rs     @banatic @rochelobeJYJ
