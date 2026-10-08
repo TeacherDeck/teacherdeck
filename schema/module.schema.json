@@ -129,6 +129,14 @@
         "type": "string"
       },
       "description": "Optional capabilities and semver ranges (MOD-007).",
+      "propertyNames": {
+        "enum": [
+          "system",
+          "storage",
+          "fs",
+          "window"
+        ]
+      },
       "type": "object"
     },
     "requires": {
@@ -136,6 +144,14 @@
         "type": "string"
       },
       "description": "Required capabilities and semver ranges.",
+      "propertyNames": {
+        "enum": [
+          "system",
+          "storage",
+          "fs",
+          "window"
+        ]
+      },
       "type": "object"
     },
     "ui": {

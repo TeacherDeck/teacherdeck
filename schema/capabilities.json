@@ -1,0 +1,88 @@
+{
+  "$comment": "생성물: `pnpm gen`(crates/deck-codegen). 손으로 고치지 마세요(GEN-006).",
+  "capabilities": [
+    {
+      "methods": [
+        {
+          "long": false,
+          "name": "info",
+          "summary": "앱 버전, OS 이름·버전·빌드, 로캘"
+        }
+      ],
+      "name": "system",
+      "summary": "앱·OS 정보",
+      "version": "1.0.0"
+    },
+    {
+      "methods": [
+        {
+          "long": false,
+          "name": "get",
+          "summary": "키의 값, 없으면 null"
+        },
+        {
+          "long": false,
+          "name": "set",
+          "summary": "키에 값 저장(256KB 이하)"
+        },
+        {
+          "long": false,
+          "name": "delete",
+          "summary": "키 삭제"
+        },
+        {
+          "long": false,
+          "name": "keys",
+          "summary": "저장된 키 목록"
+        }
+      ],
+      "name": "storage",
+      "summary": "모듈별 JSON 저장소(모듈당 5MB)",
+      "version": "1.0.0"
+    },
+    {
+      "methods": [
+        {
+          "long": true,
+          "name": "pickFiles",
+          "summary": "파일 선택 대화상자 → FileHandleInfo[]"
+        },
+        {
+          "long": true,
+          "name": "pickFolder",
+          "summary": "폴더 선택 대화상자 → FolderHandleInfo | null"
+        },
+        {
+          "long": false,
+          "name": "stat",
+          "summary": "핸들의 최신 정보"
+        },
+        {
+          "long": false,
+          "name": "reveal",
+          "summary": "탐색기에서 파일 위치 열기"
+        }
+      ],
+      "name": "fs",
+      "summary": "파일 선택과 핸들(경로는 노출하지 않음)",
+      "version": "1.0.0"
+    },
+    {
+      "methods": [
+        {
+          "long": false,
+          "name": "setAlwaysOnTop",
+          "summary": "항상 위 켜기·끄기"
+        },
+        {
+          "long": false,
+          "name": "setFullscreen",
+          "summary": "전체화면 켜기·끄기"
+        }
+      ],
+      "name": "window",
+      "summary": "창 상태(모듈이 숨겨지면 원래대로 복원)",
+      "version": "1.0.0"
+    }
+  ]
+}

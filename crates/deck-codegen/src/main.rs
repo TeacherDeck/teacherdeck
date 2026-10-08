@@ -11,10 +11,18 @@ use std::error::Error;
 use std::io::Write as _;
 use std::path::Path;
 
+use deck_core::caps::fs::{
+    DroppedFiles, FileFilter, FileHandleInfo, FolderHandleInfo, HandleArgs, PickFilesArgs,
+};
+use deck_core::caps::storage::{KeyArgs, SetArgs};
+use deck_core::caps::system::{OsInfo, SystemInfo};
+use deck_core::caps::window::ToggleArgs;
+use deck_core::caps::{NoArgs, REGISTRY};
 use deck_core::catalog::{CatalogIndex, IndexEntry};
 use deck_core::error::{DeckError, ErrorCode};
 use deck_core::manifest::{Author, Category, ModuleManifest, UiOptions};
 use deck_core::resolver::{Picked, Resolution, ResolveState, Source, UnmetCap};
+use deck_core::shell::{FsDroppedEvent, ModuleEntry, ShellInfo, UpdateStatus};
 use schemars::JsonSchema;
 use serde::Serialize;
 use ts_rs::{Config, TS};
@@ -44,6 +52,86 @@ fn schema<T: JsonSchema>(path: &str) -> Result<Output, Box<dyn Error>> {
     Ok(Output {
         path: path.to_owned(),
         content: format!("{}\n", serde_json::to_string_pretty(&value)?),
+    })
+}
+
+/// `module.schema.json` with `requires`/`optional` keys limited to registered caps, so a typo in
+/// a cap name fails at authoring time (the resolver still treats unknown caps as "needs update").
+fn module_schema() -> Result<Output, Box<dyn Error>> {
+    let mut out = schema::<ModuleManifest>("schema/module.schema.json")?;
+    let mut value: serde_json::Value = serde_json::from_str(&out.content)?;
+    let names: Vec<&str> = REGISTRY.iter().map(|c| c.name).collect();
+    for field in ["requires", "optional"] {
+        if let Some(prop) = value
+            .pointer_mut(&format!("/properties/{field}"))
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            prop.insert("propertyNames".into(), serde_json::json!({ "enum": names }));
+        }
+    }
+    out.content = format!(
+        "{}
+",
+        serde_json::to_string_pretty(&value)?
+    );
+    Ok(out)
+}
+
+/// `schema/capabilities.json`: the registry for tools and docs (CAP-010).
+fn capabilities_json() -> Result<Output, Box<dyn Error>> {
+    let value = serde_json::json!({ "$comment": NOTICE, "capabilities": REGISTRY });
+    Ok(Output {
+        path: "schema/capabilities.json".into(),
+        content: format!(
+            "{}
+",
+            serde_json::to_string_pretty(&value)?
+        ),
+    })
+}
+
+/// SDK registry constant: versions and `long` flags (BRG-004 timeouts).
+fn registry_ts() -> Result<Output, Box<dyn Error>> {
+    let mut body = String::from(
+        "export const CAPABILITIES = {
+",
+    );
+    for c in REGISTRY {
+        body.push_str(&format!(
+            "  {}: {{
+    version: {},
+    methods: {{
+",
+            c.name,
+            serde_json::to_string(c.version)?
+        ));
+        for m in c.methods {
+            body.push_str(&format!(
+                "      {}: {{ long: {} }},
+",
+                m.name, m.long
+            ));
+        }
+        body.push_str(
+            "    },
+  },
+",
+        );
+    }
+    body.push_str(
+        "} as const;
+
+export type CapName = keyof typeof CAPABILITIES;
+",
+    );
+    Ok(Output {
+        path: format!("{SDK_DIR}/registry.ts"),
+        content: format!(
+            "// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms: see LICENSE-ADDITIONAL-TERMS
+// {NOTICE}
+{body}"
+        ),
     })
 }
 
@@ -87,10 +175,23 @@ fn main() -> Result<(), Box<dyn Error>> {
         .with_large_int("number")
         .with_import_extension(Some("ts"));
 
-    let sdk = vec![
+    let mut sdk = vec![
         ts::<ErrorCode>(SDK_DIR, &cfg)?,
         ts::<DeckError>(SDK_DIR, &cfg)?,
+        ts::<NoArgs>(SDK_DIR, &cfg)?,
+        ts::<SystemInfo>(SDK_DIR, &cfg)?,
+        ts::<OsInfo>(SDK_DIR, &cfg)?,
+        ts::<KeyArgs>(SDK_DIR, &cfg)?,
+        ts::<SetArgs>(SDK_DIR, &cfg)?,
+        ts::<FileFilter>(SDK_DIR, &cfg)?,
+        ts::<PickFilesArgs>(SDK_DIR, &cfg)?,
+        ts::<HandleArgs>(SDK_DIR, &cfg)?,
+        ts::<FileHandleInfo>(SDK_DIR, &cfg)?,
+        ts::<FolderHandleInfo>(SDK_DIR, &cfg)?,
+        ts::<DroppedFiles>(SDK_DIR, &cfg)?,
+        ts::<ToggleArgs>(SDK_DIR, &cfg)?,
     ];
+    sdk.push(registry_ts()?);
     let shell = vec![
         ts::<ModuleManifest>(SHELL_DIR, &cfg)?,
         ts::<Author>(SHELL_DIR, &cfg)?,
@@ -103,12 +204,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         ts::<Source>(SHELL_DIR, &cfg)?,
         ts::<CatalogIndex>(SHELL_DIR, &cfg)?,
         ts::<IndexEntry>(SHELL_DIR, &cfg)?,
+        ts::<ShellInfo>(SHELL_DIR, &cfg)?,
+        ts::<ModuleEntry>(SHELL_DIR, &cfg)?,
+        ts::<FsDroppedEvent>(SHELL_DIR, &cfg)?,
+        ts::<UpdateStatus>(SHELL_DIR, &cfg)?,
+        // Shell-side copies of payload types it forwards to modules.
+        ts::<DroppedFiles>(SHELL_DIR, &cfg)?,
+        ts::<FileHandleInfo>(SHELL_DIR, &cfg)?,
     ];
     check_imports(&sdk)?;
     check_imports(&shell)?;
 
     let mut files = vec![
-        schema::<ModuleManifest>("schema/module.schema.json")?,
+        module_schema()?,
+        capabilities_json()?,
         schema::<CatalogIndex>("schema/catalog.schema.json")?,
     ];
     files.extend(sdk);
