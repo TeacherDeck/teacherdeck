@@ -1,0 +1,20 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Shell main window only (SEC-003). No fs/shell/http plugin permissions: OS access goes through Rust capabilities. Changing this file is a stop condition (GEN-005).",
+  "windows": ["main"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-host-invoke",
+    "allow-shell-info",
+    "allow-list-modules",
+    "allow-module-activated",
+    "allow-module-visibility",
+    "allow-module-unloaded",
+    "allow-check-update",
+    "allow-install-update",
+    "allow-restart-app",
+    "allow-sec-probe-report"
+  ]
+}

@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Additional terms: see LICENSE-ADDITIONAL-TERMS
+
+[package]
+name = "teacherdeck"
+description = "TeacherDeck desktop host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "teacherdeck_lib"
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+deck-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+semver.workspace = true
+thiserror.workspace = true
+tauri.workspace = true
+tauri-plugin-single-instance.workspace = true
+tauri-plugin-updater.workspace = true
+tauri-plugin-dialog.workspace = true
+window-vibrancy.workspace = true
+sys-locale.workspace = true
+getrandom.workspace = true
+percent-encoding.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-version.workspace = true
+
+[lints]
+workspace = true

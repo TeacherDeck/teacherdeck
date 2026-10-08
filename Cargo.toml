@@ -3,7 +3,7 @@
 
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "apps/desktop/src-tauri"]
 
 [workspace.package]
 version = "0.0.0"
@@ -23,6 +23,20 @@ ts-rs = { version = "12.0.1", features = ["semver-impl", "serde-json-impl"] }
 sha2 = "0.11.0"
 thiserror = "2.0.21"
 zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+# Host (apps/desktop/src-tauri). Tauri stays on 2.x (ADR-0001).
+tauri = { version = "2.12.1", features = [] }
+tauri-build = { version = "2.7.1", features = [] }
+tauri-plugin-single-instance = "2.5.2"
+tauri-plugin-updater = "2.13.2"
+tauri-plugin-dialog = "2.8.1"
+window-vibrancy = "0.8.1"
+windows-version = "0.100.0"
+sys-locale = "0.3.2"
+getrandom = "0.4.3"
+percent-encoding = "2.3.2"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std"] }
+tracing-appender = "0.2.5"
 
 # Lint levels for all members (members opt in with `[lints] workspace = true`).
 # Do not relax these to make code pass (GEN-001, GEN-003).

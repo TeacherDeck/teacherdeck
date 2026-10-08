@@ -6,7 +6,8 @@ node_modules/
 dist/
 target/
 *.tsbuildinfo
-apps/desktop/src-tauri/resources/modules/
+apps/desktop/src-tauri/resources/modules/*
+!apps/desktop/src-tauri/resources/modules/.gitkeep
 *.deckmod
 
 # Test / coverage

@@ -28,6 +28,20 @@
 
 `capabilities/`(ACL), `tauri.conf.json`, `src/protocol.rs`의 CSP를 바꾸는 것은 보안 설정 변경이므로 **정지 조건**이다(GEN-005).
 
+## 파일 지도
+
+| 위치 | 내용 |
+|---|---|
+| `src/lib.rs` | 앱 조립: 창·Mica, 로깅, 모듈 저장소, 프로토콜, 명령, 드래그 앤 드롭 |
+| `src/origins.rs` | 셸·모듈 origin 상수(SEC-002) |
+| `src/protocol.rs` | `deckmod` 프로토콜 경로 검증·헤더(SEC-005) |
+| `src/bridge.rs` | `host_invoke`와 권한 검사(CAP-008) |
+| `src/caps/` | 캡 핸들러. `route()`가 레지스트리와 1:1로 대응한다 |
+| `src/modules.rs` | 기본 모듈 로드·검증·해석, 메모리 서빙 |
+| `src/storage.rs`, `src/platform.rs` | storage 영속화, OS 정보·Mica·난수·temp·로깅 |
+| `src/probe.rs` | 디버그 전용 SEC-004 프로브([sec-004.md](../../../docs/security/sec-004.md)) |
+| `capabilities/main.json`, `tauri.conf.json` | ACL·CSP·번들 설정(보호 파일, 정지 조건) |
+
 ## 캡 추가 절차
 
 [capabilities.md 3절](../../../docs/spec/capabilities.md#3-캡-추가변경-절차)을 따른다. 요약:

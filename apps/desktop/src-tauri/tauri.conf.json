@@ -1,0 +1,57 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "TeacherDeck",
+  "version": "../../../package.json",
+  "identifier": "io.github.teacherdeck.deck",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build"
+  },
+  "app": {
+    "windows": [],
+    "withGlobalTauri": false,
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' data: blob: http://deckmod.localhost",
+        "font-src": "'self' data:",
+        "connect-src": "'self' ipc: http://ipc.localhost",
+        "frame-src": "http://deckmod.localhost",
+        "object-src": "'none'",
+        "base-uri": "'none'",
+        "form-action": "'none'"
+      },
+      "devCsp": null,
+      "freezePrototype": true,
+      "capabilities": ["main"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "resources": { "resources/modules/": "modules/" },
+    "createUpdaterArtifacts": false,
+    "publisher": "TeacherDeck",
+    "copyright": "Copyright (C) 2026 신민성, 정영주. GPL-3.0-only",
+    "license": "GPL-3.0-only",
+    "windows": {
+      "webviewInstallMode": { "type": "embedBootstrapper" },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["Korean", "English"],
+        "displayLanguageSelector": false
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": []
+    }
+  }
+}
