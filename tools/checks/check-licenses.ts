@@ -80,10 +80,12 @@ export function checkDenyTomlSync(root: string, allow: Allowlist): Violation[] {
 
 export function checkLicenses(root: string): Violation[] {
   const allow = loadAllowlist(root);
-  const res = spawnSync("pnpm", ["licenses", "list", "--json"], {
+  // pnpm is a shim (.cmd/.ps1) on Windows, so run through the shell. The command is a constant
+  // string with no user input (passing an args array with `shell: true` is deprecated, DEP0190).
+  const res = spawnSync("pnpm licenses list --json", {
     cwd: root,
     encoding: "utf8",
-    shell: process.platform === "win32",
+    shell: true,
     maxBuffer: 64 * 1024 * 1024,
   });
   if (res.status !== 0) {
