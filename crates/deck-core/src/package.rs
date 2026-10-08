@@ -254,6 +254,50 @@ pub fn validate_package_with(
     })
 }
 
+/// Builds a `.deckmod` from package-relative files: adds `SHA256SUMS`, sorts entries and fixes
+/// timestamps so the same input always yields the same bytes. The bytes are re-validated before
+/// returning, so whatever this produces is guaranteed to pass [`validate_package`].
+pub fn build_package(
+    files: &[(String, Vec<u8>)],
+) -> Result<(Vec<u8>, ValidatedPackage), PackageError> {
+    use std::io::Write as _;
+    use zip::write::SimpleFileOptions;
+
+    let mut sorted: Vec<(&str, &[u8])> = files
+        .iter()
+        .map(|(p, d)| (p.as_str(), d.as_slice()))
+        .collect();
+    sorted.sort_by(|a, b| a.0.cmp(b.0));
+    let sums: String = sorted
+        .iter()
+        .map(|(path, data)| {
+            format!(
+                "{}  {path}
+",
+                sha256_hex(data)
+            )
+        })
+        .collect();
+    sorted.push((SUMS_FILE, sums.as_bytes()));
+
+    let opts = SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .last_modified_time(zip::DateTime::default());
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    for (path, data) in sorted {
+        zip.start_file(path, opts)
+            .map_err(|e| PackageError::Zip(e.to_string()))?;
+        zip.write_all(data)
+            .map_err(|e| PackageError::Zip(e.to_string()))?;
+    }
+    let bytes = zip
+        .finish()
+        .map_err(|e| PackageError::Zip(e.to_string()))?
+        .into_inner();
+    let validated = validate_package(&bytes)?;
+    Ok((bytes, validated))
+}
+
 /// `SHA256SUMS` must list every other file exactly once with a matching digest
 /// (`sha256sum` format: `<hex>  <path>`, optional `*` binary marker).
 fn verify_sums(sums: &[u8], files: &BTreeMap<String, Vec<u8>>) -> Result<(), PackageError> {
@@ -503,6 +547,18 @@ mod tests {
             validate_package(&build(&files, None)),
             Err(PackageError::Manifest(ManifestError::Invalid(_)))
         ));
+    }
+
+    #[test]
+    fn build_package_round_trips_deterministically() {
+        let (a, pkg) = build_package(&base_files()).unwrap();
+        let mut reversed = base_files();
+        reversed.reverse();
+        let (b, _) = build_package(&reversed).unwrap();
+        assert_eq!(a, b, "same files in any order give identical bytes");
+        assert_eq!(pkg.sha256, sha256_hex(&a));
+        assert_eq!(pkg.files.len(), base_files().len());
+        assert!(build_package(&with_file("../x", b"x")).is_err());
     }
 
     #[test]

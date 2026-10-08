@@ -19,9 +19,10 @@ pub mod handles;
 pub mod manifest;
 pub mod package;
 pub mod resolver;
+pub mod shell;
 pub mod util;
 
-pub use caps::HostCaps;
+pub use caps::{CapSpec, HostCaps, MethodSpec, REGISTRY, host_caps};
 pub use catalog::{CatalogError, CatalogIndex, IndexEntry};
 pub use error::{DeckError, ErrorCode};
 pub use handles::{HandleError, HandleTable, RandomSource};
