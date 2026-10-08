@@ -6,4 +6,5 @@
   - `.ts`/`.tsx`: `modules/sample/src/` 아래 파일로 간주해 ESLint로 검사해요.
   - `.txt`: 커밋 메시지예요.
 - `_valid/`: 오탐이 없는지 확인하는 정상 샘플이에요.
+- `_runtime/`: 스키마는 통과하지만 호스트(Rust) 검증에서 실패하는 매니페스트예요. `lib.test.ts`가 써요.
 - 새 샘플을 추가하면 `violations.test.ts`가 자동으로 찾아 검사해요. 새 규칙 ID 디렉터리는 `CHECKER_FOR`에 검사기를 연결해야 해요.

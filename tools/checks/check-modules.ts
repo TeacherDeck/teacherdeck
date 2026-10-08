@@ -2,6 +2,7 @@
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 // check-modules: module layout and manifest checks (MOD-001~004, MOD-012, MOD-013, MOD-015).
 // Version-bump-vs-base-branch comparison for MOD-013 runs in CI (Phase 7).
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 // schemars emits JSON Schema 2020-12 (Phase 3), so use the 2020 dialect.
@@ -17,6 +18,29 @@ export const TEMPLATE_MARKER_KEY = "deckTemplate";
 export const ID_RE = /^[a-z][a-z0-9-]{1,30}[a-z0-9]$/;
 const REQUIRED_FILES = ["module.json", "package.json", "index.html", "src/main.tsx", "icon.svg", "CHANGELOG.md"];
 const TEST_RE = /\.test\.tsx?$/;
+/** Rust validator shared with the host (crates/deck-codegen/src/bin/deck-validate.rs). */
+export const VALIDATOR_CRATE = "crates/deck-codegen/Cargo.toml";
+
+/**
+ * Runs the host's manifest validation on manifests that already pass the JSON schema, catching
+ * rules a schema cannot express (safe paths, parseable ranges, requires/optional overlap).
+ * Skipped where the crate is absent (checker fixtures).
+ */
+export function runtimeValidate(root: string, manifests: readonly string[]): Violation[] {
+  if (manifests.length === 0 || !exists(root, VALIDATOR_CRATE)) return [];
+  const res = spawnSync("cargo", ["run", "--quiet", "--locked", "-p", "deck-codegen", "--bin", "deck-validate", "--", ...manifests], {
+    cwd: root,
+    encoding: "utf8",
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  if (res.error !== undefined || res.status !== 0) {
+    return [{ rule: "MOD-004", message: `매니페스트 검증기를 실행하지 못했어요: ${res.error?.message ?? res.stderr.trim()}` }];
+  }
+  const out = JSON.parse(res.stdout) as { results: { file: string; issues: { field: string; message: string }[] }[] };
+  return out.results.flatMap((r) =>
+    r.issues.map((i) => ({ rule: "MOD-004", file: r.file, message: i.field === "" ? i.message : `${i.field}: ${i.message}` })),
+  );
+}
 
 function parseJson(root: string, rel: string, v: Violation[]): unknown {
   try {
@@ -44,6 +68,7 @@ export function checkModules(root: string): Violation[] {
     v.push({ rule: "MOD-004", file: SCHEMA, message: "매니페스트 스키마가 없어 모듈을 검증할 수 없어요. `pnpm gen`을 실행하세요." });
   }
   const files = listFiles(root);
+  const schemaValid: string[] = [];
 
   for (const id of dirs) {
     const base = `${MODULES_DIR}/${id}`;
@@ -81,6 +106,8 @@ export function checkModules(root: string): Violation[] {
           for (const e of validate.errors ?? []) {
             v.push({ rule: "MOD-004", file: `${base}/module.json`, message: `스키마 위반: ${e.instancePath || "/"} ${e.message ?? ""}`.trim() });
           }
+        } else if (validate !== null) {
+          schemaValid.push(`${base}/module.json`);
         }
         const authors = manifest["authors"];
         if (!Array.isArray(authors) || authors.length === 0 || !authors.every((a) => isRecord(a) && typeof a["name"] === "string" && a["name"].trim() !== "")) {
@@ -100,5 +127,6 @@ export function checkModules(root: string): Violation[] {
       v.push({ rule: "MOD-015", file: `${base}/src`, message: "vitest 테스트 파일(*.test.ts, *.test.tsx)이 없어요." });
     }
   }
+  v.push(...runtimeValidate(root, schemaValid));
   return v;
 }

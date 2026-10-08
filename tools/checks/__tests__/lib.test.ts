@@ -3,10 +3,12 @@
 import { describe, expect, it } from "vitest";
 import { renderTable } from "../../scripts/gen/rule-index.ts";
 import { checkCommitMessage } from "../check-commit-msg.ts";
+import { runtimeValidate } from "../check-modules.ts";
 import { denyTomlAllow, isAllowedExpression } from "../check-licenses.ts";
 import { format } from "../lib/report.ts";
 import { anchorsOf, parseRuleDefs, parseRuleRefs, slug } from "../lib/spec.ts";
 import { cargoWorkspaceVersion, setCargoWorkspaceVersion } from "../lib/versions.ts";
+import { REPO_ROOT } from "./helpers.ts";
 
 describe("report", () => {
   it("formats as [RULE-ID] location: message (정의: spec)", () => {
@@ -78,4 +80,13 @@ describe("commit-msg", () => {
     expect(checkCommitMessage("Merge branch 'x'\n")).toEqual([]);
     expect(checkCommitMessage("fix: a\n\nSigned-off-by: A <a@example.com>\n# comment\n")).toEqual([]);
   });
+});
+
+describe("check-modules runtime validation", () => {
+  it("reports host-only manifest rules through the Rust validator as MOD-004", () => {
+    const sample = "tools/checks/__tests__/violations/_runtime/module.json";
+    const out = runtimeValidate(REPO_ROOT, [sample]);
+    expect(out.map((o) => o.rule)).toEqual(["MOD-004", "MOD-004", "MOD-004"]);
+    expect(out.map((o) => o.message.split(":")[0])).toEqual(["entry", "requires.storage", "optional.window"]);
+  }, 120_000);
 });

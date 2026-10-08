@@ -1,0 +1,13 @@
+{
+  "manifestVersion": 1,
+  "id": "sample-tool",
+  "name": "샘플",
+  "description": "스키마는 통과하지만 호스트 검증에서 실패하는 매니페스트",
+  "version": "0.1.0",
+  "category": "utility",
+  "icon": "icon.svg",
+  "entry": "../index.html",
+  "authors": [{ "name": "홍길동" }],
+  "requires": { "storage": "one point oh", "window": "^1.0" },
+  "optional": { "window": "^1.0" }
+}
