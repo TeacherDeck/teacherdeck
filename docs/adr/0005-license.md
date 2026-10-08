@@ -29,6 +29,8 @@
 | OFL-1.1 | 폰트 전용(Pretendard) |
 | LGPL-2.1, LGPL-3.0 | 동적 링크 조건. **Rust 크레이트는 정적 링크가 기본이므로 사실상 npm/별도 프로세스에만 해당한다.** 확정 시 범위를 정해야 한다. |
 
+허용 목록은 `tools/checks/licenses.allow.json`(npm)과 `deny.toml`(Rust)에 같은 내용으로 둔다. 목록 밖 라이선스는 패키지 단위 예외로만 허용하며, 승인 사유를 `licenses.allow.json`의 `packages`에 기록한다. 예: `minimatch`(BlueOak-1.0.0, ESLint 개발 도구 전용, 2026-10-08 승인).
+
 ## 결과
 
 - 강제: `check-licenses`, cargo-deny(SEC-011, Phase 2에서 구현), `check-spdx`(GEN-008).
