@@ -28,7 +28,7 @@ CI는 로컬과 같은 명령을 쓴다(CI-005). 모든 검사기는 다음 형�
 
 - `pnpm verify:fast` = lint + typecheck + check-modules. lefthook pre-commit에서 실행한다.
 - 검사기 자체 테스트: `tools/checks/__tests__/violations/`에 규칙별 위반 샘플을 두고, 각 검사기가 해당 규칙 ID로 실패하는지 테스트한다. 검사기가 조용히 통과하는 회귀를 막기 위해서다.
-- 위 단계는 Phase 2에서 구현한다. 그 전까지 `pnpm verify`는 존재하지 않는다.
+- 구현: `tools/scripts/verify.ts`(단계 목록), `tools/checks/`(검사기), `tools/eslint-plugin-deck/`(커스텀 린트와 규칙 ID 포매터). 한 단계가 실패해도 나머지를 모두 실행하고 요약을 출력한다.
 
 ## 2. 워크플로 (Phase 7에서 구현)
 
@@ -41,9 +41,9 @@ CI는 로컬과 같은 명령을 쓴다(CI-005). 모든 검사기는 다음 형�
 
 ## 3. 규칙
 
-- **CI-001** [MUST NOT] `pull_request_target`를 쓰지 않는다. — 강제: `check-security` workflow 스캔(Phase 2에서 구현)
-- **CI-002** [MUST] 모든 action은 전체 커밋 SHA로 고정하고 버전 주석을 단다. — 강제: `check-security`(Phase 2에서 구현)
-- **CI-003** [MUST] workflow `permissions`는 최소로 한다(기본 `contents: read`). — 강제: `check-security`(Phase 2에서 구현)
-- **CI-004** [MUST] 서명 시크릿은 `release` environment에만 두고 태그 트리거 릴리스 잡에서만 접근한다. — 강제: `check-security`(Phase 2에서 구현)
+- **CI-001** [MUST NOT] `pull_request_target`를 쓰지 않는다. — 강제: `check-security` workflow 스캔
+- **CI-002** [MUST] 모든 action은 전체 커밋 SHA로 고정하고 버전 주석을 단다. — 강제: `check-security`
+- **CI-003** [MUST] workflow `permissions`는 최소로 한다(기본 `contents: read`). — 강제: `check-security`
+- **CI-004** [MUST] 서명 시크릿은 `release` environment에만 두고 태그 트리거 릴리스 잡에서만 접근한다. — 강제: `check-security`
 - **CI-005** [MUST] CI 검증은 로컬 `pnpm verify`와 같은 명령을 쓴다. — 강제: workflow 리뷰
 - **CI-006** [MUST] workflow 변경은 CODEOWNERS 리뷰를 필수로 한다. — 강제: CODEOWNERS(Phase 7에서 구현), ruleset(사람 설정)

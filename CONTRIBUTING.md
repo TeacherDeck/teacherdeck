@@ -46,7 +46,7 @@ Signed-off-by: 홍길동 <gildong@example.com>
 
 PR을 열기 전에 다음을 확인해 주세요.
 
-- `pnpm verify`가 통과해요(Phase 2 이후).
+- `pnpm verify`가 통과해요.
 - 새 동작에 테스트가 있어요.
 - 동작이 바뀌었다면 관련 문서를 같은 PR에서 갱신했어요.
 

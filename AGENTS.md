@@ -41,7 +41,7 @@ docs/spec/                    규범 문서 (규칙 정의)
 docs/adr/                     아키텍처 결정 기록
 ```
 
-현재 Phase 1 상태라 문서만 있다. 코드 디렉터리는 Phase 2 이후에 생긴다.
+아직 없는 디렉터리(셸, 호스트, SDK, UI, 모듈)는 부트스트랩 Phase 3~6에서 생긴다.
 
 ## 작업별 필독 문서
 
@@ -115,14 +115,15 @@ docs/adr/                     아키텍처 결정 기록
 
 ## 자주 쓰는 명령
 
-Phase 2 이후에 쓸 수 있다.
-
 | 명령 | 용도 |
 |---|---|
 | `pnpm verify` | 전체 검증(CI와 같음). 완료 전 필수 |
 | `pnpm verify:fast` | lint + typecheck + check-modules (pre-commit) |
-| `pnpm gen` | 스키마·TS 타입·레지스트리 표·규칙 인덱스 생성 |
-| `pnpm new:module <id>` | 새 모듈 생성 (MOD-001) |
-| `pnpm pack:module` | `.deckmod` 패키지 생성 |
-| `pnpm tauri dev` / `pnpm tauri build` | 앱 실행 / 설치본 빌드 |
+| `pnpm gen` | 생성물 갱신(규칙 인덱스, Phase 3부터 스키마·TS 타입) |
+| `pnpm check:<이름>` | 검사기 하나만 실행(gen, modules, spdx, versions, docs, security, licenses, suppressions) |
+| `pnpm sync-versions` | 앱 버전을 Cargo.toml에 반영 (VER-001) |
+| `pnpm synthetic` | 합성 테스트 데이터 생성 (PRV-004) |
+| `pnpm new:module <id>` | 새 모듈 생성 (MOD-001, Phase 6부터) |
+| `pnpm pack:module` | `.deckmod` 패키지 생성 (Phase 6부터) |
+| `pnpm tauri dev` / `pnpm tauri build` | 앱 실행 / 설치본 빌드 (Phase 4부터) |
 | `git commit -s` | DCO 서명 커밋 (GEN-009) |

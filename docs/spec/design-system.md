@@ -70,9 +70,9 @@ UI-007을 따른다. 예시:
 
 ## 8. 규칙
 
-- **UI-001** [MUST NOT] Fluent UI React v9 외의 컴포넌트 라이브러리를 추가하지 않는다. — 강제: eslint `no-restricted-imports`(Phase 2에서 구현), GEN-004
-- **UI-002** [MUST NOT] 색·간격·반경·그림자·폰트 패밀리를 하드코딩하지 않는다. Fluent 토큰과 `@deck/ui` 토큰만 쓴다. — 강제: eslint `deck/no-raw-style-values`(Phase 2에서 구현)
-- **UI-003** [MUST] 아이콘은 `@fluentui/react-icons`만 쓴다(모듈 `icon.svg` 제외). — 강제: eslint(Phase 2에서 구현)
+- **UI-001** [MUST NOT] Fluent UI React v9 외의 컴포넌트 라이브러리를 추가하지 않는다. — 강제: eslint `no-restricted-imports`, GEN-004
+- **UI-002** [MUST NOT] 색·간격·반경·그림자·폰트 패밀리를 하드코딩하지 않는다. Fluent 토큰과 `@deck/ui` 토큰만 쓴다. — 강제: eslint `deck/no-raw-style-values`
+- **UI-003** [MUST] 아이콘은 `@fluentui/react-icons`만 쓴다(모듈 `icon.svg` 제외). — 강제: eslint
 - **UI-004** [MUST] 셸과 모듈의 루트 배경은 투명(Mica)이고, 표면은 레이어 토큰으로 표현한다. Win10에서는 불투명으로 폴백한다. — 강제: `DeckProvider` 기본값(Phase 5에서 구현), [manual]
 - **UI-005** [MUST] 키보드만으로 전부 조작할 수 있고, 포커스가 보이며, 텍스트 150%·DPI 200%에서 잘림이 없고, 대비가 WCAG AA를 만족한다. — 강제: [manual] 체크리스트, 가능 시 axe 테스트(Phase 5에서 구현)
 - **UI-006** [MUST NOT] `@deck/ui`에 있는 패턴을 모듈에서 재구현하지 않는다. 없으면 `@deck/ui`에 추가를 제안한다. — 강제: [manual]

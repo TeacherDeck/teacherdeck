@@ -77,8 +77,8 @@
 - **CAP-003** [MUST NOT] 대용량 바이너리(>1MB)를 브리지로 보내지 않는다. `deckmod` 리소스 URL을 쓴다. — 강제: 브리지 크기 제한 BRG-007(Phase 5에서 구현)
 - **CAP-004** [MUST] 버전 규칙: 메서드·선택 인자·결과 필드 추가는 minor, 그 외는 major다. major 변경 시 이전 major 핸들러를 최소 2회의 앱 minor 릴리스 동안 유지하고 ADR을 쓴다. — 강제: [manual], 레지스트리 diff 리뷰
 - **CAP-005** [MUST] 새 캡이나 major 변경은 사람 승인을 받는다(GEN-005). — 강제: 훅(레지스트리 생성물 보호)(Phase 7에서 구현), [manual]
-- **CAP-006** [MUST] 모든 메서드 인자·결과는 Rust 구조체로 정의하고 ts-rs로 TS 타입을 export한다. `serde_json::Value`는 디스패치 경계에서만 쓴다. — 강제: `check-gen`(Phase 2에서 구현)
+- **CAP-006** [MUST] 모든 메서드 인자·결과는 Rust 구조체로 정의하고 ts-rs로 TS 타입을 export한다. `serde_json::Value`는 디스패치 경계에서만 쓴다. — 강제: `check-gen`(ts-rs 생성기는 Phase 3·4에서 구현)
 - **CAP-007** [MUST] 에러는 `ErrorCode` enum과 메시지로 반환하며, 메시지에 경로·파일명·사용자 데이터를 넣지 않는다(PRV-003). — 강제: 테스트(Phase 4에서 구현), [manual]
 - **CAP-008** [MUST] 모듈 권한 검사(설치·활성 여부, 선언 캡, 버전)는 Rust에서 매 호출마다 수행한다. 셸 검사는 보조일 뿐이다. — 강제: 권한 거부 테스트(Phase 4에서 구현)
 - **CAP-009** [MUST] 각 캡은 정상·권한 거부·잘못된 인자 테스트를 갖춘다. — 강제: [manual] 리뷰, 커버리지 보고(Phase 4에서 구현)
-- **CAP-010** [MUST] `capabilities.md`의 레지스트리 표와 `schema/capabilities.json`은 Rust 레지스트리에서 생성한다. — 강제: `check-gen`(Phase 2에서 구현)
+- **CAP-010** [MUST] `capabilities.md`의 레지스트리 표와 `schema/capabilities.json`은 Rust 레지스트리에서 생성한다. — 강제: `check-gen`(레지스트리 생성기는 Phase 4에서 구현)

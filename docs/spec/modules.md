@@ -48,7 +48,7 @@
 ```
 modules/<id>/
 ├─ module.json
-├─ package.json          # name "@deck-module/<id>", private: true
+├─ package.json          # name "@deck-module/<id>", private: true, "deckTemplate": <템플릿 버전>
 ├─ index.html            # entry
 ├─ icon.svg
 ├─ CHANGELOG.md
@@ -72,19 +72,19 @@ modules/<id>/
 
 ## 4. 규칙
 
-- **MOD-001** [MUST] 모듈은 `pnpm new:module <id>`로만 만든다. — 강제: `check-modules`(필수 구성·템플릿 마커)(Phase 2에서 구현)
-- **MOD-002** [MUST] id는 `^[a-z][a-z0-9-]{1,30}[a-z0-9]$`이고 디렉터리명과 같다. 최초 릴리스 후 변경하지 않는다. — 강제: 스키마(Phase 3에서 구현), `check-modules`(Phase 2에서 구현)
-- **MOD-003** [MUST] 필수 파일: `module.json`, `package.json`(name `@deck-module/<id>`, private), `index.html`, `src/main.tsx`, `icon.svg`, `CHANGELOG.md`. — 강제: `check-modules`(Phase 2에서 구현)
+- **MOD-001** [MUST] 모듈은 `pnpm new:module <id>`로만 만든다. — 강제: `check-modules`(필수 구성·템플릿 마커)
+- **MOD-002** [MUST] id는 `^[a-z][a-z0-9-]{1,30}[a-z0-9]$`이고 디렉터리명과 같다. 최초 릴리스 후 변경하지 않는다. — 강제: 스키마(Phase 3에서 구현), `check-modules`
+- **MOD-003** [MUST] 필수 파일: `module.json`, `package.json`(name `@deck-module/<id>`, private), `index.html`, `src/main.tsx`, `icon.svg`, `CHANGELOG.md`. — 강제: `check-modules`
 - **MOD-004** [MUST] `module.json`은 `schema/module.schema.json`을 통과해야 하며, 스키마에 없는 필드를 쓰지 않는다. — 강제: 스키마 `additionalProperties: false`(Phase 3에서 구현)
-- **MOD-005** [MUST NOT] import 허용 범위는 `@deck/sdk`, `@deck/ui`, 모듈 내부, 라이선스 검사를 통과한 의존성뿐이다. `@tauri-apps/*`, 다른 모듈, `apps/*`, 패키지 내부 경로는 import하지 않는다. — 강제: eslint `no-restricted-imports`(Phase 2에서 구현)
+- **MOD-005** [MUST NOT] import 허용 범위는 `@deck/sdk`, `@deck/ui`, 모듈 내부, 라이선스 검사를 통과한 의존성뿐이다. `@tauri-apps/*`, 다른 모듈, `apps/*`, 패키지 내부 경로는 import하지 않는다. — 강제: eslint `no-restricted-imports`
 - **MOD-006** [MUST] 호스트 기능은 `@deck/sdk`로만 호출하고, 호출하는 모든 캡을 `requires` 또는 `optional`에 선언한다. — 강제: SDK 런타임 거부(Phase 5에서 구현), 호스트 CAP-008(Phase 4에서 구현)
 - **MOD-007** [MUST] optional 캡은 `deck.has(cap)`로 확인한 뒤 사용하고, 없으면 `CapabilityGate`로 "앱 업데이트 후 사용 가능"을 표시한다. — 강제: SDK 미확인 호출 경고 로그(Phase 5에서 구현), [manual]
 - **MOD-008** [MUST NOT] 외부 네트워크 요청을 하지 않는다. — 강제: 모듈 CSP `connect-src 'self'`(Phase 4에서 구현)
-- **MOD-009** [MUST NOT] 영속 데이터에 `localStorage`, `indexedDB`, `document.cookie`, `caches`를 쓰지 않는다. storage 캡만 쓴다. — 강제: eslint `deck/no-web-storage`(Phase 2에서 구현)
-- **MOD-010** [MUST] UI는 `@deck/ui`와 Fluent UI v9 컴포넌트·토큰만 쓴다(UI-001~003). — 강제: eslint(Phase 2에서 구현)
+- **MOD-009** [MUST NOT] 영속 데이터에 `localStorage`, `indexedDB`, `document.cookie`, `caches`를 쓰지 않는다. storage 캡만 쓴다. — 강제: eslint `deck/no-web-storage`
+- **MOD-010** [MUST] UI는 `@deck/ui`와 Fluent UI v9 컴포넌트·토큰만 쓴다(UI-001~003). — 강제: eslint
 - **MOD-011** [MUST] 파일을 일괄 처리하는 도구는 `ToolLayout` 골격을 따른다(UI-008). — 강제: [manual]
 - **MOD-012** [MUST] `authors`에 실제 기여자를 기록하고 기존 저자를 제거하지 않는다. — 강제: 스키마 `minItems: 1`(Phase 3에서 구현), [manual]
-- **MOD-013** [MUST] 사용자에게 보이는 변경은 버전 bump와 모듈 CHANGELOG를 동반한다(VER-004). — 강제: `check-modules`(Phase 2에서 구현. 변경 파일 대비 버전 비교는 CI에서 base 브랜치와 diff, Phase 7에서 구현)
+- **MOD-013** [MUST] 사용자에게 보이는 변경은 버전 bump와 모듈 CHANGELOG를 동반한다(VER-004). — 강제: `check-modules`(현재 버전의 CHANGELOG 항목), CI의 base 브랜치 대비 버전 비교(Phase 7에서 구현)
 - **MOD-014** [SHOULD NOT] 메인 스레드를 50ms 이상 막지 않는다. 무거운 연산은 Web Worker 또는 WASM으로 옮긴다. — 강제: [manual]
-- **MOD-015** [MUST] 순수 로직은 vitest 단위 테스트를, 호스트 연동은 SDK mock host 테스트를 갖춘다. — 강제: `check-modules`(테스트 파일 존재)(Phase 2에서 구현)
-- **MOD-016** [MAY] 모듈 전용 지침이 필요하면 모듈 디렉터리에 AGENTS.md와 CLAUDE.md를 함께 둔다(GEN-002 준수). — 강제: `check-docs`(쌍 존재)(Phase 2에서 구현)
+- **MOD-015** [MUST] 순수 로직은 vitest 단위 테스트를, 호스트 연동은 SDK mock host 테스트를 갖춘다. — 강제: `check-modules`(테스트 파일 존재)
+- **MOD-016** [MAY] 모듈 전용 지침이 필요하면 모듈 디렉터리에 AGENTS.md와 CLAUDE.md를 함께 둔다(GEN-002 준수). — 강제: `check-docs`(쌍 존재)

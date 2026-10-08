@@ -2,7 +2,7 @@
 
 선생님들이 자주 쓰는 작은 Windows 도구를 하나의 앱("덱")에 모아 두는 무료 오픈소스 프로젝트예요. 한 번 설치하면 업데이트로 새 도구가 계속 추가돼요.
 
-> **개발 초기 단계예요.** 지금은 규격과 개발 지침 문서만 있고, 앱은 아직 실행할 수 없어요.
+> **개발 초기 단계예요.** 지금은 규격, 개발 지침, 검사 도구만 있고 앱은 아직 실행할 수 없어요.
 
 ## 무엇을 하나요
 
@@ -33,14 +33,23 @@ Windows 10/11에서 개발해요.
 | WebView2 Runtime | Windows 11 기본 포함 |
 | git | 최신 |
 
-빌드와 검증 명령은 툴체인이 갖춰진 뒤(Phase 2 이후) 이곳에 정리할 예정이에요. 예정된 주요 명령은 다음과 같아요.
+처음 한 번 준비해요.
 
 ```powershell
-pnpm install
-pnpm verify          # 전체 검증 (CI와 같음)
-pnpm tauri dev       # 개발 실행
-pnpm tauri build     # 설치본(NSIS) 빌드
+corepack enable              # pnpm 활성화 (버전은 package.json의 packageManager를 따라요)
+cargo install cargo-deny --locked
+pnpm install                 # 의존성 설치 + git 훅(lefthook) 설치
 ```
+
+자주 쓰는 명령이에요.
+
+```powershell
+pnpm verify          # 전체 검증 (CI와 같음). 커밋 전에 꼭 실행해요
+pnpm verify:fast     # lint + typecheck + 모듈 검사 (커밋할 때 자동 실행)
+pnpm gen             # 생성물 갱신
+```
+
+앱 실행(`pnpm tauri dev`)과 설치본 빌드(`pnpm tauri build`)는 호스트가 생긴 뒤에 쓸 수 있어요. 비밀값 검사를 위해 [gitleaks](https://github.com/gitleaks/gitleaks) 설치를 권장해요(`winget install Gitleaks.Gitleaks`).
 
 ## 기여하기
 

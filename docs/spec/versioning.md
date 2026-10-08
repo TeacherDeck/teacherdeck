@@ -15,7 +15,7 @@
 | SDK | semver | `packages/sdk/package.json` | 공개 API 변경(VER-006) |
 
 - 앱 버전과 캡 버전은 독립이다(VER-003). 앱이 1.4.0이어도 `storage` 캡은 1.0.0일 수 있다.
-- `tauri.conf.json`의 버전은 루트 `package.json`을 참조하고, Cargo 버전은 `pnpm sync-versions`로 맞춘다(Phase 2에서 구현).
+- `tauri.conf.json`의 버전은 루트 `package.json`을 참조하고, Cargo 버전은 `pnpm sync-versions`로 맞춘다.
 
 ## 2. 모듈 semver
 
@@ -68,9 +68,9 @@ semver 매칭은 semver 크레이트 VersionReq 사용. prerelease는 명시적�
 
 ## 4. 규칙
 
-- **VER-001** [MUST] 앱 버전의 원천은 루트 `package.json`이다. `tauri.conf.json`은 이를 참조하고, Cargo 버전은 `pnpm sync-versions`로 맞춘다. — 강제: `check-versions`(Phase 2에서 구현)
-- **VER-002** [MUST] 캡 버전은 Rust 레지스트리 상수가 원천이다. — 강제: `check-gen`(Phase 2에서 구현)
+- **VER-001** [MUST] 앱 버전의 원천은 루트 `package.json`이다. `tauri.conf.json`은 이를 참조하고, Cargo 버전은 `pnpm sync-versions`로 맞춘다. — 강제: `check-versions`
+- **VER-002** [MUST] 캡 버전은 Rust 레지스트리 상수가 원천이다. — 강제: `check-gen`(레지스트리 생성기는 Phase 4에서 구현)
 - **VER-003** [MUST] 앱 버전과 캡 버전은 독립이다. 앱 패치 릴리스는 캡 버전을 바꾸지 않는다. — 강제: [manual]
-- **VER-004** [MUST] 모듈 semver: 사용자에게 보이는 변경은 bump한다. `requires`를 올리면 최소 minor bump를 하고 CHANGELOG에 "필요 앱 버전"을 명시한다. — 강제: `check-modules`(Phase 2에서 구현), CI diff(Phase 7에서 구현)
+- **VER-004** [MUST] 모듈 semver: 사용자에게 보이는 변경은 bump한다. `requires`를 올리면 최소 minor bump를 하고 CHANGELOG에 "필요 앱 버전"을 명시한다. — 강제: `check-modules`, CI diff(Phase 7에서 구현)
 - **VER-005** [MUST] 호환성 판정은 [3절](#3-호환성-해석-알고리즘) 알고리즘(deck-core의 순수 함수)으로만 한다. — 강제: 단위 테스트(Phase 3에서 구현)
 - **VER-006** [MUST] SDK는 지원하는 브리지 프로토콜 버전과 자체 semver를 노출한다. — 강제: SDK 테스트(Phase 5에서 구현)
