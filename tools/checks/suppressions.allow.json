@@ -1,0 +1,4 @@
+{
+  "$comment": "GEN-003 억제 allowlist. 보호 파일이에요. 항목 추가는 사람 승인이 필요해요. 형식: { file, pattern, reason }",
+  "entries": []
+}
