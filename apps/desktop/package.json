@@ -1,0 +1,23 @@
+{
+  "name": "@deck/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "TeacherDeck shell (React) and host (src-tauri)",
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "dev": "node ../../tools/scripts/bundle-modules.ts && vite",
+    "build": "node ../../tools/scripts/bundle-modules.ts && vite build",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@deck/sdk": "workspace:*",
+    "@deck/ui": "workspace:*",
+    "@fluentui/react-components": "9.74.9",
+    "@fluentui/react-icons": "2.0.343",
+    "@tauri-apps/api": "2.12.1",
+    "pretendard": "1.3.9",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  }
+}
