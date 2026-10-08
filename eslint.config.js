@@ -11,31 +11,43 @@ import deck from "./tools/eslint-plugin-deck/index.js";
 const MODULES_SPEC = "(정의: docs/spec/modules.md)";
 const UI_SPEC = "(정의: docs/spec/design-system.md)";
 
+/** Builds an anchored module-specifier regex: `name` itself or any subpath of it. */
+/** @param {string} s */
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\/]/g, (c) => `\\${c}`);
+/** @param {string[]} names */
+const spec = (names) => `^(${names.map(escapeRe).join("|")})(/.*)?$`;
+
 /** UI-001: no component library other than Fluent UI React v9. */
 const UI_001 = {
-  group: [
-    "@fluentui/react", "@fluentui/react/*", "@fluentui/web-components", "@fluentui/web-components/*",
-    "@mui/*", "@material-ui/*", "antd", "antd/*", "@chakra-ui/*", "@mantine/*", "@radix-ui/*",
-    "@headlessui/*", "react-bootstrap", "react-bootstrap/*", "@ark-ui/*", "@nextui-org/*", "@heroui/*",
-    "primereact", "primereact/*", "semantic-ui-react", "@blueprintjs/*", "shadcn", "@shadcn/*",
-  ],
+  regex: spec([
+    "@fluentui/react", "@fluentui/web-components", "@mui/material", "@mui/joy", "@material-ui/core", "antd",
+    "@chakra-ui/react", "@mantine/core", "@radix-ui/themes", "@headlessui/react", "react-bootstrap", "@ark-ui/react",
+    "@nextui-org/react", "@heroui/react", "primereact", "semantic-ui-react", "@blueprintjs/core",
+  ]),
   message: `[UI-001] Fluent UI React v9 외 컴포넌트 라이브러리는 쓰지 않아요. ${UI_SPEC}`,
 };
 /** UI-003: icons only from @fluentui/react-icons. */
 const UI_003 = {
-  group: [
-    "react-icons", "react-icons/*", "@heroicons/*", "lucide-react", "lucide", "@mui/icons-material",
-    "@mui/icons-material/*", "@fortawesome/*", "@tabler/icons-react", "@phosphor-icons/*", "@iconify/*",
+  regex: spec([
+    "react-icons", "@heroicons/react", "lucide-react", "lucide", "@mui/icons-material", "@fortawesome/react-fontawesome",
+    "@fortawesome/fontawesome-svg-core", "@tabler/icons-react", "@phosphor-icons/react", "@iconify/react",
     "@ant-design/icons", "@radix-ui/react-icons", "@fluentui/font-icons-mdl2", "@fluentui/svg-icons",
-  ],
+  ]),
   message: `[UI-003] 아이콘은 @fluentui/react-icons만 써요. ${UI_SPEC}`,
 };
 /** MOD-005: modules import only @deck/sdk, @deck/ui, their own files and licensed packages. */
 const MOD_005 = [
-  { group: ["@tauri-apps/*"], message: `[MOD-005] 모듈은 Tauri API를 직접 쓰지 않아요. 호스트 기능은 @deck/sdk로 호출해요. ${MODULES_SPEC}` },
-  { group: ["@deck-module/*"], message: `[MOD-005] 다른 모듈을 import하지 않아요. ${MODULES_SPEC}` },
-  { group: ["@deck/*/*"], message: `[MOD-005] @deck 패키지의 내부 경로를 import하지 않아요. 공개 진입점만 써요. ${MODULES_SPEC}` },
-  { group: ["**/apps/**", "**/packages/**", "**/modules/**", "../../*"], message: `[MOD-005] 모듈 밖의 파일을 상대 경로로 import하지 않아요. ${MODULES_SPEC}` },
+  { regex: "^@tauri-apps/", message: `[MOD-005] 모듈은 Tauri API를 직접 쓰지 않아요. 호스트 기능은 @deck/sdk로 호출해요. ${MODULES_SPEC}` },
+  { regex: "^@deck-module/", message: `[MOD-005] 다른 모듈을 import하지 않아요. ${MODULES_SPEC}` },
+  {
+    // Public entries: @deck/sdk, @deck/sdk/testing, @deck/ui. Anything deeper is internal.
+    regex: "^@deck/(?!(sdk|ui)$|sdk/testing$)",
+    message: `[MOD-005] @deck 패키지의 내부 경로를 import하지 않아요. 공개 진입점만 써요. ${MODULES_SPEC}`,
+  },
+  {
+    regex: String.raw`(^|/)(apps|packages|modules)/|^\.\./\.\./`,
+    message: `[MOD-005] 모듈 밖의 파일을 상대 경로로 import하지 않아요. ${MODULES_SPEC}`,
+  },
 ];
 
 export default defineConfig([

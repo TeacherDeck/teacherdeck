@@ -3,15 +3,20 @@
   "compilerOptions": {
     "allowJs": true,
     "checkJs": true,
-    "types": ["node"]
+    "types": ["node", "vite/client"],
+    "lib": ["es2024", "dom", "dom.iterable"],
+    "jsx": "react-jsx"
   },
   "include": [
     "tools/**/*",
     "fixtures/**/*",
-    "packages/*/src/generated/**/*",
-    "apps/desktop/src/generated/**/*",
+    "packages/*/src/**/*",
+    "apps/desktop/src/**/*",
+    "apps/desktop/*.ts",
+    "modules/*/src/**/*",
+    "modules/*/*.ts",
     "eslint.config.js",
     "vitest.config.ts"
   ],
-  "exclude": ["tools/checks/__tests__/violations/**", "node_modules"]
+  "exclude": ["tools/checks/__tests__/violations/**", "modules/_template/**", "node_modules"]
 }

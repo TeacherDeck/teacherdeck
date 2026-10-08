@@ -4,5 +4,6 @@ packages:
   - apps/*
   - packages/*
   - modules/*
+  - "!modules/_template"
 allowBuilds:
   lefthook: true
