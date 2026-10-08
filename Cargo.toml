@@ -12,6 +12,18 @@ rust-version = "1.98"
 license = "GPL-3.0-only"
 publish = false
 
+# Shared dependency versions. Adding a runtime dependency needs human approval (GEN-004).
+[workspace.dependencies]
+deck-core = { path = "crates/deck-core" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+semver = { version = "1.0.28", features = ["serde"] }
+schemars = { version = "1.2.2", features = ["semver1"] }
+ts-rs = { version = "12.0.1", features = ["semver-impl", "serde-json-impl"] }
+sha2 = "0.11.0"
+thiserror = "2.0.21"
+zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
 # Lint levels for all members (members opt in with `[lints] workspace = true`).
 # Do not relax these to make code pass (GEN-001, GEN-003).
 [workspace.lints.rust]

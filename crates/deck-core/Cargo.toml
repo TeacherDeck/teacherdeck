@@ -12,3 +12,13 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+semver.workspace = true
+schemars.workspace = true
+ts-rs.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+zip.workspace = true
