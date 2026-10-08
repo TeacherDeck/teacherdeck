@@ -90,3 +90,14 @@ describe("check-modules runtime validation", () => {
     expect(out.map((o) => o.message.split(":")[0])).toEqual(["entry", "requires.storage", "optional.window"]);
   }, 120_000);
 });
+
+describe("module version bumps (MOD-013)", () => {
+  it("requires a bump and changelog only for shipped changes of existing modules", async () => {
+    const { checkBumps } = await import("../../scripts/check-module-bumps.ts");
+    const rules = (d: Parameters<typeof checkBumps>[0]) => checkBumps(d).map((v) => v.rule);
+    expect(rules([{ id: "timer", changed: ["src/App.tsx"], baseVersion: "0.1.0", headVersion: "0.1.0" }])).toEqual(["MOD-013", "MOD-013"]);
+    expect(rules([{ id: "timer", changed: ["src/App.tsx", "CHANGELOG.md", "module.json"], baseVersion: "0.1.0", headVersion: "0.1.1" }])).toEqual([]);
+    expect(rules([{ id: "timer", changed: ["src/timer.test.ts"], baseVersion: "0.1.0", headVersion: "0.1.0" }])).toEqual([]);
+    expect(rules([{ id: "new-tool", changed: ["src/App.tsx"], baseVersion: null, headVersion: "0.1.0" }])).toEqual([]);
+  });
+});

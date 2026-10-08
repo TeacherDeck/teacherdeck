@@ -1,0 +1,13 @@
+{
+  "manifestVersion": 1,
+  "id": "sample-tool",
+  "name": "샘플",
+  "description": "storage만 선언하고 fs를 호출하는 위반 샘플",
+  "version": "0.1.0",
+  "category": "utility",
+  "icon": "icon.svg",
+  "entry": "index.html",
+  "authors": [{ "name": "홍길동" }],
+  "requires": { "storage": "^1.0" },
+  "optional": {}
+}

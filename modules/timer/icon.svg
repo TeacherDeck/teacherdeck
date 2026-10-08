@@ -1,0 +1,8 @@
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<!-- Additional terms: see LICENSE-ADDITIONAL-TERMS -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <rect x="4" y="4" width="40" height="40" rx="10" fill="#0f6cbd"/>
+  <circle cx="24" cy="26" r="12" fill="none" stroke="#ffffff" stroke-width="3"/>
+  <path d="M24 26V19" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+  <path d="M20 9h8" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+</svg>

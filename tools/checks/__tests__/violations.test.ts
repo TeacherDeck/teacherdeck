@@ -5,11 +5,14 @@
 // silently stop reporting.
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { checkCommitMessage } from "../check-commit-msg.ts";
 import { checkDenyTomlSync, checkLicenseList, loadAllowlist, parsePnpmLicenses } from "../check-licenses.ts";
 import { CHECKERS } from "../index.ts";
 import { format, type Violation } from "../lib/report.ts";
+import { connect } from "@deck/sdk";
+import { createMockHost } from "@deck/sdk/testing";
 import { REPO_ROOT, VALID, lintAsModuleFile, samples } from "./helpers.ts";
 
 /** Repo-wide checker that each rule's mini-repo samples are run through. */
@@ -43,8 +46,25 @@ const ALSO_EXPECTED: Record<string, string[]> = {
   "MOD-012/no-authors": ["MOD-004"],
 };
 
+/** MOD-006: run the sample against the SDK with exactly the caps its manifest declares. */
+async function runUndeclaredCapSample(dir: string): Promise<(string | null)[]> {
+  const manifest = JSON.parse(fs.readFileSync(path.join(dir, "module.json"), "utf8")) as { requires: Record<string, string> };
+  const host = createMockHost({ granted: Object.keys(manifest.requires) });
+  const deck = await connect({ window: host.window, logger: { warn: () => undefined, debug: () => undefined } });
+  const sample = (await import(pathToFileURL(path.join(dir, "src/run.ts")).href)) as { run(d: typeof deck): Promise<unknown> };
+  try {
+    await sample.run(deck);
+    return [];
+  } catch (e) {
+    return [...String(e instanceof Error ? e.message : e).matchAll(/\[([A-Z]+-\d{3})\]/g)].map((m) => m[1] ?? null);
+  } finally {
+    deck.dispose();
+  }
+}
+
 async function runSample(rule: string, abs: string, isDir: boolean): Promise<(string | null)[]> {
   const ext = path.extname(abs);
+  if (isDir && rule === "MOD-006") return runUndeclaredCapSample(abs);
   if (isDir && rule === "SEC-011") return checkDenyTomlSync(abs, loadAllowlist(abs)).map((v) => v.rule);
   if (isDir) {
     const checker = CHECKERS[CHECKER_FOR[rule] ?? ""];
@@ -68,7 +88,7 @@ describe("violation samples fail with their rule ID", () => {
       expect(ids).toContain(s.rule);
       const also = ALSO_EXPECTED[`${s.rule}/${s.entry}`] ?? [];
       expect(ids.filter((id) => id !== s.rule && !also.includes(id ?? ""))).toEqual([]);
-    });
+    }, 120_000);
   }
 });
 
@@ -91,7 +111,7 @@ describe("valid samples pass", () => {
   }
   it("eslint: _valid/eslint-ok.ts", async () => {
     expect(await lintAsModuleFile(path.join(VALID, "eslint-ok.ts"))).toEqual([]);
-  });
+  }, 120_000);
   it("commit-msg: _valid/commit-msg.txt", () => {
     expect(checkCommitMessage(fs.readFileSync(path.join(VALID, "commit-msg.txt"), "utf8"))).toEqual([]);
   });

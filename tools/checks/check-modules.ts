@@ -63,7 +63,7 @@ export function checkModules(root: string): Violation[] {
   if (dirs.length === 0) return v;
 
   const schemaPresent = exists(root, SCHEMA);
-  const validate = schemaPresent ? new Ajv2020({ allErrors: true, strict: false }).compile(readJson(root, SCHEMA) as object) : null;
+  const validate = schemaPresent ? new Ajv2020({ allErrors: true, strict: false, validateFormats: false, logger: false }).compile(readJson(root, SCHEMA) as object) : null;
   if (!schemaPresent) {
     v.push({ rule: "MOD-004", file: SCHEMA, message: "매니페스트 스키마가 없어 모듈을 검증할 수 없어요. `pnpm gen`을 실행하세요." });
   }

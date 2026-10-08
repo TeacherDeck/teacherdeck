@@ -1,0 +1,14 @@
+{
+  "$schema": "../../schema/module.schema.json",
+  "manifestVersion": 1,
+  "id": "__MODULE_ID__",
+  "name": "__MODULE_NAME__",
+  "description": "TODO: 이 도구가 하는 일을 한 줄로 써요(80자 이하).",
+  "version": "0.1.0",
+  "category": "__CATEGORY__",
+  "icon": "icon.svg",
+  "entry": "index.html",
+  "authors": [{ "name": "__AUTHOR__" }],
+  "requires": {},
+  "optional": {}
+}

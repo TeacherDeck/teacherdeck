@@ -1,0 +1,15 @@
+{
+  "$schema": "../../schema/module.schema.json",
+  "manifestVersion": 1,
+  "id": "timer",
+  "name": "타이머",
+  "description": "수업 시간을 크게 보여 주는 타이머예요. 발표 모드와 프리셋을 지원해요.",
+  "version": "0.1.0",
+  "category": "classroom",
+  "icon": "icon.svg",
+  "entry": "index.html",
+  "authors": [{ "name": "신민성", "github": "banatic" }],
+  "requires": { "storage": "^1.0", "window": "^1.0" },
+  "optional": {},
+  "ui": { "keepAlive": true }
+}
