@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Additional terms: see LICENSE-ADDITIONAL-TERMS
+# Git hooks (installed by `pnpm install`). Full checks run in `pnpm verify` and CI (CI-005).
+
+pre-commit:
+  jobs:
+    - name: verify-fast
+      run: node tools/scripts/verify.ts --fast
+    - name: gitleaks
+      run: node tools/scripts/gitleaks.ts
+
+commit-msg:
+  jobs:
+    - name: conventional-commits-dco
+      run: node tools/checks/cli.ts commit-msg {1}
