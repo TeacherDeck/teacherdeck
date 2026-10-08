@@ -1,0 +1,45 @@
+{
+  "name": "teacherdeck",
+  "version": "0.0.0",
+  "private": true,
+  "description": "교사용 Windows 도구 덱",
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "packageManager": "pnpm@12.10.1",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "gen": "node tools/scripts/gen.ts",
+    "verify": "node tools/scripts/verify.ts",
+    "verify:fast": "node tools/scripts/verify.ts --fast",
+    "lint": "eslint . --max-warnings 0 --format ./tools/eslint-plugin-deck/formatter.js",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "format": "prettier --write .",
+    "sync-versions": "node tools/scripts/sync-versions.ts",
+    "check:gen": "node tools/checks/cli.ts gen",
+    "check:modules": "node tools/checks/cli.ts modules",
+    "check:spdx": "node tools/checks/cli.ts spdx",
+    "check:versions": "node tools/checks/cli.ts versions",
+    "check:docs": "node tools/checks/cli.ts docs",
+    "check:security": "node tools/checks/cli.ts security",
+    "check:licenses": "node tools/checks/cli.ts licenses",
+    "check:suppressions": "node tools/checks/cli.ts suppressions",
+    "synthetic": "node fixtures/synthetic/generate.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/estree": "1.0.9",
+    "@types/node": "24.19.1",
+    "@vitest/eslint-plugin": "1.6.27",
+    "ajv": "8.20.0",
+    "eslint": "10.12.0",
+    "lefthook": "2.1.17",
+    "prettier": "3.9.9",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.1",
+    "vitest": "5.0.3",
+    "yaml": "2.9.1"
+  }
+}
