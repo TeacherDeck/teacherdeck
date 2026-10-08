@@ -1,6 +1,6 @@
 # ADR-0005: GPL-3.0-only + 제7조(b) 저자 표기 유지, 외부 기여는 DCO
 
-- 상태: 승인됨 (의존성 라이선스 allowlist는 확정 대기)
+- 상태: 승인됨
 - 날짜: 2026-10-08
 - 결정자: 신민성, 정영주
 
@@ -16,9 +16,9 @@
 - 외부 기여는 CLA 대신 DCO(`Signed-off-by`)로 받는다(GEN-009).
 - 프로젝트 이름·로고는 GPL 대상이 아니며 상표 정책을 따로 둔다(`TRADEMARK.md`).
 
-## 의존성 라이선스 allowlist (초안)
+## 의존성 라이선스 allowlist
 
-`TODO(human)`: 아래 초안을 확정해 주세요. 목록에 없는 라이선스는 사람 승인이 필요하다(GEN-004).
+2026-10-09 확정: 아래 목록에서 LGPL을 뺀 나머지를 허용한다. 목록에 없는 라이선스는 사람 승인이 필요하다(GEN-004).
 
 | 라이선스 | 비고 |
 |---|---|
@@ -27,9 +27,9 @@
 | Unicode-3.0, CC0-1.0 | |
 | MPL-2.0 | 파일 단위 copyleft. GPL-3.0과 호환된다. |
 | OFL-1.1 | 폰트 전용(Pretendard) |
-| LGPL-2.1, LGPL-3.0 | 동적 링크 조건. **Rust 크레이트는 정적 링크가 기본이므로 사실상 npm/별도 프로세스에만 해당한다.** 확정 시 범위를 정해야 한다. |
+| ~~LGPL-2.1, LGPL-3.0~~ | **제외(2026-10-09 확정).** Rust는 정적 링크가 기본이라 동적 링크 조건을 지키기 어렵다. 필요하면 패키지 단위 예외로 따로 승인한다. |
 
-허용 목록은 `tools/checks/licenses.allow.json`(npm)과 `deny.toml`(Rust)에 같은 내용으로 둔다. 목록 밖 라이선스는 패키지 단위 예외로만 허용하며, 승인 사유를 `licenses.allow.json`의 `packages`에 기록한다. 예: `minimatch`(BlueOak-1.0.0, ESLint 개발 도구 전용, 2026-10-08 승인).
+허용 목록은 `tools/checks/licenses.allow.json`(npm)과 `deny.toml`(Rust)에 같은 내용으로 둔다. 목록 밖 라이선스는 패키지 단위 예외로만 허용하며, 승인 사유를 `licenses.allow.json`의 `packages`에 기록한다. 예: `minimatch`(BlueOak-1.0.0, ESLint 개발 도구 전용, 2026-10-08 승인), `@csstools/color-helpers`·`@csstools/css-syntax-patches-for-csstree`(MIT-0)·`lru-cache`(BlueOak-1.0.0)(jsdom 테스트 환경 전용, 2026-10-09 승인).
 
 ## 결과
 
