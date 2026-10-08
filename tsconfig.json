@@ -5,6 +5,13 @@
     "checkJs": true,
     "types": ["node"]
   },
-  "include": ["tools/**/*", "fixtures/**/*", "eslint.config.js", "vitest.config.ts"],
+  "include": [
+    "tools/**/*",
+    "fixtures/**/*",
+    "packages/*/src/generated/**/*",
+    "apps/desktop/src/generated/**/*",
+    "eslint.config.js",
+    "vitest.config.ts"
+  ],
   "exclude": ["tools/checks/__tests__/violations/**", "node_modules"]
 }

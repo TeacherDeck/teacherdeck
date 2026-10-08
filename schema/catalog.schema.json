@@ -1,0 +1,102 @@
+{
+  "$comment": "생성물: `pnpm gen`(crates/deck-codegen). 손으로 고치지 마세요(GEN-006).",
+  "$defs": {
+    "IndexEntry": {
+      "additionalProperties": false,
+      "description": "One published version of a module.",
+      "properties": {
+        "optional": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Same as the manifest `optional` of this version.",
+          "type": "object"
+        },
+        "requires": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Same as the manifest `requires` of this version.",
+          "type": "object"
+        },
+        "revoked": {
+          "description": "Revoked versions are never resolved.",
+          "type": "boolean"
+        },
+        "sha256": {
+          "description": "SHA-256 of the `.deckmod` package (lowercase hex).",
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "size": {
+          "description": "Package size in bytes.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "url": {
+          "description": "Package location relative to the index, e.g. `timer/0.1.0/`.",
+          "type": "string"
+        },
+        "version": {
+          "$ref": "#/$defs/SemVer",
+          "description": "Module version."
+        }
+      },
+      "required": [
+        "version",
+        "requires",
+        "optional",
+        "sha256",
+        "size",
+        "url",
+        "revoked"
+      ],
+      "type": "object"
+    },
+    "SemVer": {
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`index.json`.",
+  "properties": {
+    "format": {
+      "description": "Index format version. Currently 1.",
+      "format": "uint32",
+      "maximum": 1,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "generatedAt": {
+      "description": "RFC 3339 timestamp of generation.",
+      "type": "string"
+    },
+    "modules": {
+      "additionalProperties": {
+        "items": {
+          "$ref": "#/$defs/IndexEntry"
+        },
+        "type": "array"
+      },
+      "description": "Module id → published versions.",
+      "type": "object"
+    },
+    "seq": {
+      "description": "Monotonically increasing sequence number (rollback protection).",
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "format",
+    "seq",
+    "generatedAt",
+    "modules"
+  ],
+  "title": "TeacherDeck module index",
+  "type": "object"
+}

@@ -1,0 +1,172 @@
+{
+  "$comment": "생성물: `pnpm gen`(crates/deck-codegen). 손으로 고치지 마세요(GEN-006).",
+  "$defs": {
+    "Author": {
+      "additionalProperties": false,
+      "description": "A module author (MOD-012).",
+      "properties": {
+        "github": {
+          "description": "GitHub handle without `@`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Display name.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "Category": {
+      "description": "Tool category shown in the shell navigation. Adding one is a spec change.",
+      "oneOf": [
+        {
+          "const": "classroom",
+          "description": "Classroom tools (timer, seating, groups).",
+          "type": "string"
+        },
+        {
+          "const": "file",
+          "description": "File tools (rename, organize).",
+          "type": "string"
+        },
+        {
+          "const": "image",
+          "description": "Image tools.",
+          "type": "string"
+        },
+        {
+          "const": "document",
+          "description": "Document tools (PDF, office formats).",
+          "type": "string"
+        },
+        {
+          "const": "utility",
+          "description": "Everything else.",
+          "type": "string"
+        }
+      ]
+    },
+    "SemVer": {
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$",
+      "type": "string"
+    },
+    "UiOptions": {
+      "additionalProperties": false,
+      "description": "Module UI options.",
+      "properties": {
+        "keepAlive": {
+          "default": false,
+          "description": "Keep the iframe alive (hidden) when switching screens (max 3, LRU).",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`module.json`. Unknown fields are rejected (MOD-004).",
+  "properties": {
+    "$schema": {
+      "description": "Editor hint only; ignored by the host.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "authors": {
+      "description": "Authors; at least one (MOD-012).",
+      "items": {
+        "$ref": "#/$defs/Author"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "category": {
+      "$ref": "#/$defs/Category",
+      "description": "Navigation category."
+    },
+    "description": {
+      "description": "One-line description, at most 80 characters.",
+      "maxLength": 80,
+      "minLength": 1,
+      "type": "string"
+    },
+    "entry": {
+      "description": "Package-relative HTML entry path.",
+      "type": "string"
+    },
+    "icon": {
+      "description": "Package-relative SVG icon path.",
+      "type": "string"
+    },
+    "id": {
+      "description": "Module id (MOD-002). Equals the directory name; never changes after release.",
+      "pattern": "^[a-z][a-z0-9-]{1,30}[a-z0-9]$",
+      "type": "string"
+    },
+    "manifestVersion": {
+      "description": "Manifest format version. Currently 1.",
+      "format": "uint32",
+      "maximum": 1,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "name": {
+      "description": "User-facing name (Korean).",
+      "minLength": 1,
+      "type": "string"
+    },
+    "optional": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Optional capabilities and semver ranges (MOD-007).",
+      "type": "object"
+    },
+    "requires": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Required capabilities and semver ranges.",
+      "type": "object"
+    },
+    "ui": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/UiOptions"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "UI options."
+    },
+    "version": {
+      "$ref": "#/$defs/SemVer",
+      "description": "Module semver (VER-004)."
+    }
+  },
+  "required": [
+    "manifestVersion",
+    "id",
+    "name",
+    "description",
+    "version",
+    "category",
+    "icon",
+    "entry",
+    "authors",
+    "requires",
+    "optional"
+  ],
+  "title": "TeacherDeck module manifest",
+  "type": "object"
+}
