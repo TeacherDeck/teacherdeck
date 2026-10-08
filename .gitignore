@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+target/
+*.tsbuildinfo
+apps/desktop/src-tauri/resources/modules/
+*.deckmod
+
+# Test / coverage
+coverage/
+.vitest-cache/
+
+# Secrets (SEC-009)
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.pfx
+*.p12
+
+# Logs
+*.log
+logs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Claude Code local settings (shared settings.json is tracked)
+.claude/settings.local.json
