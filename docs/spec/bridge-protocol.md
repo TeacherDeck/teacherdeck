@@ -29,7 +29,7 @@ type ErrorCode =
 type ThemePayload = { mode: "light" | "dark"; mica: boolean; tokens: Record<string, string> };
 ```
 
-- `ErrorCode`와 캡 인자·결과 타입의 원천은 Rust다. TS 타입은 `pnpm gen`이 `packages/sdk/src/generated/`에 생성한다(Phase 3·4에서 구현). 위 블록은 설명용이며, 생성물과 다르면 이 문서를 고치는 것이 아니라 DOC-002 절차를 밟는다.
+- `ErrorCode`와 캡 인자·결과 타입의 원천은 Rust다. TS 타입은 `pnpm gen`이 `packages/sdk/src/generated/`에 생성한다(`ErrorCode`, `DeckError`는 deck-core의 `error.rs`가 원천이다. 캡 인자·결과 타입은 Phase 4에서 추가한다). 위 블록은 설명용이며, 생성물과 다르면 이 문서를 고치는 것이 아니라 DOC-002 절차를 밟는다.
 - `granted`는 매니페스트의 `requires`·`optional` 중 호스트가 실제로 만족시키는 캡 목록이다.
 - 셸은 모듈 요청을 검증한 뒤 Rust 커맨드 `host_invoke(module_id, cap, method, args)`로 넘긴다. `module_id`는 iframe 매핑으로 셸이 정한다(BRG-001).
 

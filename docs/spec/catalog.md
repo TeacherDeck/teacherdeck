@@ -42,9 +42,10 @@
 - zip 형식이다.
 - 루트에 `module.json`, entry, 에셋, `SHA256SUMS`를 둔다.
 - `SHA256SUMS`는 자기 자신을 제외한 모든 파일의 SHA-256을 담는다. 형식은 `sha256sum` 출력(`<hex>  <상대경로>`)이다.
-- 최대 20MB(압축 해제 후 기준은 Phase 3에서 확정)다.
+- 패키지는 최대 20MB, 압축을 푼 합계는 최대 50MB다. 1MB를 넘는 파일의 압축률이 100배를 넘으면 압축 폭탄으로 보고 거부한다([ADR-0009](../adr/0009-core-resolution-and-package-rules.md)).
+- 암호화된 엔트리와, 대소문자만 다른 같은 경로(Windows에서 충돌)를 거부한다.
 - 절대 경로, `..`, 심볼릭 링크를 담은 엔트리를 거부한다.
-- 설치 시 zip-slip·크기·`SHA256SUMS`를 검증한다(SEC-006). `pnpm pack:module`이 생성한다(Phase 6에서 구현).
+- 설치 시 zip-slip·크기·`SHA256SUMS`를 검증한다(SEC-006). 검증기는 deck-core `package.rs`다. 패키지는 `pnpm pack:module`이 생성한다(Phase 6에서 구현).
 
 ## 3. 서빙
 

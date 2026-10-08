@@ -18,7 +18,7 @@ CI는 로컬과 같은 명령을 쓴다(CI-005). 모든 검사기는 다음 형�
 | `test` | vitest (sdk, ui, shell, modules, tools/checks 자체 테스트) | MOD-015, BRG-001~009 |
 | `cargo` | `fmt --check`, `clippy --workspace -- -D warnings`, `test --workspace` | GEN-003, CAP-009 |
 | `cargo deny check` | licenses, bans, advisories, sources | SEC-011, GEN-004 |
-| `check-modules` | 스키마, 필수 파일, id = 디렉터리명, authors, CHANGELOG, 테스트 존재 | MOD-001~004, MOD-012, MOD-013, MOD-015 |
+| `check-modules` | 스키마, 호스트와 같은 Rust 매니페스트 검증, 필수 파일, id = 디렉터리명, authors, CHANGELOG, 테스트 존재 | MOD-001~004, MOD-012, MOD-013, MOD-015 |
 | `check-spdx` | 소스 파일 SPDX 헤더 | GEN-008 |
 | `check-versions` | 앱 버전 동기화 | VER-001 |
 | `check-docs` | AGENTS.md ↔ CLAUDE.md 쌍, 규칙 ID 정의 유일성, 참조된 ID 존재, 상대 링크 유효, 루트 AGENTS.md 200줄 이하 | DOC-004, MOD-016 |

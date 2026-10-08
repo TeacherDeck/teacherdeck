@@ -29,7 +29,7 @@
 
 ## 3. 호환성 해석 알고리즘
 
-deck-core의 순수 함수로 구현한다(VER-005, Phase 3에서 구현).
+deck-core의 순수 함수(`resolver.rs`)로 구현한다(VER-005).
 
 ```
 입력: 호스트 캡 버전 맵 H, 모듈 id별 후보 버전 목록 C(id) (출처: bundled | installed | catalog)
@@ -50,9 +50,12 @@ semver 매칭은 semver 크레이트 VersionReq 사용. prerelease는 명시적�
 
 - H에 없는 캡(미등록 캡)은 어떤 범위도 만족하지 않는다. `requires`에 있으면 그 후보는 탈락하고, `optional`에 있으면 미충족 목록에 들어간다.
 - `requires`가 비어 있으면 모든 H에서 만족한다.
-- 결정 대기 항목(Phase 3 전에 확정 필요):
-  - `TODO(human)`: NeedsAppUpdate일 때 "최소 필요 캡 버전"을 어느 후보 기준으로 보고할지. 제안은 `cands[0]`(최신 유효 후보)의 미충족 requires다.
-  - `TODO(human)`: 같은 버전이 여러 출처에 있을 때의 우선순위. 제안은 installed > bundled > catalog다(로컬 우선, 다운로드 회피). 같은 버전인데 sha256이 다르면 그 버전을 Invalid로 본다.
+- "최소 필요 캡 버전"은 최신 유효 후보(`cands[0]`)의 미충족 requires로 보고한다. NewerNeedsAppUpdate일 때도 같은 목록으로 "앱을 업데이트하면 무엇이 되는지"를 안내한다([ADR-0009](../adr/0009-core-resolution-and-package-rules.md)).
+- 같은 버전이 여러 출처에 있으면 하나로 합친다.
+  - 출처 우선순위: installed > bundled > catalog
+  - 한 출처라도 revoked면 그 버전은 revoked다.
+  - sha256이 서로 다르면 그 버전은 Invalid다.
+- 버전 범위를 해석할 수 없는 후보는 Invalid로 본다.
 
 ### UI 배지
 
@@ -72,5 +75,5 @@ semver 매칭은 semver 크레이트 VersionReq 사용. prerelease는 명시적�
 - **VER-002** [MUST] 캡 버전은 Rust 레지스트리 상수가 원천이다. — 강제: `check-gen`(레지스트리 생성기는 Phase 4에서 구현)
 - **VER-003** [MUST] 앱 버전과 캡 버전은 독립이다. 앱 패치 릴리스는 캡 버전을 바꾸지 않는다. — 강제: [manual]
 - **VER-004** [MUST] 모듈 semver: 사용자에게 보이는 변경은 bump한다. `requires`를 올리면 최소 minor bump를 하고 CHANGELOG에 "필요 앱 버전"을 명시한다. — 강제: `check-modules`, CI diff(Phase 7에서 구현)
-- **VER-005** [MUST] 호환성 판정은 [3절](#3-호환성-해석-알고리즘) 알고리즘(deck-core의 순수 함수)으로만 한다. — 강제: 단위 테스트(Phase 3에서 구현)
+- **VER-005** [MUST] 호환성 판정은 [3절](#3-호환성-해석-알고리즘) 알고리즘(deck-core의 순수 함수)으로만 한다. — 강제: 단위 테스트(`resolver.rs` 테이블 테스트)
 - **VER-006** [MUST] SDK는 지원하는 브리지 프로토콜 버전과 자체 semver를 노출한다. — 강제: SDK 테스트(Phase 5에서 구현)

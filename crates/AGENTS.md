@@ -15,6 +15,27 @@
 | GEN-003 | `#[allow(...)]`, `#[ignore]`로 검사를 우회하지 않는다. | [process.md](../docs/spec/process.md#5-규칙) |
 | GEN-006 | 생성된 스키마·TS 타입을 손으로 고치지 않는다. 원천 타입을 고치고 `pnpm gen`을 실행한다. | 같은 문서 |
 
+## 크레이트 지도
+
+| 위치 | 내용 |
+|---|---|
+| `deck-core/src/manifest.rs` | `module.json` 모델과 검증 → `schema/module.schema.json` |
+| `deck-core/src/resolver.rs` | 호환성 해석기 (VER-005) |
+| `deck-core/src/catalog.rs` | `index.json` 모델, seq 검사 → `schema/catalog.schema.json` |
+| `deck-core/src/package.rs` | `.deckmod` 검증기, 크기 한도 `Limits` (SEC-006) |
+| `deck-core/src/handles.rs` | 핸들 테이블. 난수원은 호스트가 주입 (CAP-002) |
+| `deck-core/src/error.rs` | `ErrorCode`, `DeckError` → SDK TS 타입 |
+| `deck-codegen/` | 위 타입으로 스키마·TS를 만드는 생성기. `pnpm gen`이 실행 |
+
+의존성 버전은 루트 `Cargo.toml`의 `[workspace.dependencies]`에만 적고, 크레이트에서는 `xxx.workspace = true`로 쓴다.
+
+## 생성 타입 추가 절차
+
+1. deck-core에 타입을 정의하고 `Serialize, Deserialize, JsonSchema, TS`를 derive한다(CAP-006). 문서 주석을 단다. 주석은 스키마와 TS에 그대로 들어간다.
+2. `deck-codegen/src/main.rs`의 알맞은 그룹(SDK용 또는 셸용)에 `ts::<타입>`을 추가한다. 새 JSON 스키마는 `schema::<타입>`으로 추가한다.
+3. 같은 그룹 밖의 타입을 import하면 codegen이 실패한다. 의존 타입도 같은 그룹에 넣는다.
+4. `pnpm gen`을 실행하고 생성물을 함께 커밋한다(GEN-006). `check-gen`이 원천과 생성물이 다르면 실패한다.
+
 ## 작업 체크리스트
 
 - [ ] 모든 공개 함수에 단위 테스트가 있다(테스트 의무)

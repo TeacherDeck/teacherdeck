@@ -41,7 +41,7 @@
 - `additionalProperties: false`다. 카테고리나 필드를 추가하는 것은 스펙 변경이다(DOC-002, GEN-005).
 - `requires`·`optional`의 키는 레지스트리(`schema/capabilities.json`)에 있는 캡이어야 하며, 같은 캡이 양쪽에 동시에 올 수 없다.
 - `entry`·`icon`은 패키지 내부 상대 경로다. 절대 경로와 `..`를 허용하지 않는다.
-- 원천은 deck-core의 Rust 구조체(serde + schemars)이며 `schema/module.schema.json`은 생성물이다(Phase 3에서 생성).
+- 원천은 deck-core의 Rust 구조체(serde + schemars)이며 `schema/module.schema.json`은 생성물이다(deck-core `manifest.rs` → `pnpm gen`).
 
 ## 2. 모듈 구성
 
@@ -73,9 +73,9 @@ modules/<id>/
 ## 4. 규칙
 
 - **MOD-001** [MUST] 모듈은 `pnpm new:module <id>`로만 만든다. — 강제: `check-modules`(필수 구성·템플릿 마커)
-- **MOD-002** [MUST] id는 `^[a-z][a-z0-9-]{1,30}[a-z0-9]$`이고 디렉터리명과 같다. 최초 릴리스 후 변경하지 않는다. — 강제: 스키마(Phase 3에서 구현), `check-modules`
+- **MOD-002** [MUST] id는 `^[a-z][a-z0-9-]{1,30}[a-z0-9]$`이고 디렉터리명과 같다. 최초 릴리스 후 변경하지 않는다. — 강제: 스키마, `check-modules`
 - **MOD-003** [MUST] 필수 파일: `module.json`, `package.json`(name `@deck-module/<id>`, private), `index.html`, `src/main.tsx`, `icon.svg`, `CHANGELOG.md`. — 강제: `check-modules`
-- **MOD-004** [MUST] `module.json`은 `schema/module.schema.json`을 통과해야 하며, 스키마에 없는 필드를 쓰지 않는다. — 강제: 스키마 `additionalProperties: false`(Phase 3에서 구현)
+- **MOD-004** [MUST] `module.json`은 `schema/module.schema.json`을 통과해야 하며, 스키마에 없는 필드를 쓰지 않는다. — 강제: 스키마 `additionalProperties: false`, deck-core 매니페스트 검증
 - **MOD-005** [MUST NOT] import 허용 범위는 `@deck/sdk`, `@deck/ui`, 모듈 내부, 라이선스 검사를 통과한 의존성뿐이다. `@tauri-apps/*`, 다른 모듈, `apps/*`, 패키지 내부 경로는 import하지 않는다. — 강제: eslint `no-restricted-imports`
 - **MOD-006** [MUST] 호스트 기능은 `@deck/sdk`로만 호출하고, 호출하는 모든 캡을 `requires` 또는 `optional`에 선언한다. — 강제: SDK 런타임 거부(Phase 5에서 구현), 호스트 CAP-008(Phase 4에서 구현)
 - **MOD-007** [MUST] optional 캡은 `deck.has(cap)`로 확인한 뒤 사용하고, 없으면 `CapabilityGate`로 "앱 업데이트 후 사용 가능"을 표시한다. — 강제: SDK 미확인 호출 경고 로그(Phase 5에서 구현), [manual]
@@ -83,7 +83,7 @@ modules/<id>/
 - **MOD-009** [MUST NOT] 영속 데이터에 `localStorage`, `indexedDB`, `document.cookie`, `caches`를 쓰지 않는다. storage 캡만 쓴다. — 강제: eslint `deck/no-web-storage`
 - **MOD-010** [MUST] UI는 `@deck/ui`와 Fluent UI v9 컴포넌트·토큰만 쓴다(UI-001~003). — 강제: eslint
 - **MOD-011** [MUST] 파일을 일괄 처리하는 도구는 `ToolLayout` 골격을 따른다(UI-008). — 강제: [manual]
-- **MOD-012** [MUST] `authors`에 실제 기여자를 기록하고 기존 저자를 제거하지 않는다. — 강제: 스키마 `minItems: 1`(Phase 3에서 구현), [manual]
+- **MOD-012** [MUST] `authors`에 실제 기여자를 기록하고 기존 저자를 제거하지 않는다. — 강제: 스키마 `minItems: 1`, [manual]
 - **MOD-013** [MUST] 사용자에게 보이는 변경은 버전 bump와 모듈 CHANGELOG를 동반한다(VER-004). — 강제: `check-modules`(현재 버전의 CHANGELOG 항목), CI의 base 브랜치 대비 버전 비교(Phase 7에서 구현)
 - **MOD-014** [SHOULD NOT] 메인 스레드를 50ms 이상 막지 않는다. 무거운 연산은 Web Worker 또는 WASM으로 옮긴다. — 강제: [manual]
 - **MOD-015** [MUST] 순수 로직은 vitest 단위 테스트를, 호스트 연동은 SDK mock host 테스트를 갖춘다. — 강제: `check-modules`(테스트 파일 존재)

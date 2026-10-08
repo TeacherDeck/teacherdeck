@@ -82,9 +82,9 @@ Additional terms: see LICENSE-ADDITIONAL-TERMS
 | DOC-003 | MUST | 동작이 바뀌면 같은 변경에서 관련 AGENTS.md·spec·README를 갱신한다. | [manual] | [process.md](process.md) |
 | DOC-004 | MUST NOT | AGENTS.md와 skill 파일에 spec 본문을 복사하지 않는다. | `check-docs`(spec 문단 중복 탐지는 경고만 출력) | [process.md](process.md) |
 | MOD-001 | MUST | 모듈은 `pnpm new:module <id>`로만 만든다. | `check-modules`(필수 구성·템플릿 마커) | [modules.md](modules.md) |
-| MOD-002 | MUST | id는 `^[a-z][a-z0-9-]{1,30}[a-z0-9]$`이고 디렉터리명과 같다. | 스키마(Phase 3에서 구현), `check-modules` | [modules.md](modules.md) |
+| MOD-002 | MUST | id는 `^[a-z][a-z0-9-]{1,30}[a-z0-9]$`이고 디렉터리명과 같다. | 스키마, `check-modules` | [modules.md](modules.md) |
 | MOD-003 | MUST | 필수 파일: `module.json`, `package.json`(name `@deck-module/<id>`, private), `index.html`, `src/main.tsx`, `icon.svg`, `CHANGELOG.md`. | `check-modules` | [modules.md](modules.md) |
-| MOD-004 | MUST | `module.json`은 `schema/module.schema.json`을 통과해야 하며, 스키마에 없는 필드를 쓰지 않는다. | 스키마 `additionalProperties: false`(Phase 3에서 구현) | [modules.md](modules.md) |
+| MOD-004 | MUST | `module.json`은 `schema/module.schema.json`을 통과해야 하며, 스키마에 없는 필드를 쓰지 않는다. | 스키마 `additionalProperties: false`, deck-core 매니페스트 검증 | [modules.md](modules.md) |
 | MOD-005 | MUST NOT | import 허용 범위는 `@deck/sdk`, `@deck/ui`, 모듈 내부, 라이선스 검사를 통과한 의존성뿐이다. | eslint `no-restricted-imports` | [modules.md](modules.md) |
 | MOD-006 | MUST | 호스트 기능은 `@deck/sdk`로만 호출하고, 호출하는 모든 캡을 `requires` 또는 `optional`에 선언한다. | SDK 런타임 거부(Phase 5에서 구현), 호스트 CAP-008(Phase 4에서 구현) | [modules.md](modules.md) |
 | MOD-007 | MUST | optional 캡은 `deck.has(cap)`로 확인한 뒤 사용하고, 없으면 `CapabilityGate`로 "앱 업데이트 후 사용 가능"을 표시한다. | SDK 미확인 호출 경고 로그(Phase 5에서 구현), [manual] | [modules.md](modules.md) |
@@ -92,7 +92,7 @@ Additional terms: see LICENSE-ADDITIONAL-TERMS
 | MOD-009 | MUST NOT | 영속 데이터에 `localStorage`, `indexedDB`, `document.cookie`, `caches`를 쓰지 않는다. | eslint `deck/no-web-storage` | [modules.md](modules.md) |
 | MOD-010 | MUST | UI는 `@deck/ui`와 Fluent UI v9 컴포넌트·토큰만 쓴다(UI-001~003). | eslint | [modules.md](modules.md) |
 | MOD-011 | MUST | 파일을 일괄 처리하는 도구는 `ToolLayout` 골격을 따른다(UI-008). | [manual] | [modules.md](modules.md) |
-| MOD-012 | MUST | `authors`에 실제 기여자를 기록하고 기존 저자를 제거하지 않는다. | 스키마 `minItems: 1`(Phase 3에서 구현), [manual] | [modules.md](modules.md) |
+| MOD-012 | MUST | `authors`에 실제 기여자를 기록하고 기존 저자를 제거하지 않는다. | 스키마 `minItems: 1`, [manual] | [modules.md](modules.md) |
 | MOD-013 | MUST | 사용자에게 보이는 변경은 버전 bump와 모듈 CHANGELOG를 동반한다(VER-004). | `check-modules`(현재 버전의 CHANGELOG 항목), CI의 base 브랜치 대비 버전 비교(Phase 7에서 구현) | [modules.md](modules.md) |
 | MOD-014 | SHOULD NOT | 메인 스레드를 50ms 이상 막지 않는다. | [manual] | [modules.md](modules.md) |
 | MOD-015 | MUST | 순수 로직은 vitest 단위 테스트를, 호스트 연동은 SDK mock host 테스트를 갖춘다. | `check-modules`(테스트 파일 존재) | [modules.md](modules.md) |
@@ -102,7 +102,7 @@ Additional terms: see LICENSE-ADDITIONAL-TERMS
 | CAP-003 | MUST NOT | 대용량 바이너리(>1MB)를 브리지로 보내지 않는다. | 브리지 크기 제한 BRG-007(Phase 5에서 구현) | [capabilities.md](capabilities.md) |
 | CAP-004 | MUST | 버전 규칙: 메서드·선택 인자·결과 필드 추가는 minor, 그 외는 major다. | [manual], 레지스트리 diff 리뷰 | [capabilities.md](capabilities.md) |
 | CAP-005 | MUST | 새 캡이나 major 변경은 사람 승인을 받는다(GEN-005). | 훅(레지스트리 생성물 보호)(Phase 7에서 구현), [manual] | [capabilities.md](capabilities.md) |
-| CAP-006 | MUST | 모든 메서드 인자·결과는 Rust 구조체로 정의하고 ts-rs로 TS 타입을 export한다. | `check-gen`(ts-rs 생성기는 Phase 3·4에서 구현) | [capabilities.md](capabilities.md) |
+| CAP-006 | MUST | 모든 메서드 인자·결과는 Rust 구조체로 정의하고 ts-rs로 TS 타입을 export한다. | `check-gen`(캡 타입 생성은 Phase 4에서 구현) | [capabilities.md](capabilities.md) |
 | CAP-007 | MUST | 에러는 `ErrorCode` enum과 메시지로 반환하며, 메시지에 경로·파일명·사용자 데이터를 넣지 않는다(PRV-003). | 테스트(Phase 4에서 구현), [manual] | [capabilities.md](capabilities.md) |
 | CAP-008 | MUST | 모듈 권한 검사(설치·활성 여부, 선언 캡, 버전)는 Rust에서 매 호출마다 수행한다. | 권한 거부 테스트(Phase 4에서 구현) | [capabilities.md](capabilities.md) |
 | CAP-009 | MUST | 각 캡은 정상·권한 거부·잘못된 인자 테스트를 갖춘다. | [manual] 리뷰, 커버리지 보고(Phase 4에서 구현) | [capabilities.md](capabilities.md) |
@@ -120,7 +120,7 @@ Additional terms: see LICENSE-ADDITIONAL-TERMS
 | VER-002 | MUST | 캡 버전은 Rust 레지스트리 상수가 원천이다. | `check-gen`(레지스트리 생성기는 Phase 4에서 구현) | [versioning.md](versioning.md) |
 | VER-003 | MUST | 앱 버전과 캡 버전은 독립이다. | [manual] | [versioning.md](versioning.md) |
 | VER-004 | MUST | 모듈 semver: 사용자에게 보이는 변경은 bump한다. | `check-modules`, CI diff(Phase 7에서 구현) | [versioning.md](versioning.md) |
-| VER-005 | MUST | 호환성 판정은 3절 알고리즘(deck-core의 순수 함수)으로만 한다. | 단위 테스트(Phase 3에서 구현) | [versioning.md](versioning.md) |
+| VER-005 | MUST | 호환성 판정은 3절 알고리즘(deck-core의 순수 함수)으로만 한다. | 단위 테스트(`resolver.rs` 테이블 테스트) | [versioning.md](versioning.md) |
 | VER-006 | MUST | SDK는 지원하는 브리지 프로토콜 버전과 자체 semver를 노출한다. | SDK 테스트(Phase 5에서 구현) | [versioning.md](versioning.md) |
 | UI-001 | MUST NOT | Fluent UI React v9 외의 컴포넌트 라이브러리를 추가하지 않는다. | eslint `no-restricted-imports`, GEN-004 | [design-system.md](design-system.md) |
 | UI-002 | MUST NOT | 색·간격·반경·그림자·폰트 패밀리를 하드코딩하지 않는다. | eslint `deck/no-raw-style-values` | [design-system.md](design-system.md) |
@@ -142,11 +142,11 @@ Additional terms: see LICENSE-ADDITIONAL-TERMS
 | SEC-003 | MUST | Tauri ACL은 셸 메인 창에만, 최소 권한으로 준다. | `check-security` | [security.md](security.md) |
 | SEC-004 | MUST | 모듈 origin에서 Tauri IPC에 접근할 수 없어야 하며, 이를 검증하는 테스트나 절차를 유지한다. | 검증 절차 문서화(Phase 4에서 구현) | [security.md](security.md) |
 | SEC-005 | MUST | `deckmod` 프로토콜은 정규화 후 해당 모듈 루트 하위만 서빙한다. | 프로토콜 테스트(Phase 4에서 구현) | [security.md](security.md) |
-| SEC-006 | MUST | 패키지 설치 시 zip-slip·크기·SHA256SUMS를 검증하고, 원격 카탈로그 도입 시 서명 검증을 추가한다. | deck-core 테스트(Phase 3에서 구현) | [security.md](security.md) |
+| SEC-006 | MUST | 패키지 설치 시 zip-slip·크기·SHA256SUMS를 검증하고, 원격 카탈로그 도입 시 서명 검증을 추가한다. | deck-core `package.rs` 테스트 | [security.md](security.md) |
 | SEC-007 | MUST | 릴리스 빌드에서 devtools를 비활성화한다. | `check-security` | [security.md](security.md) |
 | SEC-008 | MUST | updater는 서명을 검증하고, 자동 재시작하지 않는다(사용자 동의 후 적용). | 코드 리뷰 | [security.md](security.md) |
 | SEC-009 | MUST NOT | 비밀값(키, 토큰)을 레포에 두지 않는다. | gitleaks lefthook, GitHub push protection(사람 설정), `.claude` deny(Phase 7에서 구현) | [security.md](security.md) |
-| SEC-010 | MUST | deck-core는 `#![forbid(unsafe_code)]`를 둔다. | 컴파일러(Phase 3에서 구현), [manual] | [security.md](security.md) |
+| SEC-010 | MUST | deck-core는 `#![forbid(unsafe_code)]`를 둔다. | 컴파일러, [manual] | [security.md](security.md) |
 | SEC-011 | MUST | 의존성 라이선스·보안 권고 검사를 통과한다. | cargo-deny, npm license check | [security.md](security.md) |
 | CI-001 | MUST NOT | `pull_request_target`를 쓰지 않는다. | `check-security` workflow 스캔 | [ci.md](ci.md) |
 | CI-002 | MUST | 모든 action은 전체 커밋 SHA로 고정하고 버전 주석을 단다. | `check-security` | [ci.md](ci.md) |

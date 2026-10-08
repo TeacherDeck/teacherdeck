@@ -29,6 +29,7 @@ AGENTS.md, CLAUDE.md          루트 지침 (이 파일)
 apps/desktop/src/             셸 (React)
 apps/desktop/src-tauri/       호스트 (Rust): caps/, protocol.rs, bridge.rs, capabilities/(ACL)
 crates/deck-core/             순수 Rust 로직 (Tauri 의존 금지)
+crates/deck-codegen/          deck-core 타입 → 스키마·TS 생성기 (`pnpm gen`)
 packages/sdk/                 @deck/sdk: 모듈용 브리지 클라이언트
 packages/ui/                  @deck/ui: Fluent 기반 공통 컴포넌트
 modules/_template/, timer/    모듈 템플릿, 레퍼런스 모듈
@@ -41,7 +42,7 @@ docs/spec/                    규범 문서 (규칙 정의)
 docs/adr/                     아키텍처 결정 기록
 ```
 
-아직 없는 디렉터리(셸, 호스트, SDK, UI, 모듈)는 부트스트랩 Phase 3~6에서 생긴다.
+아직 없는 디렉터리(셸, 호스트, SDK, UI, 모듈)는 부트스트랩 Phase 4~6에서 생긴다. `generated/` 디렉터리만 먼저 있다.
 
 ## 작업별 필독 문서
 
@@ -119,7 +120,7 @@ docs/adr/                     아키텍처 결정 기록
 |---|---|
 | `pnpm verify` | 전체 검증(CI와 같음). 완료 전 필수 |
 | `pnpm verify:fast` | lint + typecheck + check-modules (pre-commit) |
-| `pnpm gen` | 생성물 갱신(규칙 인덱스, Phase 3부터 스키마·TS 타입) |
+| `pnpm gen` | 생성물 갱신(규칙 인덱스, JSON 스키마, TS 타입) |
 | `pnpm check:<이름>` | 검사기 하나만 실행(gen, modules, spdx, versions, docs, security, licenses, suppressions) |
 | `pnpm sync-versions` | 앱 버전을 Cargo.toml에 반영 (VER-001) |
 | `pnpm synthetic` | 합성 테스트 데이터 생성 (PRV-004) |
