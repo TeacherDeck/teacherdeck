@@ -1,0 +1,16 @@
+{
+  "build": {
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "devtools": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'"
+    }
+  }
+}

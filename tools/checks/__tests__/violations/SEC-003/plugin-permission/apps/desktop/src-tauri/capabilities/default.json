@@ -1,0 +1,13 @@
+{
+  "identifier": "default",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "fs:default",
+    {
+      "identifier": "shell:allow-open"
+    }
+  ]
+}

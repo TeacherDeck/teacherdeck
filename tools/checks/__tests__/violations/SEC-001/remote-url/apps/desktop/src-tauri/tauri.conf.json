@@ -1,0 +1,16 @@
+{
+  "build": {
+    "frontendDist": "https://example.com"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "url": "https://example.com"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'"
+    }
+  }
+}

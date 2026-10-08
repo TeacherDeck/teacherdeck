@@ -1,0 +1,17 @@
+{
+  "manifestVersion": 1,
+  "id": "Bad_Id",
+  "name": "샘플",
+  "description": "검사기 테스트용 샘플 모듈",
+  "version": "0.1.0",
+  "category": "utility",
+  "icon": "icon.svg",
+  "entry": "index.html",
+  "authors": [
+    {
+      "name": "홍길동"
+    }
+  ],
+  "requires": {},
+  "optional": {}
+}

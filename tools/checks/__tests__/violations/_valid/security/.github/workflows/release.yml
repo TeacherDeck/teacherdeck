@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Additional terms: see LICENSE-ADDITIONAL-TERMS
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+jobs:
+  release:
+    runs-on: windows-latest
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567 # v5.0.0
+      - run: pnpm tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}

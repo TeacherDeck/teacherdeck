@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "file": "src/lib.rs",
+      "pattern": "#[allow(dead_code)]",
+      "reason": ""
+    }
+  ]
+}

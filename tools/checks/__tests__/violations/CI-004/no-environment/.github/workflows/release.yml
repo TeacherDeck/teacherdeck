@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Additional terms: see LICENSE-ADDITIONAL-TERMS
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - run: echo ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}

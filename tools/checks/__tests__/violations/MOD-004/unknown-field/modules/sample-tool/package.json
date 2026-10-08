@@ -1,0 +1,6 @@
+{
+  "name": "@deck-module/sample-tool",
+  "private": true,
+  "version": "0.1.0",
+  "deckTemplate": 1
+}

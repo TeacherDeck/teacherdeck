@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Additional terms: see LICENSE-ADDITIONAL-TERMS
+[package]
+name = "app"
+
+[dependencies]
+tauri = { version = "2", features = ["devtools"] }

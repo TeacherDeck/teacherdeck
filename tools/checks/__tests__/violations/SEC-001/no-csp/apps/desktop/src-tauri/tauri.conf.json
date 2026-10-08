@@ -1,0 +1,15 @@
+{
+  "build": {
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  }
+}

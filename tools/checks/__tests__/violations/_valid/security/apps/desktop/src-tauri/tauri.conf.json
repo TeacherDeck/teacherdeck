@@ -1,0 +1,16 @@
+{
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'"
+    }
+  }
+}

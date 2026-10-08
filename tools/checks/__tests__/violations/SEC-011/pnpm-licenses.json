@@ -1,0 +1,38 @@
+{
+  "MIT": [
+    {
+      "name": "ok-pkg",
+      "versions": [
+        "1.0.0"
+      ],
+      "license": "MIT"
+    }
+  ],
+  "GPL-2.0-only": [
+    {
+      "name": "copyleft-pkg",
+      "versions": [
+        "2.0.0"
+      ],
+      "license": "GPL-2.0-only"
+    }
+  ],
+  "(MIT OR GPL-3.0)": [
+    {
+      "name": "dual-pkg",
+      "versions": [
+        "3.0.0"
+      ],
+      "license": "(MIT OR GPL-3.0)"
+    }
+  ],
+  "MIT AND SSPL-1.0": [
+    {
+      "name": "and-pkg",
+      "versions": [
+        "4.0.0"
+      ],
+      "license": "MIT AND SSPL-1.0"
+    }
+  ]
+}

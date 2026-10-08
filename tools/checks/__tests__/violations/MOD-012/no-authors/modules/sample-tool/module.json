@@ -1,0 +1,13 @@
+{
+  "manifestVersion": 1,
+  "id": "sample-tool",
+  "name": "샘플",
+  "description": "검사기 테스트용 샘플 모듈",
+  "version": "0.1.0",
+  "category": "utility",
+  "icon": "icon.svg",
+  "entry": "index.html",
+  "authors": [],
+  "requires": {},
+  "optional": {}
+}

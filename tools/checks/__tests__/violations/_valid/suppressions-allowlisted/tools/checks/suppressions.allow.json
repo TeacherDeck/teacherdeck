@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "file": "src/ffi.rs",
+      "pattern": "#[allow(unsafe_code)]",
+      "reason": "Win32 FFI 경계. SEC-010 리뷰 완료."
+    }
+  ]
+}

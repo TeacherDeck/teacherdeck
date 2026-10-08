@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Additional terms: see LICENSE-ADDITIONAL-TERMS
+[workspace]
+members = ["crates/*"]
+
+[workspace.package]
+version = "1.1.0"
