@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Additional terms: see LICENSE-ADDITIONAL-TERMS
+
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.98"
+license = "GPL-3.0-only"
+publish = false
+
+# Lint levels for all members (members opt in with `[lints] workspace = true`).
+# Do not relax these to make code pass (GEN-001, GEN-003).
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+# crates/AGENTS.md: library code returns Result instead of panicking.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+# PRV-003: output goes through the logging helper, not stdout/stderr.
+print_stdout = "deny"
+print_stderr = "deny"

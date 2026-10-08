@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Additional terms: see LICENSE-ADDITIONAL-TERMS
+# cargo-deny configuration (SEC-011, GEN-004). Protected file: do not relax to make a dependency pass.
+# Format follows `cargo deny init` from cargo-deny 0.20.2.
+
+[graph]
+targets = ["x86_64-pc-windows-msvc"]
+all-features = false
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+[advisories]
+# Each ignored advisory needs an ID and a reason approved by a human.
+ignore = []
+
+[licenses]
+# Must equal tools/checks/licenses.allow.json "licenses" (checked by check-licenses).
+# Draft from ADR-0005; LGPL excluded until confirmed.
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "Unicode-3.0",
+  "MPL-2.0",
+  "CC0-1.0",
+  "0BSD",
+  "OFL-1.1",
+]
+confidence-threshold = 0.9
+# The allowlist is shared policy; crates that do not use a license yet are fine.
+unused-allowed-license = "allow"
+exceptions = []
+
+[licenses.private]
+# Workspace crates (publish = false) are our own GPL-3.0-only code.
+ignore = true
+registries = []
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+allow = []
+deny = []
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
