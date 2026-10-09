@@ -50,8 +50,8 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "",
-      "endpoints": []
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZGMzA4RjE4Mzk5MDNDNDAKUldSQVBKQTVHSTh3LzZzSTNyMDZWeDBINDRrOWN5MXFGUm9JWmU2MU1lUUMxNEQvbEk4S203ZVoK",
+      "endpoints": ["https://github.com/TeacherDeck/teacherdeck/releases/latest/download/latest.json"]
     }
   }
 }

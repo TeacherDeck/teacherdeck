@@ -20,7 +20,7 @@
 ## 결과
 
 - 키 보관·회전 정책: [keys.md](../security/keys.md).
-- updater 공개키와 endpoint는 Phase 4에서 `TODO(human)`으로 둔다.
+- updater 공개키(키 ID `FF308F1839903C40`)와 endpoint(`github.com/TeacherDeck/teacherdeck` 릴리스의 `latest.json`)를 2026-10-09 설정했다. 저장소가 비공개인 동안에는 앱이 업데이트를 내려받을 수 없다.
 - Authenticode 코드 서명은 범위 밖이며 `TODO(human): SignPath`로 남긴다. 서명 전에는 SmartScreen 경고가 뜰 수 있다.
 - 릴리스 워크플로와 시크릿 규칙: [ci.md](../spec/ci.md) (CI-004).
 

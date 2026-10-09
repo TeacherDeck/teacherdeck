@@ -17,6 +17,7 @@
 - 원저작자의 **개인 개발 PC**에서 `tauri signer generate`로 만들고 강한 패스프레이즈를 건다.
 - 학교 PC, 공용 PC, CI에서 생성하지 않는다.
 - 생성 직후 공개키만 레포에 반영하고, 개인키 파일은 레포 디렉터리 밖에 둔다.
+- 현재 키: 2026-10-09 생성, minisign 키 ID `FF308F1839903C40`. 공개키는 `tauri.conf.json` `plugins.updater.pubkey`에 있다.
 
 ## 3. 운영 사본
 
