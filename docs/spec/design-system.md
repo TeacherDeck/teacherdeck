@@ -80,6 +80,8 @@ GPLv3의 Appropriate Legal Notices를 겸한다. 다음을 모두 보여 준다.
 
 **스타일 도구**: `makeStyles`, `mergeClasses`, `tokens`, `deckTokens`.
 
+`TextBox`는 `onKeyDown`, `onCompositionStart`, `onCompositionEnd`로 실제 입력 요소의 키보드·한글 조합 이벤트를 전달한다. `inputRef`는 한 줄/여러 줄 입력 요소를 가리키며 포커스 복귀와 텍스트 선택에 사용한다. 결과를 선택해 복사할 때는 `readOnly`를 사용한다. 조합 중 Enter를 기록 확정으로 처리하지 않는 업무 규칙은 사용 모듈에서 검사한다.
+
 셸 dev 빌드에만 "UI 갤러리" 화면을 두어 모든 `@deck/ui` 컴포넌트를 light/dark와 텍스트 배율별로 보여 준다.
 
 ## 7. 문구

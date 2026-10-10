@@ -2,7 +2,7 @@
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { createRef, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as ui from "./index.ts";
 
@@ -102,6 +102,65 @@ describe("@deck/ui", () => {
     expect(screen.getByText("파일을 열지 못했어요.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "닫기" }));
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it.each([false, true])(
+    "TextBox keeps focus, selection and IME events on the actual input (multiline=%s)",
+    (multiline) => {
+      const inputRef = createRef<HTMLInputElement | HTMLTextAreaElement>();
+      const events: string[] = [];
+      const onChange = vi.fn();
+      wrap(
+        <ui.TextBox
+          header="회의 입력"
+          value="합성 문장"
+          multiline={multiline}
+          inputRef={inputRef}
+          onChange={onChange}
+          onCompositionStart={() => events.push("start")}
+          onCompositionEnd={(event) => events.push(`end:${event.data}`)}
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing) events.push("composing");
+            else if (event.key === "Enter") {
+              event.preventDefault();
+              events.push("submit");
+            }
+          }}
+        />,
+      );
+      const input = screen.getByRole("textbox", { name: "회의 입력" });
+      expect(inputRef.current).toBe(input);
+      inputRef.current?.focus();
+      inputRef.current?.select();
+      expect(document.activeElement).toBe(input);
+      expect(inputRef.current?.selectionStart).toBe(0);
+      expect(inputRef.current?.selectionEnd).toBe(5);
+      fireEvent.compositionStart(input);
+      fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+      fireEvent.compositionEnd(input, { data: "장" });
+      expect(fireEvent.keyDown(input, { key: "Enter" })).toBe(false);
+      fireEvent.change(input, { target: { value: "합성 문장 추가" } });
+      expect(events).toEqual(["start", "composing", "end:장", "submit"]);
+      expect(onChange).toHaveBeenLastCalledWith("합성 문장 추가");
+    },
+  );
+
+  it("TextBox read-only output stays selectable and focusable", () => {
+    const inputRef = createRef<HTMLInputElement | HTMLTextAreaElement>();
+    wrap(
+      <ui.TextBox
+        header="공개용 결과"
+        multiline
+        readOnly
+        inputRef={inputRef}
+        value="선택할 결과"
+        onChange={() => undefined}
+      />,
+    );
+    expect(inputRef.current?.readOnly).toBe(true);
+    expect(inputRef.current?.disabled).toBe(false);
+    inputRef.current?.focus();
+    expect(document.activeElement).toBe(inputRef.current);
   });
 
   it("ListView shows the empty text when there are no items", () => {

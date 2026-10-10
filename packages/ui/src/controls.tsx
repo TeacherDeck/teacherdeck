@@ -35,7 +35,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { DismissRegular } from "@fluentui/react-icons";
-import type { ReactNode } from "react";
+import { useCallback, type CompositionEventHandler, type KeyboardEventHandler, type ReactNode, type Ref } from "react";
 import { deckTokens } from "./tokens/index.ts";
 import { Body, Caption } from "./typography.tsx";
 
@@ -269,6 +269,13 @@ export interface TextBoxProps extends HeaderedProps {
   /** Multi-line input (Textarea). */
   multiline?: boolean;
   validationMessage?: string;
+  /** Selectable output without allowing edits. */
+  readOnly?: boolean;
+  /** Focus and selection target is the actual text input, including multi-line inputs. */
+  inputRef?: Ref<HTMLInputElement | HTMLTextAreaElement>;
+  onKeyDown?: KeyboardEventHandler<HTMLInputElement | HTMLTextAreaElement>;
+  onCompositionStart?: CompositionEventHandler<HTMLInputElement | HTMLTextAreaElement>;
+  onCompositionEnd?: CompositionEventHandler<HTMLInputElement | HTMLTextAreaElement>;
 }
 
 /** Single- or multi-line text input (WinUI TextBox). */
@@ -278,15 +285,32 @@ export function TextBox({
   placeholder,
   multiline = false,
   validationMessage,
+  readOnly,
+  inputRef,
+  onKeyDown,
+  onCompositionStart,
+  onCompositionEnd,
   ...header
 }: TextBoxProps) {
-  const common = { value, "aria-label": header.header, ...defined({ placeholder, disabled: header.disabled }) };
+  const setInputRef = useCallback(
+    (element: HTMLInputElement | HTMLTextAreaElement | null) => {
+      if (typeof inputRef === "function") return inputRef(element);
+      if (inputRef !== undefined && inputRef !== null) inputRef.current = element;
+      return undefined;
+    },
+    [inputRef],
+  );
+  const common = {
+    value,
+    "aria-label": header.header,
+    ...defined({ placeholder, disabled: header.disabled, readOnly, onKeyDown, onCompositionStart, onCompositionEnd }),
+  };
   return (
     <Field {...fieldProps(header, validationMessage)}>
       {multiline ? (
-        <Textarea {...common} resize="vertical" onChange={(_, d) => onChange(d.value)} />
+        <Textarea {...common} ref={setInputRef} resize="vertical" onChange={(_, d) => onChange(d.value)} />
       ) : (
-        <Input {...common} onChange={(_, d) => onChange(d.value)} />
+        <Input {...common} ref={setInputRef} onChange={(_, d) => onChange(d.value)} />
       )}
     </Field>
   );
