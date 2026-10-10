@@ -5,14 +5,15 @@ import type { Deck, ThemePayload } from "@deck/sdk";
 import { type ReactNode, useEffect, useState } from "react";
 import { createDeckTheme, payloadToTheme } from "./tokens/index.ts";
 
-// Desktop app, not a web page: no browser margin, no sideways scroll, no rubber-band overscroll.
-// Only the vertical axis scrolls; wide content must wrap or scroll inside its own container.
+// Clip sideways overflow without creating another scroll container. `overflow-x: hidden`
+// implicitly turns overflow-y into auto; an unbounded body then traps wheel chaining when
+// overscroll is disabled. Only the document viewport owns the outer overscroll boundary.
 const useDocumentStyles = makeStaticStyles({
+  html: { overscrollBehaviorY: "none" },
   "html, body": {
     margin: 0,
     padding: 0,
-    overflowX: "hidden",
-    overscrollBehavior: "none",
+    overflowX: "clip",
     touchAction: "pan-y",
   },
   "*, *::before, *::after": { boxSizing: "border-box" },
@@ -20,8 +21,8 @@ const useDocumentStyles = makeStaticStyles({
 
 const useStyles = makeStyles({
   // UI-004: transparent root so the Mica backdrop shows through; surfaces use layer tokens.
-  transparent: { backgroundColor: "transparent", minHeight: "100vh", overflowX: "hidden", color: tokens.colorNeutralForeground1 },
-  opaque: { backgroundColor: tokens.colorNeutralBackground2, minHeight: "100vh", overflowX: "hidden", color: tokens.colorNeutralForeground1 },
+  transparent: { backgroundColor: "transparent", minHeight: "100vh", overflowX: "clip", color: tokens.colorNeutralForeground1 },
+  opaque: { backgroundColor: tokens.colorNeutralBackground2, minHeight: "100vh", overflowX: "clip", color: tokens.colorNeutralForeground1 },
 });
 
 export interface DeckProviderProps {

@@ -10,15 +10,16 @@ import type { ModuleEntry } from "../generated/ModuleEntry.ts";
 import { STATE_BADGES } from "../labels.ts";
 
 const useStyles = makeStyles({
-  wrap: { display: "flex", flexDirection: "column", height: "100%" },
+  wrap: { display: "flex", flexDirection: "column", height: "100%", minHeight: 0, minWidth: 0 },
   header: {
     display: "flex",
+    flexShrink: 0,
     alignItems: "center",
     gap: deckTokens.inlineGap,
     padding: `${tokens.spacingVerticalM} ${tokens.spacingHorizontalXXL}`,
   },
   icon: { width: tokens.fontSizeHero700, height: tokens.fontSizeHero700 },
-  frames: { flexGrow: 1, position: "relative" },
+  frames: { flexGrow: 1, minHeight: 0, position: "relative" },
   frame: {
     position: "absolute",
     inset: 0,
