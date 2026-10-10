@@ -4,6 +4,7 @@ Windows 11 Fluent 2를 따르고 PowerToys 설정 앱 구조를 레퍼런스로 
 
 ## 1. 화면 구조
 
+- **상단바**: 창은 테두리 없음(`decorations: false`)이고 셸이 상단바를 직접 그린다(`apps/desktop/src/TitleBar.tsx`). 높이 40px, 왼쪽은 앱 아이콘과 이름이고 오른쪽은 WinUI 캡션 버튼(최소화·최대화/복원·닫기, 46px, Segoe Fluent Icons, 닫기는 빨간 hover)이다. 버튼을 뺀 영역은 Tauri 드래그 영역이라 끌면 창이 움직이고 더블클릭하면 최대화된다. 그림자·둥근 모서리·크기 조절·스냅은 OS가 유지한다. 최대화 버튼 hover 시 스냅 레이아웃 메뉴는 뜨지 않는다(Tauri 한계, Win+Z는 동작).
 - **좌측 내비게이션 레일**: 홈(덱), 카테고리, 설정, 정보.
 - **우측 콘텐츠**
   - 홈: 모듈 카드 그리드와 검색. 카드에 해석기 상태 배지를 표시한다([versioning.md](versioning.md#ui-배지)).
