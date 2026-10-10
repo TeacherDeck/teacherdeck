@@ -34,6 +34,7 @@ export interface BridgeHost {
 
 interface Frame {
   moduleId: string;
+  origin: string;
   window: FrameWindow;
   helloTimer: ReturnType<typeof setTimeout> | undefined;
   ready: boolean;
@@ -42,24 +43,27 @@ interface Frame {
 
 export class ModuleBridge {
   private readonly frames = new Map<unknown, Frame>();
-  private readonly moduleOrigin: string;
   private readonly host: BridgeHost;
   private readonly helloTimeoutMs: number;
 
-  constructor(moduleOrigin: string, host: BridgeHost, helloTimeoutMs = HELLO_TIMEOUT_MS) {
-    this.moduleOrigin = moduleOrigin;
+  constructor(host: BridgeHost, helloTimeoutMs = HELLO_TIMEOUT_MS) {
     this.host = host;
     this.helloTimeoutMs = helloTimeoutMs;
   }
 
   /** Call when an iframe for `moduleId` starts loading. */
-  register(win: FrameWindow, moduleId: string): void {
+  register(win: FrameWindow, moduleId: string, entryUrl: string): void {
     this.unregister(win);
+    const origin = moduleEntryOrigin(moduleId, entryUrl);
+    if (origin === null) {
+      this.host.onLoadError(moduleId);
+      return;
+    }
     const helloTimer = setTimeout(() => {
       const f = this.frames.get(win);
       if (f !== undefined && !f.ready) this.host.onLoadError(moduleId);
     }, this.helloTimeoutMs);
-    this.frames.set(win, { moduleId, window: win, helloTimer, ready: false, cancelled: new Set() });
+    this.frames.set(win, { moduleId, origin, window: win, helloTimer, ready: false, cancelled: new Set() });
   }
 
   /** Call when the iframe is removed. */
@@ -73,9 +77,8 @@ export class ModuleBridge {
   handle(event: MessageEventLike): void {
     // BRG-001: only known module iframes, only from the module origin. The module id comes from
     // the iframe mapping, never from the message.
-    if (event.origin !== this.moduleOrigin) return;
     const frame = this.frames.get(event.source);
-    if (frame === undefined) return;
+    if (frame === undefined || event.origin !== frame.origin) return;
     if (!isEnvelope(event.data)) {
       this.host.debug?.("ignored malformed module message");
       return;
@@ -90,7 +93,12 @@ export class ModuleBridge {
         return;
       case "cancel":
         frame.cancelled.add(msg.id);
-        this.post(frame, { kind: "res", id: msg.id, ok: false, error: new DeckCallError("CANCELLED", "취소했어요.").toJSON() });
+        this.post(frame, {
+          kind: "res",
+          id: msg.id,
+          ok: false,
+          error: new DeckCallError("CANCELLED", "취소했어요.").toJSON(),
+        });
         return;
       default:
         this.host.debug?.(`ignored ${msg.kind} from module`);
@@ -110,17 +118,19 @@ export class ModuleBridge {
   }
 
   private post(frame: Frame, msg: Message): void {
-    frame.window.postMessage({ deck: PROTOCOL_VERSION, ...msg } satisfies Envelope, this.moduleOrigin);
+    if (this.frames.get(frame.window) !== frame) return;
+    frame.window.postMessage({ deck: PROTOCOL_VERSION, ...msg } satisfies Envelope, frame.origin);
   }
 
   private async onHello(frame: Frame): Promise<void> {
     clearTimeout(frame.helloTimer);
     try {
       const init = await this.host.init(frame.moduleId);
+      if (this.frames.get(frame.window) !== frame) return;
       frame.ready = true;
       this.post(frame, { kind: "init", ...init });
     } catch {
-      this.host.onLoadError(frame.moduleId);
+      if (this.frames.get(frame.window) === frame) this.host.onLoadError(frame.moduleId);
     }
   }
 
@@ -130,23 +140,59 @@ export class ModuleBridge {
       this.post(frame, m);
     };
     if (!frame.ready) {
-      reply({ kind: "res", id: msg.id, ok: false, error: new DeckCallError("PERMISSION_DENIED", "init 전 요청이에요(BRG-003).").toJSON() });
+      reply({
+        kind: "res",
+        id: msg.id,
+        ok: false,
+        error: new DeckCallError("PERMISSION_DENIED", "init 전 요청이에요(BRG-003).").toJSON(),
+      });
       return;
     }
     if (jsonByteLength(msg.args) > MAX_MESSAGE_BYTES) {
-      reply({ kind: "res", id: msg.id, ok: false, error: new DeckCallError("INVALID_ARGS", "요청이 1MB를 넘어요(BRG-007).").toJSON() });
+      reply({
+        kind: "res",
+        id: msg.id,
+        ok: false,
+        error: new DeckCallError("INVALID_ARGS", "요청이 1MB를 넘어요(BRG-007).").toJSON(),
+      });
       return;
     }
     try {
       const result = await this.host.invoke(frame.moduleId, msg.cap, msg.method, msg.args);
       if (jsonByteLength(result) > MAX_MESSAGE_BYTES) {
-        reply({ kind: "res", id: msg.id, ok: false, error: new DeckCallError("INTERNAL", "응답이 1MB를 넘어요(BRG-007).").toJSON() });
+        reply({
+          kind: "res",
+          id: msg.id,
+          ok: false,
+          error: new DeckCallError("INTERNAL", "응답이 1MB를 넘어요(BRG-007).").toJSON(),
+        });
         return;
       }
       reply({ kind: "res", id: msg.id, ok: true, result: result ?? null });
     } catch (e) {
       reply({ kind: "res", id: msg.id, ok: false, error: toDeckError(e) });
     }
+  }
+}
+
+/** Accepts only the exact host-generated entry origin for this module, never a suffix alone. */
+export function moduleEntryOrigin(moduleId: string, entryUrl: string): string | null {
+  if (!/^[a-z][a-z0-9-]{1,30}[a-z0-9]$/.test(moduleId)) return null;
+  try {
+    const url = new URL(entryUrl);
+    const origin = `http://deckmod.${moduleId}.modules.localhost`;
+    if (
+      !entryUrl.startsWith(`${origin}/`) ||
+      url.origin !== origin ||
+      url.username !== "" ||
+      url.password !== "" ||
+      url.port !== "" ||
+      !url.pathname.startsWith(`/${moduleId}/`)
+    )
+      return null;
+    return origin;
+  } catch {
+    return null;
   }
 }
 

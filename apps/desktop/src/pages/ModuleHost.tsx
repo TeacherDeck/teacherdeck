@@ -5,7 +5,7 @@
 import { Badge, Body1, Caption1, MessageBar, MessageBarBody, makeStyles, tokens } from "@fluentui/react-components";
 import { deckTokens } from "@deck/ui";
 import { useEffect, useRef } from "react";
-import type { ModuleBridge } from "../bridge/ModuleBridge.ts";
+import { type ModuleBridge, moduleEntryOrigin } from "../bridge/ModuleBridge.ts";
 import type { ModuleEntry } from "../generated/ModuleEntry.ts";
 import { STATE_BADGES } from "../labels.ts";
 
@@ -19,7 +19,14 @@ const useStyles = makeStyles({
   },
   icon: { width: tokens.fontSizeHero700, height: tokens.fontSizeHero700 },
   frames: { flexGrow: 1, position: "relative" },
-  frame: { position: "absolute", inset: 0, width: "100%", height: "100%", border: "none", backgroundColor: "transparent" },
+  frame: {
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    height: "100%",
+    border: "none",
+    backgroundColor: "transparent",
+  },
   hidden: { visibility: "hidden" },
 });
 
@@ -35,17 +42,19 @@ export interface ModuleHostProps {
 function Frame({ bridge, entry, visible }: { bridge: ModuleBridge; entry: ModuleEntry; visible: boolean }) {
   const s = useStyles();
   const ref = useRef<HTMLIFrameElement>(null);
+  const entryUrl = entry.entryUrl ?? "";
+  const validOrigin = moduleEntryOrigin(entry.resolution.id, entryUrl);
   useEffect(() => {
     const win = ref.current?.contentWindow;
     if (win === null || win === undefined) return undefined;
-    bridge.register(win, entry.resolution.id);
+    bridge.register(win, entry.resolution.id, entryUrl);
     return () => bridge.unregister(win);
-  }, [bridge, entry.resolution.id]);
+  }, [bridge, entry.resolution.id, entryUrl]);
   return (
     <iframe
       ref={ref}
       title={entry.manifest?.name ?? entry.resolution.id}
-      src={entry.entryUrl ?? "about:blank"}
+      src={validOrigin === null ? "about:blank" : entryUrl}
       sandbox="allow-scripts allow-same-origin"
       referrerPolicy="no-referrer"
       className={visible ? s.frame : `${s.frame} ${s.hidden}`}

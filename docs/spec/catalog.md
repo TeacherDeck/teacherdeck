@@ -49,7 +49,7 @@
 
 ## 3. 서빙
 
-- 커스텀 스킴 `deckmod`를 쓴다. Windows에서는 `http://deckmod.localhost/<id>/<version>/<path>` 형태다. origin은 `apps/desktop/src-tauri/src/origins.rs`에 상수로 고정했다([sec-004.md](../security/sec-004.md)에서 실측 확인).
+- 커스텀 스킴 `deckmod`를 쓴다. 논리 URI는 `deckmod://<id>.modules.localhost/<id>/<version>/<path>`, Windows URL은 `http://deckmod.<id>.modules.localhost/<id>/<version>/<path>`다. origin은 `apps/desktop/src-tauri/src/origins.rs`에서 모듈별로 생성한다([ADR-0013](../adr/0013-module-origin-isolation.md)). authority의 id와 경로 id는 같아야 하며 설치된 실행 가능 모듈의 서빙 버전만 제공한다. 일반 모듈은 bare `http://deckmod.localhost`에서 제공하지 않는다.
 - `_`로 시작하는 최상위 경로는 호스트 리소스용으로 예약한다. 모듈 id는 `_`로 시작할 수 없다(MOD-002 정규식이 보장).
 - 경로는 정규화한 뒤 해당 모듈 루트 하위만 서빙한다. `..`, 퍼센트 인코딩 우회, 심볼릭 링크를 거부한다(SEC-005).
 - 응답 헤더:
@@ -63,10 +63,11 @@
   ```
 
   `style-src 'unsafe-inline'`은 Fluent UI v9의 Griffel 런타임 스타일 주입 때문에 필요하다. `connect-src 'self'`는 외부 네트워크 요청을 막는다(MOD-008).
+
 - iframe은 다음과 같이 만든다.
 
   ```html
   <iframe sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe>
   ```
 
-  `allow-same-origin`은 모듈 origin이 셸 origin과 다를 때만 안전하다(SEC-002).
+  `allow-same-origin`은 각 모듈 origin이 셸 및 다른 모듈 origin과 분리될 때만 사용한다(SEC-002). 셸 frame-src/img-src는 `http://*.modules.localhost`를 허용하지만 이 wildcard를 모듈 인증 수단으로 쓰지 않는다.

@@ -12,6 +12,7 @@ use deck_core::caps::HostCaps;
 use deck_core::caps::window::WindowOverrides;
 use deck_core::handles::HandleTable;
 
+use crate::file_transfer::FileTransfers;
 use crate::modules::ModuleStore;
 use crate::platform::{OsRng, TempArea};
 use crate::storage::StorageService;
@@ -25,7 +26,9 @@ pub struct AppState {
     /// Known modules and runnable packages.
     pub modules: RwLock<ModuleStore>,
     /// Handles issued this session (CAP-002).
-    pub handles: Mutex<HandleTable<PathBuf, OsRng>>,
+    pub handles: Mutex<HandleTable<FileHandleTarget, OsRng>>,
+    /// File transfer grants, distinct from picked-file/folder handles.
+    pub transfers: Mutex<FileTransfers>,
     /// Module storage (PRV-007).
     pub storage: StorageService,
     /// Window state each module changed, restored when it hides.
@@ -38,8 +41,30 @@ pub struct AppState {
     pub sec_probe: bool,
     /// App temp area (PRV-005).
     pub temp: Option<TempArea>,
+    /// Output-only temp area; verified journal recovery replaces recursive cleanup.
+    pub file_temp: Option<TempArea>,
     /// Log directory (for the debug probe report).
     pub log_dir: PathBuf,
+}
+
+/// A selected handle's allowed use. Never serialize this host-private structure.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum FileHandleKind {
+    /// Read the selected file; no writes.
+    ReadFile,
+    /// Create a new output directory; no enumeration or existing child writes.
+    OutputParent,
+}
+
+/// Host-private target of an opaque picked or created handle.
+#[derive(Clone)]
+pub struct FileHandleTarget {
+    /// Host-private absolute path, never sent across the bridge.
+    pub path: PathBuf,
+    /// Only the capability derived from the user's selection.
+    pub kind: FileHandleKind,
+    /// Module lifetime in which the selection was made.
+    pub generation: u64,
 }
 
 impl AppState {

@@ -13,10 +13,10 @@ import {
   SettingsRegular,
   WrenchRegular,
 } from "@fluentui/react-icons";
-import { MODULE_ORIGIN, type InitPayload } from "@deck/sdk";
+import { type InitPayload } from "@deck/sdk";
 import { DeckProvider, EmptyState, deckTokens, themeToPayload } from "@deck/ui";
 import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ModuleBridge } from "./bridge/ModuleBridge.ts";
+import { ModuleBridge, moduleEntryOrigin } from "./bridge/ModuleBridge.ts";
 import { KeepAliveSet } from "./bridge/keepAlive.ts";
 import type { Category } from "./generated/Category.ts";
 import type { ModuleEntry } from "./generated/ModuleEntry.ts";
@@ -71,19 +71,76 @@ const useStyles = makeStyles({
   hidden: { display: "none" },
 });
 
-function SecProbe({ origin }: { origin: string }) {
+function SecProbe({ origin, modules }: { origin: string; modules: ModuleEntry[] }) {
   const ref = useRef<HTMLIFrameElement>(null);
+  const moduleFrames = useRef(new Map<string, HTMLIFrameElement>());
+  const fixtures = useMemo(
+    () =>
+      modules
+        .flatMap((entry) => {
+          const moduleOrigin = moduleEntryOrigin(entry.resolution.id, entry.entryUrl ?? "");
+          return moduleOrigin === null ? [] : [{ id: entry.resolution.id, origin: moduleOrigin }];
+        })
+        .slice(0, 2),
+    [modules],
+  );
   useEffect(() => {
+    let legacy: Record<string, unknown> | undefined;
+    const results = new Map<string, unknown>();
+    let reported = false;
+    const report = (timeout: boolean) => {
+      if (reported || (!timeout && (legacy === undefined || results.size !== fixtures.length))) return;
+      reported = true;
+      void host.secProbeReport({
+        ...legacy,
+        moduleIsolation: fixtures.map((f) => ({ moduleId: f.id, result: results.get(f.id) ?? { status: "timeout" } })),
+        isolationComplete: legacy !== undefined && fixtures.length === 2 && results.size === 2,
+      });
+    };
     const onMessage = (e: MessageEvent) => {
       const data = e.data as { kind?: string; result?: unknown } | null;
       if (e.origin === origin && e.source === ref.current?.contentWindow && data?.kind === "sec-probe") {
-        void host.secProbeReport(data.result);
+        if (typeof data.result === "object" && data.result !== null) legacy = data.result as Record<string, unknown>;
+      } else if (data?.kind === "sec-module-probe") {
+        const fixture = fixtures.find(
+          (f) => e.origin === f.origin && e.source === moduleFrames.current.get(f.id)?.contentWindow,
+        );
+        if (fixture !== undefined) results.set(fixture.id, data.result);
       }
+      report(false);
     };
+    const timer = setTimeout(() => report(true), 12000);
     window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, [origin]);
-  return <iframe ref={ref} title="sec-probe" src={`${origin}/_probe/index.html`} sandbox="allow-scripts allow-same-origin" hidden />;
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("message", onMessage);
+    };
+  }, [origin, fixtures]);
+  return (
+    <>
+      <iframe
+        ref={ref}
+        title="sec-probe"
+        src={`${origin}/_probe/index.html`}
+        sandbox="allow-scripts allow-same-origin"
+        hidden
+      />
+      {fixtures.map((f) => (
+        <iframe
+          key={f.id}
+          ref={(element) => {
+            if (element === null) moduleFrames.current.delete(f.id);
+            else moduleFrames.current.set(f.id, element);
+          }}
+          title={`sec-probe-${f.id}`}
+          src={`${f.origin}/_probe/module.html`}
+          sandbox="allow-scripts allow-same-origin"
+          referrerPolicy="no-referrer"
+          hidden
+        />
+      ))}
+    </>
+  );
 }
 
 export function App() {
@@ -115,7 +172,7 @@ export function App() {
 
   const bridge = useMemo(
     () =>
-      new ModuleBridge(info?.moduleOrigin ?? MODULE_ORIGIN, {
+      new ModuleBridge({
         init: async (moduleId): Promise<InitPayload> => {
           const entry = modulesRef.current.find((m) => m.resolution.id === moduleId);
           const granted = await host.moduleActivated(moduleId);
@@ -149,7 +206,8 @@ export function App() {
   const navigate = useCallback(
     (next: Page) => {
       const activeId = next.kind === "module" ? next.id : null;
-      const keep = (id: string) => modulesRef.current.find((m) => m.resolution.id === id)?.manifest?.ui?.keepAlive === true;
+      const keep = (id: string) =>
+        modulesRef.current.find((m) => m.resolution.id === id)?.manifest?.ui?.keepAlive === true;
       const before = page.kind === "module" ? page.id : null;
       const { mounted: nextMounted, evicted } = keepAlive.current.activate(activeId, keep);
       if (before !== null && before !== activeId && nextMounted.includes(before)) {
@@ -202,7 +260,12 @@ export function App() {
         <nav className={s.rail} aria-label="메뉴">
           {railItem("덱", <HomeRegular />, { kind: "home" }, page.kind === "home")}
           {usedCategories.map((c) =>
-            railItem(CATEGORY_LABELS[c], CATEGORY_ICONS[c], { kind: "category", category: c }, page.kind === "category" && page.category === c),
+            railItem(
+              CATEGORY_LABELS[c],
+              CATEGORY_ICONS[c],
+              { kind: "category", category: c },
+              page.kind === "category" && page.category === c,
+            ),
           )}
           <div className={s.spacer} />
           {info.dev && railItem("UI 갤러리", <PaintBrushRegular />, { kind: "gallery" }, page.kind === "gallery")}
@@ -211,10 +274,21 @@ export function App() {
         </nav>
         <main className={s.content}>
           <div className={activeModule === null ? s.hidden : s.moduleLayer}>
-            <ModuleHost bridge={bridge} modules={modules} mounted={mounted} active={activeModule} loadErrors={loadErrors} />
+            <ModuleHost
+              bridge={bridge}
+              modules={modules}
+              mounted={mounted}
+              active={activeModule}
+              loadErrors={loadErrors}
+            />
           </div>
           {page.kind === "home" && (
-            <Home modules={modules} dev={info.dev} onOpen={(id) => navigate({ kind: "module", id })} onNeedsUpdate={() => navigate({ kind: "settings" })} />
+            <Home
+              modules={modules}
+              dev={info.dev}
+              onOpen={(id) => navigate({ kind: "module", id })}
+              onNeedsUpdate={() => navigate({ kind: "settings" })}
+            />
           )}
           {page.kind === "category" && (
             <Home
@@ -238,7 +312,7 @@ export function App() {
           {page.kind === "gallery" && info.dev && <Gallery />}
         </main>
       </div>
-      {info.secProbe && <SecProbe origin={info.moduleOrigin} />}
+      {info.secProbe && <SecProbe origin={info.moduleOrigin} modules={modules} />}
     </DeckProvider>
   );
 }

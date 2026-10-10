@@ -17,10 +17,10 @@
         "default-src": "'self'",
         "script-src": "'self'",
         "style-src": "'self' 'unsafe-inline'",
-        "img-src": "'self' data: blob: http://deckmod.localhost",
+        "img-src": "'self' data: blob: http://*.modules.localhost",
         "font-src": "'self' data:",
         "connect-src": "'self' ipc: http://ipc.localhost",
-        "frame-src": "http://deckmod.localhost",
+        "frame-src": "http://*.modules.localhost http://deckmod.localhost",
         "object-src": "'none'",
         "base-uri": "'none'",
         "form-action": "'none'"

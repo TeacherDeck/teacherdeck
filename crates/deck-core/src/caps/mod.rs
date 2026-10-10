@@ -76,7 +76,7 @@ pub const REGISTRY: &[CapSpec] = &[
     },
     CapSpec {
         name: "fs",
-        version: "1.0.0",
+        version: "1.1.0",
         summary: "파일 선택과 핸들(경로는 노출하지 않음)",
         methods: &[
             m("pickFiles", true, "파일 선택 대화상자 → FileHandleInfo[]"),
@@ -87,6 +87,14 @@ pub const REGISTRY: &[CapSpec] = &[
             ),
             m("stat", false, "핸들의 최신 정보"),
             m("reveal", false, "탐색기에서 파일 위치 열기"),
+            m("openRead", true, "파일 읽기 리소스 열기(256KiB 청크)"),
+            m("closeRead", false, "파일 읽기 리소스 닫기"),
+            m("createOutputFolder", true, "새 결과 폴더 만들기"),
+            m("beginWrite", true, "새 결과 파일 쓰기 시작"),
+            m("writeChunk", false, "64KiB 이하 순차 청크 쓰기"),
+            m("commitWrite", true, "완성된 결과를 덮어쓰기 없이 게시"),
+            m("abortWrite", false, "미완성 파일 쓰기 취소"),
+            m("closeOutputFolder", false, "결과 폴더 작업 권한 닫기"),
         ],
     },
     CapSpec {

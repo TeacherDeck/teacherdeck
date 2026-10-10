@@ -17,6 +17,9 @@ use tauri::{DragDropEvent, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, W
 mod bridge;
 mod caps;
 mod commands;
+pub mod file_output;
+pub mod file_read;
+pub mod file_transfer;
 pub mod modules;
 pub mod origins;
 pub mod platform;
@@ -28,7 +31,7 @@ pub mod storage;
 use crate::modules::ModuleStore;
 use crate::origins::{MAIN_WINDOW, MODULE_SCHEME};
 use crate::platform::{OsRng, TempArea, apply_mica, init_logging, supports_mica};
-use crate::protocol::{content_type, method_allowed, parse_path, respond};
+use crate::protocol::{content_type, method_allowed, module_request_path, respond};
 use crate::state::AppState;
 use crate::storage::StorageService;
 
@@ -60,10 +63,13 @@ fn serve(
         probe = path.starts_with("/_probe/"),
         "deckmod request"
     );
-    if let Some(res) = probe::serve(&state, path) {
+    if let Some(res) = probe::serve(&state, request.uri()) {
         return res;
     }
-    let Some(req) = parse_path(path) else {
+    if path.starts_with("/_resources/") {
+        return caps::serve_file_resource(&state, request);
+    }
+    let Some(req) = module_request_path(request.uri()) else {
         return not_found();
     };
     let Ok(store) = state.modules.read() else {
@@ -96,6 +102,12 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .inspect_err(|e| tracing::warn!(error = %e, "temp area unavailable"))
         .ok();
     let host_caps = deck_core::caps::host_caps();
+    let file_temp = TempArea::init_preserving(paths.app_cache_dir()?.join("file-tmp")).ok();
+    if let Some(area) = &file_temp
+        && file_output::recover(area).is_err()
+    {
+        tracing::warn!("file output recovery incomplete; unverified remnants preserved");
+    }
     let store = ModuleStore::load_bundled(&paths.resource_dir()?, &host_caps);
 
     app.manage(AppState {
@@ -103,6 +115,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         host_caps,
         modules: RwLock::new(store),
         handles: Mutex::new(HandleTable::new(OsRng)),
+        transfers: Mutex::new(Default::default()),
         storage: StorageService::new(paths.app_data_dir()?.join("module-data")),
         overrides: Mutex::new(Default::default()),
         active: Mutex::new(None),
@@ -110,7 +123,21 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         sec_probe: cfg!(debug_assertions)
             && std::env::var("DECK_SEC_PROBE").is_ok_and(|v| v == "1"),
         temp,
+        file_temp,
         log_dir,
+    });
+
+    let cleanup_app = app.handle().clone();
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(30));
+            let Some(state) = cleanup_app.try_state::<AppState>() else {
+                break;
+            };
+            if let Ok(mut transfers) = state.transfers.try_lock() {
+                transfers.expire();
+            }
+        }
     });
 
     // Transparent only where Mica can fill it; Windows 10 gets an opaque window (UI-004).
@@ -178,8 +205,9 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .register_uri_scheme_protocol(MODULE_SCHEME, |ctx, request| {
-            serve(ctx.app_handle(), &request)
+        .register_asynchronous_uri_scheme_protocol(MODULE_SCHEME, |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            tauri::async_runtime::spawn_blocking(move || responder.respond(serve(&app, &request)));
         })
         .invoke_handler(tauri::generate_handler![
             bridge::host_invoke,

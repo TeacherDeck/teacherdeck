@@ -14,6 +14,23 @@ const SHA_PIN_RE = /^[\w.-]+\/[\w./-]+@[0-9a-f]{40}$/;
 
 const isRemote = (s: unknown): boolean => typeof s === "string" && /^https?:\/\//i.test(s);
 
+/** SEC-002: module frames use only the reserved module suffix and the debug probe origin. */
+export function hasSafeFrameSources(csp: unknown): boolean {
+  const frameSrc = isRecord(csp)
+    ? csp["frame-src"]
+    : typeof csp === "string"
+      ? /(?:^|;)\s*frame-src\s+([^;]+)/.exec(csp)?.[1]
+      : undefined;
+  if (frameSrc === undefined) return true;
+  const sources = typeof frameSrc === "string" ? frameSrc.trim().split(/\s+/) : Array.isArray(frameSrc) ? frameSrc : [];
+  return (
+    sources.length > 0 &&
+    sources.every(
+      (s) => s === "'none'" || s === "'self'" || s === "http://*.modules.localhost" || s === "http://deckmod.localhost",
+    )
+  );
+}
+
 function checkTauri(root: string, v: Violation[]): void {
   const confPath = `${TAURI_DIR}/tauri.conf.json`;
   if (exists(root, confPath)) {
@@ -25,8 +42,20 @@ function checkTauri(root: string, v: Violation[]): void {
     if (csp === undefined || csp === null || csp === "" || (isRecord(csp) && Object.keys(csp).length === 0)) {
       v.push({ rule: "SEC-001", file: confPath, message: "app.security.csp가 설정돼 있지 않아요." });
     }
+    if (!hasSafeFrameSources(csp)) {
+      v.push({
+        rule: "SEC-002",
+        file: confPath,
+        message:
+          "frame-src는 예약된 모듈 origin과 디버그 프로브만 허용해요. localhost 전체나 원격 호스트를 허용하지 않아요.",
+      });
+    }
     if (isRemote(build["frontendDist"])) {
-      v.push({ rule: "SEC-001", file: confPath, message: "build.frontendDist는 로컬 번들이어야 해요. 원격 URL을 로드하지 않아요." });
+      v.push({
+        rule: "SEC-001",
+        file: confPath,
+        message: "build.frontendDist는 로컬 번들이어야 해요. 원격 URL을 로드하지 않아요.",
+      });
     }
     const windows = Array.isArray(app["windows"]) ? (app["windows"] as unknown[]) : [];
     for (const w of windows) {
@@ -35,7 +64,11 @@ function checkTauri(root: string, v: Violation[]): void {
         v.push({ rule: "SEC-001", file: confPath, message: `창 "${String(w["label"])}"이 원격 URL을 로드해요.` });
       }
       if (w["devtools"] === true) {
-        v.push({ rule: "SEC-007", file: confPath, message: `창 "${String(w["label"])}"에 devtools: true가 있어요. 릴리스 빌드에서 devtools를 끄세요.` });
+        v.push({
+          rule: "SEC-007",
+          file: confPath,
+          message: `창 "${String(w["label"])}"에 devtools: true가 있어요. 릴리스 빌드에서 devtools를 끄세요.`,
+        });
       }
     }
   }
@@ -44,7 +77,11 @@ function checkTauri(root: string, v: Violation[]): void {
   if (exists(root, cargoPath)) {
     const tauriDep = /^tauri\s*=\s*(\{[^\n]*\})/m.exec(read(root, cargoPath))?.[1] ?? "";
     if (/features\s*=\s*\[[^\]]*"devtools"/.test(tauriDep)) {
-      v.push({ rule: "SEC-007", file: cargoPath, message: 'tauri 의존성에 "devtools" 기능이 켜져 있어 릴리스에서도 devtools가 열려요.' });
+      v.push({
+        rule: "SEC-007",
+        file: cargoPath,
+        message: 'tauri 의존성에 "devtools" 기능이 켜져 있어 릴리스에서도 devtools가 열려요.',
+      });
     }
   }
 
@@ -65,7 +102,11 @@ function checkTauri(root: string, v: Violation[]): void {
     for (const p of perms) {
       const id = typeof p === "string" ? p : isRecord(p) && typeof p["identifier"] === "string" ? p["identifier"] : "";
       if (FORBIDDEN_PLUGIN_PREFIXES.some((prefix) => id.startsWith(prefix))) {
-        v.push({ rule: "SEC-003", file: f, message: `프론트엔드에 ${id} 권한을 주지 않아요. OS 접근은 Rust 캡을 거쳐요.` });
+        v.push({
+          rule: "SEC-003",
+          file: f,
+          message: `프론트엔드에 ${id} 권한을 주지 않아요. OS 접근은 Rust 캡을 거쳐요.`,
+        });
       }
     }
   }
@@ -99,7 +140,8 @@ function checkWorkflow(f: string, src: string, v: Violation[]): void {
     const ref = m[1] ?? "";
     if (ref.startsWith("./")) return;
     if (ref.startsWith("docker://")) {
-      if (!/@sha256:[0-9a-f]{64}$/.test(ref)) v.push({ rule: "CI-002", file: f, line: i + 1, message: `docker 이미지를 digest로 고정하세요: ${ref}` });
+      if (!/@sha256:[0-9a-f]{64}$/.test(ref))
+        v.push({ rule: "CI-002", file: f, line: i + 1, message: `docker 이미지를 digest로 고정하세요: ${ref}` });
       return;
     }
     if (!SHA_PIN_RE.test(ref)) {
@@ -116,7 +158,11 @@ function checkWorkflow(f: string, src: string, v: Violation[]): void {
   if (perms === undefined) {
     v.push({ rule: "CI-003", file: f, message: "최상위 permissions를 명시하세요(기본 contents: read)." });
   } else if (!readOnly(perms)) {
-    v.push({ rule: "CI-003", file: f, message: "최상위 permissions는 읽기 전용이어야 해요. 쓰기 권한은 필요한 잡에만 주세요." });
+    v.push({
+      rule: "CI-003",
+      file: f,
+      message: "최상위 permissions는 읽기 전용이어야 해요. 쓰기 권한은 필요한 잡에만 주세요.",
+    });
   }
 
   // CI-004: signing secrets only in tag-triggered jobs bound to the `release` environment.
@@ -126,13 +172,21 @@ function checkWorkflow(f: string, src: string, v: Violation[]): void {
     const env = isRecord(job) ? job["environment"] : undefined;
     const envName = typeof env === "string" ? env : isRecord(env) ? env["name"] : undefined;
     if (envName !== "release") {
-      v.push({ rule: "CI-004", file: f, message: `잡 "${name}"이 서명 시크릿을 쓰지만 environment가 release가 아니에요.` });
+      v.push({
+        rule: "CI-004",
+        file: f,
+        message: `잡 "${name}"이 서명 시크릿을 쓰지만 environment가 release가 아니에요.`,
+      });
     }
     const push = on["push"];
     const tagOnly =
       Object.keys(on).length === 1 && isRecord(push) && push["tags"] !== undefined && push["branches"] === undefined;
     if (!tagOnly) {
-      v.push({ rule: "CI-004", file: f, message: `잡 "${name}"이 서명 시크릿을 쓰므로 워크플로는 태그 push로만 트리거돼야 해요.` });
+      v.push({
+        rule: "CI-004",
+        file: f,
+        message: `잡 "${name}"이 서명 시크릿을 쓰므로 워크플로는 태그 push로만 트리거돼야 해요.`,
+      });
     }
   }
 }

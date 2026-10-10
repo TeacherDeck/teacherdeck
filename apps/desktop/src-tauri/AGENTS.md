@@ -8,7 +8,7 @@
 |---|---|---|
 | CAP-001 | 캡은 범용 프리미티브로 만든다. 도구 전용 메서드는 금지한다. 기존 캡 조합과 WASM을 먼저 검토한다. | [capabilities.md](../../../docs/spec/capabilities.md#6-규칙) |
 | CAP-002 | 경로를 받거나 반환하지 않는다. 핸들만 쓴다. | 같은 문서 |
-| CAP-003 | 1MB 초과 바이너리는 브리지가 아니라 `deckmod` 리소스 URL로 보낸다. | 같은 문서 |
+| CAP-003 | 대용량 읽기는 리소스 URL, fs 1.1 출력만 64KiB 순차 브리지 청크를 쓴다. | 같은 문서 |
 | CAP-004 | 추가는 minor, 그 외는 major다. major는 이전 핸들러를 유지하고 ADR을 쓴다. | 같은 문서 |
 | CAP-005 | 새 캡과 major 변경은 사람 승인을 받는다(정지 조건). | 같은 문서 |
 | CAP-006 | 인자·결과는 Rust 구조체 + ts-rs로 정의한다. `serde_json::Value`는 디스패치 경계에서만 쓴다. | 같은 문서 |
@@ -39,6 +39,7 @@
 | `src/caps/` | 캡 핸들러. `route()`가 레지스트리와 1:1로 대응한다 |
 | `src/modules.rs` | 기본 모듈 로드·검증·해석, 메모리 서빙 |
 | `src/storage.rs`, `src/platform.rs` | storage 영속화, OS 정보·Mica·난수·temp·로깅 |
+| `src/file_read.rs`, `src/file_output.rs`, `src/file_transfer.rs` | 제한된 읽기·새 결과 저장과 모듈별 작업 권한([ADR-0014](../../../docs/adr/0014-bounded-file-transfers.md)) |
 | `src/probe.rs` | 디버그 전용 SEC-004 프로브([sec-004.md](../../../docs/security/sec-004.md)) |
 | `capabilities/main.json`, `tauri.conf.json` | ACL·CSP·번들 설정(보호 파일, 정지 조건) |
 

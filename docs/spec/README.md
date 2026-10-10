@@ -99,7 +99,7 @@ Additional terms: see LICENSE-ADDITIONAL-TERMS
 | MOD-016 | MAY | 모듈 전용 지침이 필요하면 모듈 디렉터리에 AGENTS.md와 CLAUDE.md를 함께 둔다(GEN-002 준수). | `check-docs`(쌍 존재) | [modules.md](modules.md) |
 | CAP-001 | MUST | 캡은 범용 프리미티브로 설계한다. | [manual] 리뷰, add-capability skill | [capabilities.md](capabilities.md) |
 | CAP-002 | MUST NOT | 파일 경로를 인자로 받거나 결과로 반환하지 않는다. | 타입 리뷰(deck-core `caps/fs.rs`에 경로 필드 없음), 핸들 테이블 테스트 | [capabilities.md](capabilities.md) |
-| CAP-003 | MUST NOT | 대용량 바이너리(>1MB)를 브리지로 보내지 않는다. | 브리지 크기 제한 BRG-007 | [capabilities.md](capabilities.md) |
+| CAP-003 | MUST NOT | 대용량 바이너리(>1MB)를 브리지로 한 번에 보내지 않는다. | 브리지 크기 제한 BRG-007, 파일 청크 검사 | [capabilities.md](capabilities.md) |
 | CAP-004 | MUST | 버전 규칙: 메서드·선택 인자·결과 필드 추가는 minor, 그 외는 major다. | [manual], 레지스트리 diff 리뷰 | [capabilities.md](capabilities.md) |
 | CAP-005 | MUST | 새 캡이나 major 변경은 사람 승인을 받는다(GEN-005). | 훅(레지스트리 생성물 보호), CODEOWNERS, [manual] | [capabilities.md](capabilities.md) |
 | CAP-006 | MUST | 모든 메서드 인자·결과는 Rust 구조체로 정의하고 ts-rs로 TS 타입을 export한다. | `check-gen` | [capabilities.md](capabilities.md) |
@@ -107,7 +107,7 @@ Additional terms: see LICENSE-ADDITIONAL-TERMS
 | CAP-008 | MUST | 모듈 권한 검사(설치·활성 여부, 선언 캡, 버전)는 Rust에서 매 호출마다 수행한다. | 권한 거부 테스트(`src-tauri/src/bridge.rs`) | [capabilities.md](capabilities.md) |
 | CAP-009 | MUST | 각 캡은 정상·권한 거부·잘못된 인자 테스트를 갖춘다. | `every_registry_method_has_a_route` 테스트, [manual] 리뷰(커버리지 보고는 미구현) | [capabilities.md](capabilities.md) |
 | CAP-010 | MUST | `capabilities.md`의 레지스트리 표와 `schema/capabilities.json`은 Rust 레지스트리에서 생성한다. | `check-gen` | [capabilities.md](capabilities.md) |
-| BRG-001 | MUST | 셸은 `event.source`가 알려진 모듈 iframe의 contentWindow이고 `event.origin`이 모듈 origin인 메시지만 처리한다. | 셸 단위 테스트(`apps/desktop/src/bridge/ModuleBridge.test.ts`) | [bridge-protocol.md](bridge-protocol.md) |
+| BRG-001 | MUST | 셸은 `event.source`가 알려진 모듈 iframe의 contentWindow이고 `event.origin`이 그 프레임의 검증된 entryUrl에 등록된 정확한 모듈 origin인 메시지만 처리한다. | 셸 단위 테스트(`apps/desktop/src/bridge/ModuleBridge.test.ts`) | [bridge-protocol.md](bridge-protocol.md) |
 | BRG-002 | MUST | 모듈(SDK)은 `window.parent`에서 온, 셸 origin의 메시지만 처리한다. | SDK 테스트(`packages/sdk/src/client.test.ts`) | [bridge-protocol.md](bridge-protocol.md) |
 | BRG-003 | MUST | 모듈은 로드 후 10초 안에 `hello`를 보낸다. | SDK 구현, 셸 테스트 | [bridge-protocol.md](bridge-protocol.md) |
 | BRG-004 | MUST | `req.id`는 모듈 세션 내 고유한 UUID다. | SDK 테스트(`packages/sdk/src/client.test.ts`) | [bridge-protocol.md](bridge-protocol.md) |
@@ -134,14 +134,14 @@ Additional terms: see LICENSE-ADDITIONAL-TERMS
 | PRV-002 | MUST NOT | 텔레메트리, 사용 통계, 크래시 자동 전송을 하지 않는다. | 의존성 리뷰, [manual] | [privacy.md](privacy.md) |
 | PRV-003 | MUST NOT | 로그와 에러 메시지에 경로·파일명·파일 내용·사용자 입력·storage 값을 남기지 않는다. | [manual] 리뷰(타입 강제 로깅 헬퍼는 미구현) | [privacy.md](privacy.md) |
 | PRV-004 | MUST NOT | 테스트·문서·스크린샷·예제에 실존 인명·학교명·연락처를 쓰지 않는다. | [manual], 합성 데이터 생성기 제공 | [privacy.md](privacy.md) |
-| PRV-005 | MUST | 임시 파일은 앱 전용 temp 디렉터리에만 만들고, 작업 종료 시 삭제하며, 앱 시작 시 잔여물을 정리한다. | temp 헬퍼 API(`TempArea`)와 테스트 | [privacy.md](privacy.md) |
+| PRV-005 | MUST | 임시 파일은 앱 전용 temp 디렉터리에 만들고 작업 종료·앱 시작에 정리한다. | temp 헬퍼 API(`TempArea`), 출력 서비스와 테스트 | [privacy.md](privacy.md) |
 | PRV-006 | MUST NOT | 원본 파일 덮어쓰기·삭제를 기본 동작으로 하지 않는다. | [manual], GEN-005 | [privacy.md](privacy.md) |
 | PRV-007 | MUST | 모듈 데이터는 모듈 id로 격리한다. | storage 캡 테스트 | [privacy.md](privacy.md) |
 | SEC-001 | MUST | 셸 webview는 로컬 번들만 로드하며 CSP를 설정한다. | tauri.conf 검사 `check-security` | [security.md](security.md) |
-| SEC-002 | MUST | 모듈은 셸과 다른 origin에서만 서빙한다. | origin 상수(`origins.rs`), 프로토콜 CSP 테스트 | [security.md](security.md) |
+| SEC-002 | MUST | 모듈은 셸 및 다른 모듈과 독립 origin에서만 서빙한다. | origin 생성·authority 검증(`origins.rs`, `protocol.rs`), 셸 브리지·CSP 테스트 | [security.md](security.md) |
 | SEC-003 | MUST | Tauri ACL은 셸 메인 창에만, 최소 권한으로 준다. | `check-security` | [security.md](security.md) |
 | SEC-004 | MUST | 모듈 origin에서 Tauri IPC에 접근할 수 없어야 하며, 이를 검증하는 테스트나 절차를 유지한다. | 검증 절차 [sec-004.md](../security/sec-004.md) | [security.md](security.md) |
-| SEC-005 | MUST | `deckmod` 프로토콜은 정규화 후 해당 모듈 루트 하위만 서빙한다. | 프로토콜 테스트(`src-tauri/src/protocol.rs`) | [security.md](security.md) |
+| SEC-005 | MUST | `deckmod` 프로토콜은 정확한 `<id>.modules.localhost` authority와 경로 id를 대조하고 정규화 후 해당 모듈 루트 하위만 서빙한다. | 프로토콜 테스트(`src-tauri/src/protocol.rs`) | [security.md](security.md) |
 | SEC-006 | MUST | 패키지 설치 시 zip-slip·크기·SHA256SUMS를 검증하고, 원격 카탈로그 도입 시 서명 검증을 추가한다. | deck-core `package.rs` 테스트 | [security.md](security.md) |
 | SEC-007 | MUST | 릴리스 빌드에서 devtools를 비활성화한다. | `check-security` | [security.md](security.md) |
 | SEC-008 | MUST | updater는 서명을 검증하고, 자동 재시작하지 않는다(사용자 동의 후 적용). | 코드 리뷰 | [security.md](security.md) |

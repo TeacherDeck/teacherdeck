@@ -20,6 +20,7 @@ mod system;
 pub mod window;
 
 pub use fs::issue_dropped;
+pub use fs::serve_file_resource;
 
 /// Handler selected for a `(cap, method)` pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

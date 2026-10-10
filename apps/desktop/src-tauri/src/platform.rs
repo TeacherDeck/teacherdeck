@@ -87,15 +87,34 @@ impl TempDir {
     pub fn path(&self) -> &Path {
         &self.path
     }
+
+    /// Transfers cleanup to a service that removes only its own files, non-recursively.
+    pub fn into_path(mut self) -> PathBuf {
+        std::mem::take(&mut self.path)
+    }
 }
 
 impl Drop for TempDir {
     fn drop(&mut self) {
+        if self.path.as_os_str().is_empty() {
+            return;
+        }
         let _ = std::fs::remove_dir_all(&self.path);
     }
 }
 
 impl TempArea {
+    /// Uses a dedicated output area without recursively deleting unverified leftovers.
+    pub fn init_preserving(root: PathBuf) -> std::io::Result<Self> {
+        std::fs::create_dir_all(&root)?;
+        Ok(Self { root })
+    }
+
+    /// Host-private root, used for conservative output-journal recovery.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     /// Uses `root`, removing leftovers from a previous run.
     pub fn init(root: PathBuf) -> std::io::Result<Self> {
         if root.exists() {

@@ -7,6 +7,18 @@ import type { FolderHandleInfo } from "./generated/FolderHandleInfo.ts";
 import type { PickFilesArgs } from "./generated/PickFilesArgs.ts";
 import { CAPABILITIES } from "./generated/registry.ts";
 import type { SystemInfo } from "./generated/SystemInfo.ts";
+import type { HandleArgs } from "./generated/HandleArgs.ts";
+import type { FileRead } from "./generated/FileRead.ts";
+import type { CloseReadArgs } from "./generated/CloseReadArgs.ts";
+import type { CreateOutputFolderArgs } from "./generated/CreateOutputFolderArgs.ts";
+import type { OutputBatch } from "./generated/OutputBatch.ts";
+import type { BeginWriteArgs } from "./generated/BeginWriteArgs.ts";
+import type { FileWrite } from "./generated/FileWrite.ts";
+import type { WriteChunkArgs } from "./generated/WriteChunkArgs.ts";
+import type { WriteChunkResult } from "./generated/WriteChunkResult.ts";
+import type { WriteIdArgs } from "./generated/WriteIdArgs.ts";
+import type { BatchIdArgs } from "./generated/BatchIdArgs.ts";
+import { createFileTransfer, type TransferOptions, type WriteBlobArgs } from "./file-transfer.ts";
 import {
   DEFAULT_TIMEOUT_MS,
   DeckCallError,
@@ -37,7 +49,7 @@ export interface WindowLike {
   parent: { postMessage(message: unknown, targetOrigin: string): void };
   addEventListener(type: "message", listener: (e: MessageEventLike) => void): void;
   removeEventListener(type: "message", listener: (e: MessageEventLike) => void): void;
-  location?: { ancestorOrigins?: { readonly length: number; readonly [index: number]: string } };
+  location?: { origin?: string; ancestorOrigins?: { readonly length: number; readonly [index: number]: string } };
 }
 
 export interface ConnectOptions {
@@ -91,6 +103,16 @@ export interface Deck {
     pickFolder(): Promise<FolderHandleInfo | null>;
     stat(handle: string): Promise<FileHandleInfo>;
     reveal(handle: string): Promise<void>;
+    openRead(args: HandleArgs): Promise<FileRead>;
+    closeRead(args: CloseReadArgs): Promise<void>;
+    createOutputFolder(args: CreateOutputFolderArgs): Promise<OutputBatch>;
+    beginWrite(args: BeginWriteArgs): Promise<FileWrite>;
+    writeChunk(args: WriteChunkArgs): Promise<WriteChunkResult>;
+    commitWrite(args: WriteIdArgs): Promise<FileHandleInfo>;
+    abortWrite(args: WriteIdArgs): Promise<void>;
+    closeOutputFolder(args: BatchIdArgs): Promise<void>;
+    readChunks(args: HandleArgs, options?: TransferOptions): AsyncIterable<Uint8Array>;
+    writeBlob(args: WriteBlobArgs, options?: TransferOptions): Promise<FileHandleInfo>;
   };
   readonly window: {
     setAlwaysOnTop(value: boolean): Promise<void>;
@@ -190,7 +212,10 @@ export function connect(options: ConnectOptions = {}): Promise<Deck> {
         }
         return Promise.reject(
           cap in host.caps
-            ? new DeckCallError("PERMISSION_DENIED", `[MOD-006] module.json에 선언하지 않았거나 쓸 수 없는 캡이에요: ${cap}`)
+            ? new DeckCallError(
+                "PERMISSION_DENIED",
+                `[MOD-006] module.json에 선언하지 않았거나 쓸 수 없는 캡이에요: ${cap}`,
+              )
             : new DeckCallError("CAPABILITY_UNAVAILABLE", `이 앱 버전에는 없는 기능이에요: ${cap}`),
         );
       }
@@ -225,6 +250,16 @@ export function connect(options: ConnectOptions = {}): Promise<Deck> {
       });
     };
 
+    const callFs11 = <T>(method: string, args: unknown): Promise<T> => {
+      const { granted, host } = requireInit();
+      if (!granted.includes("fs")) return call<T>("fs", method, args);
+      const version = /^1\.(\d+)\.\d+$/.exec(host.caps["fs"] ?? "");
+      if (!version || Number(version[1]) < 1)
+        return Promise.reject(
+          new DeckCallError("VERSION_MISMATCH", "파일 전송은 fs 1.1 이상 앱에서 사용할 수 있어요."),
+        );
+      return call<T>("fs", method, args);
+    };
     const deck: Deck = {
       get module() {
         return requireInit().module;
@@ -270,6 +305,16 @@ export function connect(options: ConnectOptions = {}): Promise<Deck> {
         pickFolder: () => call<FolderHandleInfo | null>("fs", "pickFolder"),
         stat: (handle) => call<FileHandleInfo>("fs", "stat", { handle }),
         reveal: (handle) => call("fs", "reveal", { handle }).then(() => undefined),
+        openRead: (args) => callFs11<FileRead>("openRead", args),
+        closeRead: (args) => callFs11("closeRead", args).then(() => undefined),
+        createOutputFolder: (args) => callFs11<OutputBatch>("createOutputFolder", args),
+        beginWrite: (args) => callFs11<FileWrite>("beginWrite", args),
+        writeChunk: (args) => callFs11<WriteChunkResult>("writeChunk", args),
+        commitWrite: (args) => callFs11<FileHandleInfo>("commitWrite", args),
+        abortWrite: (args) => callFs11("abortWrite", args).then(() => undefined),
+        closeOutputFolder: (args) => callFs11("closeOutputFolder", args).then(() => undefined),
+        readChunks: (args, opts) => createFileTransfer(deck.fs, () => win.location?.origin).readChunks(args, opts),
+        writeBlob: (args, opts) => createFileTransfer(deck.fs, () => win.location?.origin).writeBlob(args, opts),
       },
       window: {
         setAlwaysOnTop: (value) => call("window", "setAlwaysOnTop", { value }).then(() => undefined),

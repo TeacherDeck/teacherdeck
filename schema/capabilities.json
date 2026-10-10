@@ -61,11 +61,51 @@
           "long": false,
           "name": "reveal",
           "summary": "탐색기에서 파일 위치 열기"
+        },
+        {
+          "long": true,
+          "name": "openRead",
+          "summary": "파일 읽기 리소스 열기(256KiB 청크)"
+        },
+        {
+          "long": false,
+          "name": "closeRead",
+          "summary": "파일 읽기 리소스 닫기"
+        },
+        {
+          "long": true,
+          "name": "createOutputFolder",
+          "summary": "새 결과 폴더 만들기"
+        },
+        {
+          "long": true,
+          "name": "beginWrite",
+          "summary": "새 결과 파일 쓰기 시작"
+        },
+        {
+          "long": false,
+          "name": "writeChunk",
+          "summary": "64KiB 이하 순차 청크 쓰기"
+        },
+        {
+          "long": true,
+          "name": "commitWrite",
+          "summary": "완성된 결과를 덮어쓰기 없이 게시"
+        },
+        {
+          "long": false,
+          "name": "abortWrite",
+          "summary": "미완성 파일 쓰기 취소"
+        },
+        {
+          "long": false,
+          "name": "closeOutputFolder",
+          "summary": "결과 폴더 작업 권한 닫기"
         }
       ],
       "name": "fs",
       "summary": "파일 선택과 핸들(경로는 노출하지 않음)",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "methods": [

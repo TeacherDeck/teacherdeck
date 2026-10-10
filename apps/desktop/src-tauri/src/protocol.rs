@@ -3,13 +3,14 @@
 
 //! `deckmod` custom protocol (catalog.md §3, SEC-005).
 //!
-//! URL shape: `http://deckmod.localhost/<id>/<version>/<path>`. The path is percent-decoded once
+//! URL shape: `http://deckmod.<id>.modules.localhost/<id>/<version>/<path>`. The path is percent-decoded once
 //! and validated with deck-core's package path rules; anything else is a 404. Files come from the
-//! in-memory module store, so no URL can reach the file system. Every response carries the
-//! module CSP and `nosniff`.
+//! in-memory module store. Reserved file resources are separately dispatched through
+//! owner-scoped read grants; arbitrary URL paths never reach the file system. Every
+//! response carries the module CSP and `nosniff`.
 
 use percent_encoding::percent_decode_str;
-use tauri::http::{Method, Response, StatusCode, header};
+use tauri::http::{Method, Response, StatusCode, Uri, header};
 
 use deck_core::util::{is_safe_relative_path, is_valid_module_id};
 
@@ -24,6 +25,33 @@ pub struct ModulePath {
     pub version: String,
     /// Package-relative file path.
     pub file: String,
+}
+
+/// Module id from a Wry-restored logical URI. Exact authority validation is required before
+/// package and reserved resource dispatch; the WebView2 prefix filter is not authentication.
+pub fn module_id_from_uri(uri: &Uri) -> Option<&str> {
+    if uri.scheme_str()? != "deckmod" {
+        return None;
+    }
+    let authority = uri.authority()?.as_str();
+    let id = authority.strip_suffix(".modules.localhost")?;
+    if !is_valid_module_id(id) {
+        return None;
+    }
+    Some(id)
+}
+
+/// Validates both authority and package path. The caller additionally checks ModuleStore's
+/// installed/runnable module and served version before returning bytes.
+pub fn module_request_path(uri: &Uri) -> Option<ModulePath> {
+    let id = module_id_from_uri(uri)?;
+    let path = parse_path(uri.path())?;
+    (path.id == id).then_some(path)
+}
+
+/// Bare localhost is reserved for explicitly enabled debug probes, never package resources.
+pub fn is_probe_uri(uri: &Uri) -> bool {
+    uri.scheme_str() == Some("deckmod") && uri.authority().map(|a| a.as_str()) == Some("localhost")
 }
 
 /// Parses and validates `/<id>/<version>/<path>`. `None` means "not servable".
@@ -146,6 +174,37 @@ mod tests {
         ] {
             assert_eq!(parse_path(bad), None, "{bad}");
         }
+    }
+
+    #[test]
+    fn authority_and_path_must_identify_the_same_module() {
+        let parse = |s: &str| s.parse::<Uri>().ok().and_then(|u| module_request_path(&u));
+        assert!(parse("deckmod://timer.modules.localhost/timer/0.1.0/index.html").is_some());
+        for bad in [
+            "deckmod://timer.modules.localhost/meeting-note/0.1.0/index.html",
+            "deckmod://localhost/timer/0.1.0/index.html",
+            "deckmod://timer.modules.localhost:80/timer/0.1.0/index.html",
+            "deckmod://user@timer.modules.localhost/timer/0.1.0/index.html",
+            "deckmod://timer.modules.localhost./timer/0.1.0/index.html",
+            "deckmod://extra.timer.modules.localhost/timer/0.1.0/index.html",
+            "deckmod://Timer.modules.localhost/timer/0.1.0/index.html",
+            "deckmod://timer.modules.localhost.evil/timer/0.1.0/index.html",
+            "http://deckmod.timer.modules.localhost/timer/0.1.0/index.html",
+        ] {
+            assert!(parse(bad).is_none(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn debug_probe_has_no_module_authority() {
+        let bare: Uri = "deckmod://localhost/_probe/index.html".parse().unwrap();
+        assert!(is_probe_uri(&bare));
+        assert!(module_id_from_uri(&bare).is_none());
+        let module: Uri = "deckmod://timer.modules.localhost/_probe/index.html"
+            .parse()
+            .unwrap();
+        assert!(!is_probe_uri(&module));
+        assert!(module_request_path(&module).is_none());
     }
 
     #[test]

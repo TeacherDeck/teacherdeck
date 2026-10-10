@@ -8,7 +8,7 @@ import type { ErrorCode } from "./generated/ErrorCode.ts";
 /** Integer protocol version carried in every message (BRG-008). */
 export const PROTOCOL_VERSION = 1;
 /** SDK semver (VER-006). */
-export const SDK_VERSION = "0.1.0";
+export const SDK_VERSION = "0.2.0";
 /** Default request timeout; `long` registry methods are exempt (BRG-004). */
 export const DEFAULT_TIMEOUT_MS = 30_000;
 /** A module must say hello within this time after loading (BRG-003). */

@@ -12,7 +12,9 @@ use std::io::Write as _;
 use std::path::Path;
 
 use deck_core::caps::fs::{
-    DroppedFiles, FileFilter, FileHandleInfo, FolderHandleInfo, HandleArgs, PickFilesArgs,
+    BatchIdArgs, BeginWriteArgs, CloseReadArgs, CreateOutputFolderArgs, DroppedFiles, FileFilter,
+    FileHandleInfo, FileRead, FileWrite, FolderHandleInfo, HandleArgs, OutputBatch, PickFilesArgs,
+    WriteChunkArgs, WriteChunkResult, WriteIdArgs,
 };
 use deck_core::caps::storage::{KeyArgs, SetArgs};
 use deck_core::caps::system::{OsInfo, SystemInfo};
@@ -186,6 +188,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         ts::<FileFilter>(SDK_DIR, &cfg)?,
         ts::<PickFilesArgs>(SDK_DIR, &cfg)?,
         ts::<HandleArgs>(SDK_DIR, &cfg)?,
+        ts::<CloseReadArgs>(SDK_DIR, &cfg)?,
+        ts::<FileRead>(SDK_DIR, &cfg)?,
+        ts::<CreateOutputFolderArgs>(SDK_DIR, &cfg)?,
+        ts::<OutputBatch>(SDK_DIR, &cfg)?,
+        ts::<BeginWriteArgs>(SDK_DIR, &cfg)?,
+        ts::<FileWrite>(SDK_DIR, &cfg)?,
+        ts::<WriteChunkArgs>(SDK_DIR, &cfg)?,
+        ts::<WriteChunkResult>(SDK_DIR, &cfg)?,
+        ts::<WriteIdArgs>(SDK_DIR, &cfg)?,
+        ts::<BatchIdArgs>(SDK_DIR, &cfg)?,
         ts::<FileHandleInfo>(SDK_DIR, &cfg)?,
         ts::<FolderHandleInfo>(SDK_DIR, &cfg)?,
         ts::<DroppedFiles>(SDK_DIR, &cfg)?,

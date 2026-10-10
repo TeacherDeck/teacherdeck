@@ -18,12 +18,20 @@ export const CAPABILITIES = {
     },
   },
   fs: {
-    version: "1.0.0",
+    version: "1.1.0",
     methods: {
       pickFiles: { long: true },
       pickFolder: { long: true },
       stat: { long: false },
       reveal: { long: false },
+      openRead: { long: true },
+      closeRead: { long: false },
+      createOutputFolder: { long: true },
+      beginWrite: { long: true },
+      writeChunk: { long: false },
+      commitWrite: { long: true },
+      abortWrite: { long: false },
+      closeOutputFolder: { long: false },
     },
   },
   window: {
