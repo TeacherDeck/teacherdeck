@@ -70,6 +70,33 @@ describe("@deck/ui", () => {
     expect(onClick).toHaveBeenCalledOnce();
   });
 
+  it("SettingsExpander has one native header button and an independent action", () => {
+    const action = vi.fn();
+    wrap(<ui.SettingsExpander header="설정" action={<ui.Button onClick={action}>별도 작업</ui.Button>}>
+      <ui.SettingsCard header="내용" />
+    </ui.SettingsExpander>);
+    const header = screen.getByRole("button", { name: "설정" });
+    expect(header.tagName).toBe("BUTTON");
+    expect(header.getAttribute("type")).toBe("button");
+    expect(header.querySelector("button")).toBeNull();
+    header.focus();
+    expect(document.activeElement).toBe(header);
+    fireEvent.click(screen.getByRole("button", { name: "별도 작업" }));
+    expect(action).toHaveBeenCalledOnce();
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(header);
+    const group = screen.getByRole("group", { name: "설정" });
+    expect(header.getAttribute("aria-controls")).toBe(group.id);
+    expect(header.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("TextBox rows reaches only the multiline textarea", () => {
+    wrap(<><ui.TextBox header="여러 줄" multiline rows={6} value="" onChange={() => undefined} />
+      <ui.TextBox header="한 줄" rows={6} value="" onChange={() => undefined} /></>);
+    expect(screen.getByRole("textbox", { name: "여러 줄" }).getAttribute("rows")).toBe("6");
+    expect(screen.getByRole("textbox", { name: "한 줄" }).hasAttribute("rows")).toBe(false);
+  });
+
   it("ContentDialog reports which button closed it", () => {
     const onClose = vi.fn();
     wrap(

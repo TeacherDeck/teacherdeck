@@ -6,7 +6,7 @@
 import { Button, createFocusOutlineStyle, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { ArrowUploadRegular, ChevronDownRegular, ChevronRightRegular, ChevronUpRegular } from "@fluentui/react-icons";
 import type { Deck } from "@deck/sdk";
-import { type MouseEvent, type ReactNode, createContext, useContext, useId, useState } from "react";
+import { type ReactNode, createContext, useContext, useId, useState } from "react";
 import { InfoBar } from "./controls.tsx";
 import { deckTokens } from "./tokens/index.ts";
 import { Body, BodyStrong, Caption, Subtitle, Title } from "./typography.tsx";
@@ -55,6 +55,12 @@ const useStyles = makeStyles({
     borderRadius: deckTokens.cardRadius,
   },
   expanderHeader: { backgroundColor: "transparent", border: "none", cursor: "pointer" },
+  expanderToggle: {
+    display: "flex", alignItems: "center", gap: deckTokens.inlineGap, flexGrow: 1, minWidth: 0,
+    padding: 0, border: "none", backgroundColor: "transparent", color: "inherit",
+    fontFamily: "inherit", textAlign: "start", cursor: "pointer",
+    ...createFocusOutlineStyle(),
+  },
   expanderBody: {
     display: "flex",
     flexDirection: "column",
@@ -242,23 +248,21 @@ export function SettingsExpander({
   const [open, setOpen] = useState(defaultExpanded);
   const bodyId = useId();
   const toggle = () => setOpen((o) => !o);
-  const stop = (e: MouseEvent) => e.stopPropagation();
   return (
     <div className={s.expander}>
-      {/* Mouse convenience only: keyboard and screen readers use the chevron button. */}
-      <div className={mergeClasses(s.card, s.expanderHeader)} onClick={toggle}>
-        <CardTexts {...{ icon, header, ...(description === undefined ? {} : { description }) }} />
-        <div className={s.action} onClick={stop}>
-          {action}
-          <Button
-            appearance="subtle"
-            icon={open ? <ChevronUpRegular /> : <ChevronDownRegular />}
+      <div className={mergeClasses(s.card, s.expanderHeader)}>
+          <button
+            type="button"
+            className={s.expanderToggle}
             aria-expanded={open}
             aria-controls={bodyId}
             aria-label={header}
             onClick={toggle}
-          />
-        </div>
+          >
+            <CardTexts {...{ icon, header, ...(description === undefined ? {} : { description }) }} />
+            <span className={s.icon} aria-hidden>{open ? <ChevronUpRegular /> : <ChevronDownRegular />}</span>
+          </button>
+        {action !== undefined && <div className={s.action}>{action}</div>}
       </div>
       {open && (
         <div id={bodyId} role="group" aria-label={header} className={s.expanderBody}>

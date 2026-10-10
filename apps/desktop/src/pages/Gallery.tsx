@@ -86,13 +86,16 @@ function InputsSample({ kind }: { kind: "text" | "number" | "combo" | "radio" | 
   switch (kind) {
     case "text":
       return (
-        <TextBox
-          header="이름 규칙"
-          placeholder="예: {번호}_{이름}"
-          value={text}
-          onChange={setText}
-          description="{번호}는 1부터 매겨요."
-        />
+        <>
+          <TextBox
+            header="이름 규칙"
+            placeholder="예: {번호}_{이름}"
+            value={text}
+            onChange={setText}
+            description="{번호}는 1부터 매겨요."
+          />
+          <TextBox header="여러 줄 메모" value={text} onChange={setText} multiline rows={4} />
+        </>
       );
     case "number":
       return <NumberBox header="분" value={num} min={1} max={180} onChange={setNum} />;

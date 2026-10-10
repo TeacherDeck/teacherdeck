@@ -268,6 +268,8 @@ export interface TextBoxProps extends HeaderedProps {
   placeholder?: string;
   /** Multi-line input (Textarea). */
   multiline?: boolean;
+  /** Initial visible line count for multi-line inputs. */
+  rows?: number;
   validationMessage?: string;
   /** Selectable output without allowing edits. */
   readOnly?: boolean;
@@ -284,6 +286,7 @@ export function TextBox({
   onChange,
   placeholder,
   multiline = false,
+  rows,
   validationMessage,
   readOnly,
   inputRef,
@@ -308,7 +311,13 @@ export function TextBox({
   return (
     <Field {...fieldProps(header, validationMessage)}>
       {multiline ? (
-        <Textarea {...common} ref={setInputRef} resize="vertical" onChange={(_, d) => onChange(d.value)} />
+        <Textarea
+          {...common}
+          {...defined({ rows })}
+          ref={setInputRef}
+          resize="vertical"
+          onChange={(_, d) => onChange(d.value)}
+        />
       ) : (
         <Input {...common} ref={setInputRef} onChange={(_, d) => onChange(d.value)} />
       )}
