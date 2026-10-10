@@ -1,27 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import type { Deck } from "@deck/sdk";
-import { type Entry, type Meeting, emptyMeeting, publicText, readMeeting } from "./meeting.ts";
-export type ExportFormat = "txt" | "md" | "summary";
+import { type Entry, type Meeting, emptyMeeting, readMeeting } from "./meeting.ts";
+import { structuredExport } from "./export.ts";
+export type ExportFormat = "txt" | "md" | "summary" | "html";
 export function exportText(meeting: Meeting, format: ExportFormat): string {
-  if (format === "txt") return publicText(meeting);
-  const entries = meeting.entries.filter(
-    (entry) => !entry.private && (format !== "summary" || ["결정", "조치", "안건"].includes(entry.kind)),
-  );
-  return [
-    `# ${meeting.title}`,
-    `참석: ${meeting.speakers.join(", ")}`,
-    meeting.place ? `장소: ${meeting.place}` : "",
-    meeting.absentees?.length ? `결석: ${meeting.absentees.join(", ")}` : "",
-    "",
-    ...entries.map((entry) =>
-      entry.kind === "안건"
-        ? `\n## ${entry.text}`
-        : `- [${entry.kind}] ${entry.speaker ? `${entry.speaker}: ` : ""}${entry.text}${entry.owner ? ` · 담당: ${entry.owner}` : ""}${entry.due ? ` · 기한: ${entry.due}` : ""}`,
-    ),
-  ]
-    .filter((line) => line !== "")
-    .join("\n");
+  return structuredExport(meeting, format);
 }
 /** Accepts this module's backup and the original application's plain meeting JSON. */
 export function importMeeting(value: unknown): Meeting {
@@ -40,7 +24,8 @@ export function importMeeting(value: unknown): Meeting {
       throw new Error("INVALID_MEETING");
     return speaker.name;
   });
-  if (speakers.length > 12) throw new Error("INVALID_MEETING");
+  if (speakers.length > 24) throw new Error("INVALID_MEETING");
+  const speakerIds = speakers.map((_, i) => `import-${i}`);
   const entries: Entry[] = [];
   let agenda = 0;
   for (const item of data["entries"]) {
@@ -75,6 +60,7 @@ export function importMeeting(value: unknown): Meeting {
       kind: item.type === "액션" ? "조치" : item.type,
       text: item.text,
       speaker: item.sp === null ? "" : (speakers[item.sp] ?? ""),
+      speakerId: item.sp === null ? "" : (speakerIds[item.sp] ?? ""),
       private: item.priv,
       owner: typeof item.owner === "string" ? item.owner : "",
       due: typeof item.due === "string" ? item.due : "",
@@ -99,6 +85,8 @@ export function importMeeting(value: unknown): Meeting {
     ...emptyMeeting(),
     title: data["title"],
     speakers,
+    speakerIds,
+    selectedId: typeof data["cur"] === "number" ? (speakerIds[data["cur"]] ?? "") : "",
     selected: typeof data["cur"] === "number" ? (speakers[data["cur"]] ?? "") : "",
     entries,
     place: typeof data["place"] === "string" ? data["place"] : "",
@@ -136,7 +124,9 @@ export async function saveFile(deck: Deck, meeting: Meeting, backup: boolean, fo
           ? "회의록.txt"
           : format === "md"
             ? "회의록.md"
-            : "회의록 요약.md",
+            : format === "html"
+              ? "회의록.html"
+              : "회의록 요약.md",
       blob: new Blob([backup ? JSON.stringify(meeting, null, 2) : exportText(meeting, format)], {
         type: "text/plain;charset=utf-8",
       }),

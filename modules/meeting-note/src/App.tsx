@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-import type { Deck } from "@deck/sdk";
+import { DeckCallError, type Deck } from "@deck/sdk";
 import {
   Body,
   BodyStrong,
   Button,
   Caption,
+  CapabilityGate,
   CheckBox,
   ComboBox,
   ContentDialog,
@@ -31,6 +32,7 @@ import {
   speakerIndex,
 } from "./meeting.ts";
 import { createWriter, loadMeeting } from "./storage.ts";
+import { publicClipboard } from "./clipboard.ts";
 import { type ExportFormat, exportText, pickMeeting, saveFile } from "./files.ts";
 import {
   type Library,
@@ -41,16 +43,15 @@ import {
   loadLibrary,
   removeArchive,
 } from "./library.ts";
+import { mergeRosters, pickRosters, saveRosters } from "./roster-files.ts";
+import { activeSpeakers, identifySpeakers, reviseSpeakers as applyRoster, speakerLabel } from "./speakers.ts";
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "="];
 const KINDS: EntryKind[] = ["발언", "결정", "조치", "질의", "안건"];
-const lines = (value: string) => [
-  ...new Set(
-    value
-      .split("\n")
-      .map((name) => name.trim())
-      .filter(Boolean),
-  ),
-];
+const lines = (value: string) =>
+  value
+    .split("\n")
+    .map((name) => name.trim())
+    .filter(Boolean);
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: deckTokens.inlineGap, padding: deckTokens.pagePadding },
   row: { display: "flex", flexWrap: "wrap", gap: deckTokens.inlineGap, alignItems: "center" },
@@ -94,11 +95,15 @@ const Records = memo(function Records({
   edit,
   remove,
   busy,
+  speakers,
+  retag,
 }: {
   entries: Entry[];
   edit: (entry: Entry) => void;
   remove: (id: string) => void;
   busy: boolean;
+  speakers: { value: string; label: string }[];
+  retag: (id: string, speakerId: string) => void;
 }) {
   const s = useStyles();
   return (
@@ -127,6 +132,15 @@ const Records = memo(function Records({
               삭제
             </Button>
           </div>
+          {entry.kind !== "안건" && (
+            <ComboBox
+              header="이 기록의 화자"
+              disabled={busy}
+              value={entry.speakerId ?? ""}
+              options={[{ value: "", label: "미지정" }, ...speakers]}
+              onChange={(speakerId) => retag(entry.id, speakerId)}
+            />
+          )}
           <Body className={s.text}>{entry.text}</Body>
           {(entry.owner || entry.due) && (
             <Caption secondary>
@@ -145,10 +159,15 @@ export function App({ deck }: { deck: Deck }) {
   const latest = useRef(meeting);
   const [library, setLibrary] = useState<Library>(EMPTY_LIBRARY);
   const [status, setStatus] = useState("불러오는 중이에요.");
+  const [copyStatus, setCopyStatus] = useState("");
   const [ready, setReady] = useState(false);
   const [failedLoad, setFailedLoad] = useState(false);
   const [running, setRunning] = useState(false);
-  const [dialog, setDialog] = useState<"people" | "export" | "help" | "new" | "archive" | "remove" | "">("");
+  const [dialog, setDialog] = useState<
+    "people" | "export" | "help" | "new" | "archive" | "remove" | "delete-entry" | "delete-roster" | ""
+  >("");
+  const [entryToRemove, setEntryToRemove] = useState("");
+  const [rosterToRemove, setRosterToRemove] = useState("");
   const [removeKey, setRemoveKey] = useState("");
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
@@ -181,7 +200,8 @@ export function App({ deck }: { deck: Deck }) {
   }, []);
   const snapshot = useCallback(() => {
     undo.current.push(latest.current);
-    if (undo.current.length > 50) undo.current.shift();
+    while (undo.current.length > 50 || new TextEncoder().encode(JSON.stringify(undo.current)).length > 6000000)
+      undo.current.shift();
     redo.current = [];
   }, []);
   const focusInput = () => queueMicrotask(() => input.current?.focus());
@@ -199,10 +219,11 @@ export function App({ deck }: { deck: Deck }) {
     Promise.all([loadMeeting(deck), loadLibrary(deck)])
       .then(([data, savedLibrary]) => {
         if (!active) return;
+        data = identifySpeakers(data);
         latest.current = data;
         setMeeting(data);
         setLibrary(savedLibrary);
-        setNames(data.speakers.join("\n"));
+        setNames(activeSpeakers(data).join("\n"));
         setAbsent(data.absentees?.join("\n") ?? "");
         setDraft(data.draft);
         setRunning(data.speakers.length > 0 || data.entries.length > 0);
@@ -276,16 +297,22 @@ export function App({ deck }: { deck: Deck }) {
       latest.current.speakers,
       original?.speaker ?? latest.current.selected,
       id ?? crypto.randomUUID(),
+      latest.current.speakerIds,
+      original?.speakerId ?? latest.current.selectedId,
     );
     if (!entry) {
       if (id) cancelEdit();
       return;
     }
     if (kindChosen.current || (entry.kind === "발언" && kind !== "발언")) entry.kind = kind;
-    if (entry.kind === "안건") entry.speaker = "";
+    if (entry.kind === "안건") {
+      entry.speaker = "";
+      entry.speakerId = "";
+    }
     if (privateChosen.current) entry.private = privateNote;
     else entry.private ||= privateNote;
     if (entry.private && entry.kind === "안건") entry.kind = "발언";
+    if (original) entry.edited = true;
     entry.timestamp = original?.timestamp ?? new Date().toISOString();
     snapshot();
     editingId.current = null;
@@ -306,7 +333,7 @@ export function App({ deck }: { deck: Deck }) {
     focusInput();
   }, [ready, kind, privateNote, snapshot, update, cancelEdit]);
   const selectSpeaker = useCallback(
-    (selected: string, retag = false) => {
+    (selected: string, retag = false, selectedId = "") => {
       if (busyRef.current) return;
       const id = editingId.current;
       if (id || retag) {
@@ -316,12 +343,13 @@ export function App({ deck }: { deck: Deck }) {
           update({
             ...latest.current,
             selected: id ? latest.current.selected : selected,
+            selectedId: id ? (latest.current.selectedId ?? "") : selectedId,
             entries: latest.current.entries.map((entry) =>
-              entry.id === target ? { ...entry, speaker: selected } : entry,
+              entry.id === target ? { ...entry, speaker: selected, speakerId: selectedId, edited: true } : entry,
             ),
           });
         }
-      } else update({ ...latest.current, selected });
+      } else update({ ...latest.current, selected, selectedId });
       focusInput();
     },
     [snapshot, update],
@@ -333,19 +361,21 @@ export function App({ deck }: { deck: Deck }) {
       setStatus("참석자를 한 명 이상, 최대 12명까지 입력해 주세요.");
       return false;
     }
-    update({
-      ...latest.current,
-      speakers,
-      absentees: lines(absent),
-      selected: speakers.includes(latest.current.selected) ? latest.current.selected : (speakers[0] ?? ""),
-      startedAt: latest.current.startedAt || new Date().toISOString(),
-    });
+    let next: Meeting;
+    try {
+      next = applyRoster(latest.current, speakers);
+    } catch {
+      setStatus("기록이 있는 화자를 보존하면 24명을 넘어요. 명단을 정리한 뒤 다시 저장해 주세요.");
+      return false;
+    }
+    snapshot();
+    update({ ...next, absentees: lines(absent), startedAt: latest.current.startedAt || new Date().toISOString() });
     setNames(speakers.join("\n"));
     setRunning(true);
     setDialog("");
     focusInput();
     return true;
-  }, [names, absent, update]);
+  }, [names, absent, update, snapshot]);
   const restoreUndo = useCallback(
     (forward = false) => {
       if (busyRef.current) return;
@@ -387,7 +417,7 @@ export function App({ deck }: { deck: Deck }) {
       if (["F4", "F8", "F9"].includes(event.code)) {
         event.preventDefault();
         if (event.code === "F9") {
-          setNames(latest.current.speakers.join("\n"));
+          setNames(activeSpeakers(latest.current).join("\n"));
           setAbsent(latest.current.absentees?.join("\n") ?? "");
         }
         setDialog(event.code === "F4" ? "help" : event.code === "F8" ? "export" : "people");
@@ -398,12 +428,23 @@ export function App({ deck }: { deck: Deck }) {
         restoreUndo();
         return;
       }
-      if (!event.altKey || event.getModifierState("AltGraph")) return;
-      const speakers = latest.current.speakers;
+      if (!event.altKey || event.getModifierState("AltGraph")) {
+        const target = event.target;
+        if (
+          !event.ctrlKey &&
+          !event.metaKey &&
+          event.key.length === 1 &&
+          target instanceof HTMLElement &&
+          !target.closest("input, textarea, select, [contenteditable], [role=combobox]")
+        )
+          input.current?.focus();
+        return;
+      }
+      const speakers = activeSpeakers(latest.current);
       const index = speakerIndex(event.code);
       if (index !== null && speakers[index]) {
         event.preventDefault();
-        selectSpeaker(speakers[index] ?? "", event.ctrlKey);
+        selectSpeaker(speakers[index] ?? "", event.ctrlKey, latest.current.speakerIds?.[index] ?? "");
       } else if (event.code === "Backquote") {
         event.preventDefault();
         selectSpeaker("");
@@ -412,12 +453,14 @@ export function App({ deck }: { deck: Deck }) {
         const current = editingId.current
           ? (latest.current.entries.find((entry) => entry.id === editingId.current)?.speaker ?? "")
           : latest.current.selected;
-        const at = speakers.indexOf(current);
+        const currentId = editingId.current
+          ? latest.current.entries.find((entry) => entry.id === editingId.current)?.speakerId
+          : latest.current.selectedId;
+        const at = latest.current.speakerIds?.indexOf(currentId ?? "") ?? speakers.indexOf(current);
         const step = event.code === "ArrowDown" ? 1 : -1;
-        selectSpeaker(
-          speakers[at < 0 ? (step > 0 ? 0 : speakers.length - 1) : (at + step + speakers.length) % speakers.length] ??
-            "",
-        );
+        const nextIndex =
+          at < 0 ? (step > 0 ? 0 : speakers.length - 1) : (at + step + speakers.length) % speakers.length;
+        selectSpeaker(speakers[nextIndex] ?? "", false, latest.current.speakerIds?.[nextIndex] ?? "");
       }
     };
     window.addEventListener("keydown", handle);
@@ -438,15 +481,42 @@ export function App({ deck }: { deck: Deck }) {
     },
     [setInput],
   );
-  const remove = useCallback(
-    (id: string) => {
+  const remove = useCallback((id: string) => {
+    if (busyRef.current) return;
+    setEntryToRemove(id);
+    setDialog("delete-entry");
+    focusInput();
+  }, []);
+  const speakerChoices = useMemo(
+    () =>
+      meeting.speakers.map((name, i) => ({
+        value: meeting.speakerIds?.[i] ?? `legacy-${i}`,
+        label: `${i + 1}. ${name}`,
+      })),
+    [meeting.speakers, meeting.speakerIds],
+  );
+  const speakerCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const entry of meeting.entries) {
+      if (entry.kind === "안건") continue;
+      const key = entry.speakerId || entry.speaker;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [meeting.entries]);
+  const retagEntry = useCallback(
+    (id: string, speakerId: string) => {
       if (busyRef.current) return;
       snapshot();
-      update({ ...latest.current, entries: latest.current.entries.filter((entry) => entry.id !== id) });
-      if (editingId.current === id) cancelEdit();
-      focusInput();
+      const at = (latest.current.speakerIds ?? latest.current.speakers.map((_, i) => `legacy-${i}`)).indexOf(speakerId);
+      update({
+        ...latest.current,
+        entries: latest.current.entries.map((e) =>
+          e.id === id ? { ...e, speakerId, speaker: latest.current.speakers[at] ?? "", edited: true } : e,
+        ),
+      });
     },
-    [snapshot, update, cancelEdit],
+    [snapshot, update],
   );
   const task = async (action: () => Promise<void>) => {
     if (busyRef.current) return;
@@ -464,11 +534,12 @@ export function App({ deck }: { deck: Deck }) {
     }
   };
   const switchTo = async (data: Meeting) => {
+    data = identifySpeakers(data);
     const next = await archiveMeeting(deck, latest.current, library);
     setLibrary(next);
     await write(data);
     update(data, true);
-    setNames(data.speakers.join("\n"));
+    setNames(activeSpeakers(data).join("\n"));
     setAbsent(data.absentees?.join("\n") ?? "");
     setDraft(data.draft);
     setRunning(data.speakers.length > 0 || data.entries.length > 0);
@@ -483,6 +554,22 @@ export function App({ deck }: { deck: Deck }) {
     setDialog("");
     focusInput();
   };
+  const copyPublic = (rich: boolean) =>
+    void task(async () => {
+      if (!deck.has("clipboard")) return;
+      setCopyStatus("복사하는 중이에요.");
+      try {
+        if (rich) await deck.clipboard.writeRichText(publicClipboard(latest.current));
+        else await deck.clipboard.writeText({ text: exportText(latest.current, "txt") });
+        setCopyStatus("클립보드에 복사했어요. 한글·Word에서 붙여넣어 주세요.");
+      } catch (error) {
+        setCopyStatus(
+          error instanceof DeckCallError && error.code === "INVALID_ARGS"
+            ? "복사할 내용이 너무 크거나 지원하지 않는 문자가 있어요. 공개용 파일로 저장해 주세요."
+            : "복사하지 못했어요. 다른 프로그램의 클립보드 작업이 끝나면 다시 눌러 주세요.",
+        );
+      }
+    });
   const loadFile = () =>
     void task(async () => {
       const data = await pickMeeting(deck);
@@ -496,19 +583,23 @@ export function App({ deck }: { deck: Deck }) {
         setStatus("위원회 이름과 참석자 명단을 입력해 주세요.");
         return;
       }
-      if (library.rosters.some((r) => r.name === name) || library.rosters.length >= 40) {
-        setStatus("위원회는 새 이름으로 최대 40개까지 저장해요.");
+      if (!library.rosters.some((r) => r.name === name) && library.rosters.length >= 40) {
+        setStatus("위원회는 최대 40개까지 저장해요. 저장된 명단을 정리하거나 기존 이름으로 갱신해 주세요.");
         return;
       }
       const next = {
         ...library,
-        rosters: [...library.rosters, { name, people, title: latest.current.title, place: latest.current.place ?? "" }],
+        rosters: [
+          ...library.rosters.filter((r) => r.name !== name),
+          { name, people, title: latest.current.title, place: latest.current.place ?? "" },
+        ],
       };
       await deck.storage.set(LIBRARY_KEY, next);
       setLibrary(next);
       setStatus("위원회 명단을 저장했어요.");
     });
   const [format, setFormat] = useState<ExportFormat>("md");
+  const exportBody = useMemo(() => (dialog === "export" ? exportText(meeting, format) : ""), [dialog, format, meeting]);
   const saveExport = (backup: boolean) =>
     void task(async () => {
       if (await saveFile(deck, latest.current, backup, format))
@@ -547,6 +638,15 @@ export function App({ deck }: { deck: Deck }) {
       />
     </div>
   );
+  const importRosters = () =>
+    void task(async () => {
+      const value = await pickRosters(deck);
+      if (!value) return;
+      const next = { ...library, rosters: mergeRosters(library.rosters, value) };
+      await deck.storage.set(LIBRARY_KEY, next);
+      setLibrary(next);
+      setStatus("위원회 명단을 불러왔어요.");
+    });
   const rosterFields = (
     <SettingsExpander header="위원회 · 저장된 명단" description="자주 쓰는 참석자 명단을 저장하고 불러와요.">
       <div className={s.row}>
@@ -559,9 +659,39 @@ export function App({ deck }: { deck: Deck }) {
           }}
         />
         <Button onClick={saveRoster} disabled={busy}>
-          명단 저장
+          명단 저장·갱신
         </Button>
       </div>
+      <div className={s.row}>
+        <Button disabled={busy} onClick={importRosters}>
+          위원회 파일 불러오기
+        </Button>
+        <Button
+          disabled={busy || !library.rosters.length}
+          onClick={() => void task(() => saveRosters(deck, library.rosters))}
+        >
+          위원회 파일 저장
+        </Button>
+      </div>
+      <ListView
+        header="저장된 위원회 관리"
+        items={library.rosters}
+        getKey={(r) => r.name}
+        renderItem={(r) => (
+          <div className={s.row}>
+            <Body>{r.name}</Body>
+            <Button
+              disabled={busy}
+              onClick={() => {
+                setRosterToRemove(r.name);
+                setDialog("delete-roster");
+              }}
+            >
+              명단 삭제
+            </Button>
+          </div>
+        )}
+      />
       {library.rosters.length > 0 && (
         <ComboBox
           disabled={busy}
@@ -669,7 +799,7 @@ export function App({ deck }: { deck: Deck }) {
             <Button onClick={() => setDialog("export")}>내보내기 (F8)</Button>
             <Button
               onClick={() => {
-                setNames(latest.current.speakers.join("\n"));
+                setNames(activeSpeakers(latest.current).join("\n"));
                 setAbsent(latest.current.absentees?.join("\n") ?? "");
                 setDialog("people");
               }}
@@ -687,7 +817,14 @@ export function App({ deck }: { deck: Deck }) {
           <div className={s.workspace}>
             <div className={s.editor}>
               <div ref={log} className={s.log}>
-                <Records entries={meeting.entries} edit={edit} remove={remove} busy={busy} />
+                <Records
+                  entries={meeting.entries}
+                  edit={edit}
+                  remove={remove}
+                  busy={busy}
+                  speakers={speakerChoices}
+                  retag={retagEntry}
+                />
               </div>
               <div className={s.row}>
                 <BodyStrong>
@@ -786,14 +923,20 @@ export function App({ deck }: { deck: Deck }) {
               {meeting.speakers.map((name, index) => (
                 <ToggleButton
                   disabled={busy}
-                  key={name}
+                  key={meeting.speakerIds?.[index] ?? index}
+                  aria-label={`${speakerLabel(meeting, index)}${index < (meeting.activeSpeakerCount ?? 12) && KEYS[index] ? ` · Alt+${KEYS[index]}` : ""}`}
                   checked={
-                    (editing ? meeting.entries.find((entry) => entry.id === editing)?.speaker : meeting.selected) ===
-                    name
+                    (editing
+                      ? meeting.entries.find((entry) => entry.id === editing)?.speakerId
+                      : meeting.selectedId) === meeting.speakerIds?.[index]
                   }
-                  onClick={() => selectSpeaker(name)}
+                  onClick={() => selectSpeaker(name, false, meeting.speakerIds?.[index] ?? "")}
                 >
-                  {name} · Alt+{KEYS[index]}
+                  {speakerLabel(meeting, index)}
+                  {index < (meeting.activeSpeakerCount ?? 12) && KEYS[index]
+                    ? ` · Alt+${KEYS[index]}`
+                    : " · 이전 참석자"}{" "}
+                  · {speakerCounts.get(meeting.speakerIds?.[index] ?? name) ?? 0}건
                 </ToggleButton>
               ))}
               <ToggleButton disabled={busy} checked={!meeting.selected} onClick={() => selectSpeaker("")}>
@@ -806,6 +949,49 @@ export function App({ deck }: { deck: Deck }) {
       <Caption secondary>{status}</Caption>
       {busy && <ProgressRing label="파일과 회의록을 처리하는 중" />}
       {saveFailed.current && <InfoBar severity="error" message={status} />}
+      <ContentDialog
+        open={dialog === "delete-entry"}
+        title="기록 삭제"
+        primaryButtonText="삭제"
+        closeButtonText="취소"
+        defaultButton="close"
+        onClose={(result) => {
+          if (busyRef.current) return;
+          if (result === "primary") {
+            snapshot();
+            update({ ...latest.current, entries: latest.current.entries.filter((e) => e.id !== entryToRemove) });
+            if (editingId.current === entryToRemove) cancelEdit();
+          }
+          setDialog("");
+          focusInput();
+        }}
+      >
+        <Body>
+          {meeting.entries.find((e) => e.id === entryToRemove)?.kind === "안건"
+            ? "안건 제목을 삭제하면 아래 기록은 앞 안건에 합쳐져요. 기록 내용은 유지해요."
+            : "이 기록을 삭제해요. 기록 되돌리기로 복원할 수 있어요."}
+        </Body>
+      </ContentDialog>
+      <ContentDialog
+        open={dialog === "delete-roster"}
+        title="위원회 명단 삭제"
+        primaryButtonText="삭제"
+        closeButtonText="취소"
+        defaultButton="close"
+        onClose={(result) => {
+          if (busyRef.current) return;
+          if (result === "primary")
+            void task(async () => {
+              const next = { ...library, rosters: library.rosters.filter((r) => r.name !== rosterToRemove) };
+              await deck.storage.set(LIBRARY_KEY, next);
+              setLibrary(next);
+              setDialog(running ? "people" : "");
+            });
+          else setDialog(running ? "people" : "");
+        }}
+      >
+        <Body>{rosterToRemove} 명단을 앱에서 삭제해요. 현재 회의와 위원회 백업 파일은 유지해요.</Body>
+      </ContentDialog>
       <ContentDialog
         open={dialog === "people"}
         title="참석자 편집"
@@ -838,9 +1024,15 @@ export function App({ deck }: { deck: Deck }) {
       >
         <div className={s.stack}>
           <div className={s.row}>
-            {(["md", "txt", "summary"] as const).map((item) => (
+            {(["md", "txt", "summary", "html"] as const).map((item) => (
               <ToggleButton disabled={busy} key={item} checked={format === item} onClick={() => setFormat(item)}>
-                {item === "md" ? "마크다운" : item === "txt" ? "일반 텍스트" : "요약"}
+                {item === "md"
+                  ? "마크다운"
+                  : item === "txt"
+                    ? "일반 텍스트"
+                    : item === "html"
+                      ? "한글·워드 HTML"
+                      : "요약"}
               </ToggleButton>
             ))}
           </div>
@@ -849,10 +1041,21 @@ export function App({ deck }: { deck: Deck }) {
             multiline
             rows={12}
             readOnly
-            value={exportText(meeting, format)}
+            value={exportBody}
             onChange={() => undefined}
           />
-          <Caption secondary>비공개 메모는 제외해요. 본문을 선택해 Ctrl+C로 복사하거나 파일로 저장해 주세요.</Caption>
+          <Caption secondary>비공개 메모는 제외해요. 서식을 유지해 복사하거나 공개용 파일로 저장해 주세요.</Caption>
+          <CapabilityGate deck={deck} cap="clipboard" feature="서식 복사">
+            <div className={s.row}>
+              <Button appearance="primary" disabled={busy} onClick={() => copyPublic(true)}>
+                서식을 유지해 복사
+              </Button>
+              <Button disabled={busy} onClick={() => copyPublic(false)}>
+                텍스트 복사
+              </Button>
+            </div>
+            {copyStatus && <Caption>{copyStatus}</Caption>}
+          </CapabilityGate>
           <div className={s.row}>
             <Button onClick={() => saveExport(false)} disabled={busy}>
               공개용 파일 저장

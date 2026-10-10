@@ -11,6 +11,8 @@ export interface Entry {
   due: string;
   raw?: string;
   timestamp?: string;
+  speakerId?: string;
+  edited?: boolean;
 }
 export interface Meeting {
   version: 1;
@@ -22,6 +24,9 @@ export interface Meeting {
   place?: string;
   absentees?: string[];
   startedAt?: string;
+  speakerIds?: string[];
+  activeSpeakerCount?: number;
+  selectedId?: string;
 }
 export const emptyMeeting = (): Meeting => ({
   version: 1,
@@ -31,10 +36,18 @@ export const emptyMeeting = (): Meeting => ({
   entries: [],
   draft: "",
 });
-export function parseEntry(raw: string, speakers: string[], selected: string, id: string): Entry | null {
+export function parseEntry(
+  raw: string,
+  speakers: string[],
+  selected: string,
+  id: string,
+  speakerIds?: string[],
+  selectedId?: string,
+): Entry | null {
   let text = raw.trimEnd();
   if (!text.trim()) return null;
   const entry: Entry = { id, kind: "발언", text: "", speaker: selected, private: false, owner: "", due: "", raw };
+  if (speakerIds) entry.speakerId = selectedId ?? "";
   if (text.startsWith("\\")) {
     entry.text = text.slice(1);
     return entry.text.trim() ? entry : null;
@@ -46,7 +59,11 @@ export function parseEntry(raw: string, speakers: string[], selected: string, id
   if (text.startsWith("#")) {
     entry.kind = entry.private ? "발언" : "안건";
     entry.text = entry.private ? text : text.slice(1).trim();
-    entry.speaker = "";
+    if (!entry.private) {
+      entry.speaker = "";
+      if (speakerIds) entry.speakerId = "";
+    }
+    if (!entry.private && !entry.text) entry.text = "새 안건";
     return entry.text ? entry : null;
   }
   const kinds: Record<string, EntryKind> = { "!": "결정", "*": "조치", "?": "질의" };
@@ -60,6 +77,7 @@ export function parseEntry(raw: string, speakers: string[], selected: string, id
     const match = /^(\d{1,2})\s+([\s\S]+)$/.exec(text);
     if (match && speakers[Number(match[1]) - 1]) {
       entry.speaker = speakers[Number(match[1]) - 1] ?? "";
+      if (speakerIds) entry.speakerId = speakerIds[Number(match[1]) - 1] ?? "";
       text = match[2] ?? "";
     }
   }
@@ -105,9 +123,18 @@ export function readMeeting(value: unknown): Meeting {
     typeof data.draft !== "string" ||
     typeof data.selected !== "string" ||
     !Array.isArray(data.speakers) ||
-    data.speakers.length > 12 ||
+    data.speakers.length > 24 ||
     !data.speakers.every((s) => typeof s === "string" && s.trim().length > 0) ||
-    new Set(data.speakers).size !== data.speakers.length ||
+    (data.speakerIds !== undefined &&
+      (!Array.isArray(data.speakerIds) ||
+        data.speakerIds.length !== data.speakers.length ||
+        !data.speakerIds.every((id) => typeof id === "string" && id.length > 0) ||
+        new Set(data.speakerIds).size !== data.speakerIds.length)) ||
+    (data.activeSpeakerCount !== undefined &&
+      (!Number.isInteger(data.activeSpeakerCount) ||
+        data.activeSpeakerCount < 0 ||
+        data.activeSpeakerCount > Math.min(12, data.speakers.length))) ||
+    (data.selectedId !== undefined && typeof data.selectedId !== "string") ||
     !Array.isArray(data.entries) ||
     (data.place !== undefined && typeof data.place !== "string") ||
     (data.startedAt !== undefined && typeof data.startedAt !== "string") ||
@@ -121,6 +148,8 @@ export function readMeeting(value: unknown): Meeting {
         typeof entry.private === "boolean" &&
         (entry.raw === undefined || typeof entry.raw === "string") &&
         (entry.timestamp === undefined || typeof entry.timestamp === "string") &&
+        (entry.speakerId === undefined || typeof entry.speakerId === "string") &&
+        (entry.edited === undefined || typeof entry.edited === "boolean") &&
         [entry.text, entry.speaker, entry.owner, entry.due].every((s) => typeof s === "string"),
     ) ||
     new Set(data.entries.map((entry) => entry.id)).size !== data.entries.length
