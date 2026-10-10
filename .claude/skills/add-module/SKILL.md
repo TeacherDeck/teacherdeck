@@ -11,7 +11,7 @@ description: TeacherDeck에 새 도구(모듈)를 추가하거나 기존 모듈�
 
 - [modules/AGENTS.md](../../../modules/AGENTS.md) — 모듈 추가 절차와 MOD 규칙 요약
 - [docs/spec/modules.md](../../../docs/spec/modules.md), [bridge-protocol.md](../../../docs/spec/bridge-protocol.md), [design-system.md](../../../docs/spec/design-system.md)
-- 모범 사례: `modules/timer` (`src/timer.ts` 순수 로직, `src/presets.ts` 호스트 연동, `src/App.tsx` UI)
+- 모범 사례: `modules/timer` (`src/timer.ts` 순수 로직, `src/recent.ts` 호스트 연동, `src/App.tsx` UI)
 
 ## 2. 필요한 캡 확인
 

@@ -72,9 +72,11 @@ describe("@deck/ui", () => {
 
   it("SettingsExpander has one native header button and an independent action", () => {
     const action = vi.fn();
-    wrap(<ui.SettingsExpander header="설정" action={<ui.Button onClick={action}>별도 작업</ui.Button>}>
-      <ui.SettingsCard header="내용" />
-    </ui.SettingsExpander>);
+    wrap(
+      <ui.SettingsExpander header="설정" action={<ui.Button onClick={action}>별도 작업</ui.Button>}>
+        <ui.SettingsCard header="내용" />
+      </ui.SettingsExpander>,
+    );
     const header = screen.getByRole("button", { name: "설정" });
     expect(header.tagName).toBe("BUTTON");
     expect(header.getAttribute("type")).toBe("button");
@@ -91,8 +93,12 @@ describe("@deck/ui", () => {
   });
 
   it("TextBox rows reaches only the multiline textarea", () => {
-    wrap(<><ui.TextBox header="여러 줄" multiline rows={6} value="" onChange={() => undefined} />
-      <ui.TextBox header="한 줄" rows={6} value="" onChange={() => undefined} /></>);
+    wrap(
+      <>
+        <ui.TextBox header="여러 줄" multiline rows={6} value="" onChange={() => undefined} />
+        <ui.TextBox header="한 줄" rows={6} value="" onChange={() => undefined} />
+      </>,
+    );
     expect(screen.getByRole("textbox", { name: "여러 줄" }).getAttribute("rows")).toBe("6");
     expect(screen.getByRole("textbox", { name: "한 줄" }).hasAttribute("rows")).toBe(false);
   });
@@ -204,5 +210,12 @@ describe("@deck/ui", () => {
     expect(theme.fontFamilyBase).toBe(ui.FONT_STACK);
     expect(theme.deckCardFill).toBe(ui.createDeckTheme("dark").deckCardFill);
     expect(ui.FONT_STACK).not.toMatch(/Pretendard/);
+  });
+
+  it("sets the root color-scheme so native scrollbars follow the theme", () => {
+    const { rerender } = render(<ui.DeckProvider theme={ui.themeToPayload("dark", false)}>x</ui.DeckProvider>);
+    expect(document.documentElement.style.colorScheme).toBe("dark");
+    rerender(<ui.DeckProvider theme={ui.themeToPayload("light", false)}>x</ui.DeckProvider>);
+    expect(document.documentElement.style.colorScheme).toBe("light");
   });
 });

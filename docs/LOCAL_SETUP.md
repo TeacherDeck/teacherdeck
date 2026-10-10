@@ -50,7 +50,7 @@ Rust와 C++ 빌드 도구는 JavaScript 의존성 설치로 준비되지 않는�
 ## 개발 작업 시작점
 
 - 기존 프로그램을 가져오는 절차: [모듈 이식 안내](MODULE_MIGRATION.md)
-- 기본 모듈 예제: [타이머 진입점](../modules/timer/src/main.tsx), [순수 로직](../modules/timer/src/timer.ts), [설정 저장](../modules/timer/src/presets.ts)
+- 기본 모듈 예제: [타이머 진입점](../modules/timer/src/main.tsx), [순수 로직](../modules/timer/src/timer.ts), [설정 저장](../modules/timer/src/recent.ts)
 - 새 모듈 생성과 완료 조건: [modules/AGENTS.md](../modules/AGENTS.md)
 - 현재 호스트 기능과 예정 기능: [capabilities.md](spec/capabilities.md)
 - 확정된 제품 요구와 개발 순서 권고: [제품 개발 계획 초안](PRODUCT_PLAN.md)

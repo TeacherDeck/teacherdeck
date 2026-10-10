@@ -8,8 +8,8 @@
 |---|---|
 | `src/main.tsx` | `connect()` 후 `DeckProvider`로 렌더(BRG-003, UI-004) |
 | `src/timer.ts` + `timer.test.ts` | 호스트 없이 테스트하는 순수 로직(MOD-015) |
-| `src/presets.ts` + `presets.test.ts` | storage 캡 사용과 `createMockHost` 테스트(MOD-009, MOD-015) |
-| `src/App.tsx` | `@deck/ui`만 쓰는 UI(InfoBar, NumberBox, ToggleSwitch, SettingsCard, Display), 키보드 조작, window 캡(MOD-010, UI-005) |
+| `src/recent.ts` + `recent.test.ts` | storage 캡 사용과 `createMockHost` 테스트(MOD-009, MOD-015) |
+| `src/App.tsx` | `@deck/ui`만 쓰는 UI(InfoBar, ToggleSwitch, SettingsCard, Display, TextBox), 키보드 조작, window 캡(MOD-010, UI-005) |
 
 ## 모듈 추가 절차
 

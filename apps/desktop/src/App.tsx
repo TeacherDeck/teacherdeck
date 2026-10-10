@@ -70,7 +70,8 @@ const useStyles = makeStyles({
     overflowX: "hidden",
     position: "relative",
     backgroundColor: deckTokens.layerSubtle,
-    borderTopLeftRadius: deckTokens.overlayRadius,
+    // Straight divider between the rail and the content pane.
+    borderLeft: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
   },
   moduleLayer: { position: "absolute", inset: 0 },
   hidden: { display: "none" },
@@ -208,7 +209,8 @@ export function App() {
     return () => void unlisten.then((fn) => fn());
   }, [bridge]);
 
-  const navigate = useCallback(
+  /** Shows a page without touching history (used by navigate and by back/forward). */
+  const show = useCallback(
     (next: Page) => {
       const activeId = next.kind === "module" ? next.id : null;
       const keep = (id: string) =>
@@ -230,6 +232,28 @@ export function App() {
     },
     [bridge, page, mounted],
   );
+
+  // Every page change is a history entry, so the mouse back/forward buttons and Alt+←/→ work like
+  // a browser. WebView2 handles those natively, also while the pointer is over a module iframe.
+  const navigate = useCallback(
+    (next: Page) => {
+      if (JSON.stringify(next) === JSON.stringify(page)) return;
+      window.history.pushState({ page: next }, "");
+      show(next);
+    },
+    [page, show],
+  );
+  const showRef = useRef(show);
+  showRef.current = show;
+  useEffect(() => {
+    window.history.replaceState({ page: { kind: "home" } satisfies Page }, "");
+    const onPop = (e: PopStateEvent) => {
+      const next = (e.state as { page?: Page } | null)?.page;
+      if (next !== undefined) showRef.current(next);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   useEffect(() => {
     const off = host.onModuleEvent((event) => {

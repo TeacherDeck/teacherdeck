@@ -97,7 +97,7 @@ Python 코드의 계산 알고리즘은 TS나 적합한 로컬 WASM 구현으로
 
 핸들은 모듈과 앱 세션에 종속돼요. 다음 실행에서 다시 사용할 영구 경로처럼 storage에 저장하지 않아요. SDK 호출 인자·결과 타입은 공개 export를 사용하고 생성 파일을 수정하지 않아요(GEN-006). 브리지 메시지는 JSON이며 1MB 제한이 있어요. 파일 내용을 Base64로 만들어 브리지나 storage에 넣는 방식으로 아직 없는 파일 전송 API를 대신하지 않아요(CAP-003, BRG-007).
 
-설정 저장의 실제 예는 [presets.ts](../modules/timer/src/presets.ts)를 봐요. 저장값이 손상되거나 이전 버전에서 만들어져도 기본값으로 복원하는 패턴이 있어요. 경로·파일명·사용자 입력·storage 값을 로그나 오류에 출력하지 않아요([개인정보 규칙](spec/privacy.md#4-규칙)).
+설정 저장의 실제 예는 [recent.ts](../modules/timer/src/recent.ts)를 봐요. 저장값이 손상되거나 이전 버전에서 만들어져도 걸러 내고 안전한 값(빈 목록)으로 시작하는 패턴이 있어요. 경로·파일명·사용자 입력·storage 값을 로그나 오류에 출력하지 않아요([개인정보 규칙](spec/privacy.md#4-규칙)).
 
 ### 4.4 화면을 공통 UI에 맞춰요
 
@@ -111,7 +111,7 @@ Python 코드의 계산 알고리즘은 TS나 적합한 로컬 WASM 구현으로
 
 ### 4.5 테스트하고 앱에서 확인해요
 
-순수 계산은 vitest로 입력·결과·경계값을 검증해요. SDK 연동은 `@deck/sdk/testing`의 `createMockHost`로 필요한 캡만 허용하고 실제 메서드 핸들러를 제공해요. [프리셋 테스트](../modules/timer/src/presets.test.ts)는 `connect({ window: host.window })`, `host.requests` 확인, `deck.dispose()`의 예를 보여 줘요.
+순수 계산은 vitest로 입력·결과·경계값을 검증해요. SDK 연동은 `@deck/sdk/testing`의 `createMockHost`로 필요한 캡만 허용하고 실제 메서드 핸들러를 제공해요. [최근 기록 테스트](../modules/timer/src/recent.test.ts)는 `connect({ window: host.window })`, `host.requests` 확인, `deck.dispose()`의 예를 보여 줘요.
 
 도구 요구사항에 맞춰 정상 처리, 빈 입력, 잘못된 설정, 선택 취소, optional 캡 없음, 실패 후 재시도를 확인해요. mock이 미구현 API를 성공시킨다고 실제 호스트 기능이 생기는 것은 아니므로, 현재 레지스트리에 있는 호출만 연결해요.
 

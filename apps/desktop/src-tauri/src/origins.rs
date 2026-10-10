@@ -11,7 +11,7 @@ pub const MODULE_ORIGIN: &str = "http://deckmod.localhost";
 /// Origin of the shell in release builds.
 pub const SHELL_ORIGIN: &str = "http://tauri.localhost";
 /// Origin of the shell in debug builds (Vite dev server, `build.devUrl`).
-pub const SHELL_DEV_ORIGIN: &str = "http://localhost:1420";
+pub const SHELL_DEV_ORIGIN: &str = "http://localhost:8265";
 /// Label of the only window that may use IPC (capabilities/main.json).
 pub const MAIN_WINDOW: &str = "main";
 
