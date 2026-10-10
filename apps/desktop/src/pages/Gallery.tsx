@@ -245,7 +245,7 @@ const SAMPLES: Record<ComponentName, () => ReactNode> = {
 
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: deckTokens.sectionGap, padding: deckTokens.pagePadding },
-  grid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: deckTokens.itemGap },
+  grid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: deckTokens.itemGap },
   item: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalS, padding: tokens.spacingHorizontalM },
   large: { fontSize: tokens.fontSizeBase500 },
 });
