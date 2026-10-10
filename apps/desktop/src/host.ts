@@ -4,13 +4,16 @@
 // modules or packages (apps/desktop/AGENTS.md, MOD-005).
 import type { EventPayloads, OverlayUiAction, OverlayUiState } from "@deck/sdk";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listen, type EventCallback } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { FsDroppedEvent } from "./generated/FsDroppedEvent.ts";
 import type { ModuleEntry } from "./generated/ModuleEntry.ts";
 import type { ShellInfo } from "./generated/ShellInfo.ts";
 import type { UpdateStatus } from "./generated/UpdateStatus.ts";
 
+function listenCurrent<T>(event: string, handler: EventCallback<T>) {
+  return listen<T>(event, handler, { target: { kind: "Window", label: getCurrentWindow().label } });
+}
 export const FS_DROPPED_EVENT = "deck://fs-dropped";
 
 export const host = {
@@ -28,10 +31,11 @@ export const host = {
   restartApp: () => invoke("restart_app").then(() => undefined),
   secProbeReport: (report: unknown) => invoke("sec_probe_report", { report }).then(() => undefined),
   onModuleEvent: (fn: (e: NativeModuleEvent) => void) =>
-    listen<NativeModuleEvent>("deck://module-event", (e) => fn(e.payload)),
+    listenCurrent<NativeModuleEvent>("deck://module-event", (e) => fn(e.payload)),
   onShowModule: (fn: (e: { moduleId: string }) => void) =>
-    listen<{ moduleId: string }>("deck://show-module", (e) => fn(e.payload)),
-  onFsDropped: (fn: (e: FsDroppedEvent) => void) => listen<FsDroppedEvent>(FS_DROPPED_EVENT, (e) => fn(e.payload)),
+    listenCurrent<{ moduleId: string }>("deck://show-module", (e) => fn(e.payload)),
+  onFsDropped: (fn: (e: FsDroppedEvent) => void) =>
+    listenCurrent<FsDroppedEvent>(FS_DROPPED_EVENT, (e) => fn(e.payload)),
 };
 
 /** Main window controls for the custom title bar (core:window permissions in capabilities/main.json). */
@@ -55,7 +59,7 @@ export const overlayControls = {
   state: () => invoke<OverlayUiState>("overlay_ui_state"),
   action: (action: OverlayUiAction) => invoke("overlay_ui_action", { args: { action } }).then(() => undefined),
   onState: (fn: (state: OverlayUiState) => void) =>
-    listen<OverlayUiState>("deck://overlay-state", (e) => fn(e.payload)),
+    listenCurrent<OverlayUiState>("deck://overlay-state", (e) => fn(e.payload)),
   drag: () => getCurrentWindow().startDragging(),
   resize: (direction: ResizeDirection) => getCurrentWindow().startResizeDragging(direction),
 };

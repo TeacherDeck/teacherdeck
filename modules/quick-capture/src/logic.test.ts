@@ -4,7 +4,15 @@ import { describe, expect, it, vi } from "vitest";
 import { createDeckTheme } from "@deck/ui";
 import { connect, type OverlayInfo } from "@deck/sdk";
 import { createMockHost } from "@deck/sdk/testing";
-import { defaults, initialRect, restorePreferences, startCapture, validatePreferences } from "./logic.ts";
+import {
+  shortcutFromKey,
+  applyPreferences,
+  defaults,
+  initialRect,
+  restorePreferences,
+  startCapture,
+  validatePreferences,
+} from "./logic.ts";
 const border = createDeckTheme("light").colorBrandStroke1;
 const rect = { x: -600, y: 10, width: 600, height: 400 };
 const overlay: OverlayInfo = {
@@ -84,4 +92,42 @@ describe("native resource lifecycle", () => {
     expect(host.requests).toEqual([]);
     deck.dispose();
   });
+});
+
+it("captures IME-independent codes and rejects modifier-free keys", () => {
+  expect(shortcutFromKey({ code: "KeyC", ctrlKey: true, shiftKey: true, altKey: false, metaKey: false })).toEqual({
+    key: "C",
+    modifiers: ["control", "shift"],
+  });
+  expect(shortcutFromKey({ code: "KeyC", ctrlKey: false, shiftKey: false, altKey: false, metaKey: false })).toBeNull();
+  expect(shortcutFromKey({ code: "Escape", ctrlKey: true, shiftKey: false, altKey: false, metaKey: false })).toBeNull();
+});
+it("applied state equality calls no native mutations", async () => {
+  const host = createMockHost({ granted: ["capture", "overlay", "global-shortcut"] });
+  const deck = await connect({ window: host.window });
+  const p = defaults(border);
+  await applyPreferences(
+    deck,
+    p,
+    {
+      sessionHandle: "session",
+      overlayHandle: "overlay",
+      destinationGrant: "grant",
+      shortcutHandle: "shortcut",
+      settings: p.settings,
+      sequence: 0,
+      busy: false,
+    },
+    { ...overlay, style: p.style },
+    { shortcutHandle: "shortcut", ...p.shortcut },
+  );
+  expect(host.requests).toEqual([]);
+  deck.dispose();
+});
+
+it("uses the original four-pixel border only for new preferences", () => {
+  expect(defaults(border).style.borderWidth).toBe(4);
+  const prior = defaults(border);
+  prior.style.borderWidth = 7;
+  expect(restorePreferences(prior, border).style.borderWidth).toBe(7);
 });

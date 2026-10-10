@@ -2,6 +2,8 @@
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import type {
   CaptureSettings,
+  CaptureSession,
+  ShortcutInfo,
   Deck,
   DisplayInfo,
   OverlayInfo,
@@ -27,7 +29,7 @@ export function defaults(borderColor: string): Preferences {
     version: 1,
     settings: { format: "png", quality: 95, naming: { mode: "numbered" }, cursor: false },
     shortcut: { modifiers: ["control", "shift"], key: "C" },
-    style: { borderColor, borderWidth: Number.parseFloat(createDeckTheme("light").strokeWidthThick) },
+    style: { borderColor, borderWidth: Number.parseFloat(createDeckTheme("light").strokeWidthThickest) },
     alwaysOnTop: true,
   };
 }
@@ -197,4 +199,80 @@ export function validatePreferences(prefs: Preferences): void {
     )
       fail();
   }
+}
+
+/** Physical key codes work independently of Korean IME text. Escape cancels recording. */
+export function shortcutFromKey(event: {
+  code: string;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+  metaKey: boolean;
+}): ShortcutRegisterArgs | null {
+  const key = event.code.startsWith("Key")
+    ? event.code.slice(3)
+    : event.code.startsWith("Digit")
+      ? event.code.slice(5)
+      : event.code;
+  if (!/^(?:[A-Z0-9]|F(?:[1-9]|1[01]))$/.test(key)) return null;
+  const modifiers: ShortcutRegisterArgs["modifiers"] = [];
+  if (event.ctrlKey) modifiers.push("control");
+  if (event.shiftKey) modifiers.push("shift");
+  if (event.altKey) modifiers.push("alt");
+  if (event.metaKey) modifiers.push("meta");
+  return modifiers.length ? { key, modifiers } : null;
+}
+export const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+/** Applies only changed native fields. Failed session updates restore the previous shortcut. */
+export class ShortcutApplyError extends Error {
+  constructor(error: unknown) {
+    super("SHORTCUT_APPLY_FAILED", { cause: error });
+  }
+}
+export async function applyPreferences(
+  deck: Deck,
+  prefs: Preferences,
+  session: CaptureSession,
+  overlay: OverlayInfo,
+  active: ShortcutInfo | null,
+) {
+  validatePreferences(prefs);
+  let shortcut = active;
+  const changedShortcut = !active || !same({ modifiers: active.modifiers, key: active.key }, prefs.shortcut);
+  if (changedShortcut) {
+    try {
+      shortcut = active
+        ? await deck.globalShortcut.replace({ shortcutHandle: active.shortcutHandle, ...prefs.shortcut })
+        : await deck.globalShortcut.register(prefs.shortcut);
+    } catch (error) {
+      throw new ShortcutApplyError(error);
+    }
+  }
+  let next = session;
+  try {
+    if (!same(session.settings, prefs.settings) || shortcut?.shortcutHandle !== session.shortcutHandle)
+      next = await deck.capture.update({
+        sessionHandle: session.sessionHandle,
+        ...(!same(session.settings, prefs.settings) ? { settings: prefs.settings } : {}),
+        ...(shortcut ? { shortcutHandle: shortcut.shortcutHandle } : {}),
+      });
+  } catch (error) {
+    if (changedShortcut && shortcut) {
+      if (active)
+        await deck.globalShortcut
+          .replace({ shortcutHandle: active.shortcutHandle, modifiers: active.modifiers, key: active.key })
+          .catch(() => undefined);
+      else await deck.globalShortcut.unregister({ shortcutHandle: shortcut.shortcutHandle }).catch(() => undefined);
+    }
+    throw error;
+  }
+  const patch = {
+    ...(!same(overlay.style, prefs.style) ? { style: prefs.style } : {}),
+    ...(overlay.alwaysOnTop !== prefs.alwaysOnTop ? { alwaysOnTop: prefs.alwaysOnTop } : {}),
+    ...(prefs.rect && !same(overlay.rect, prefs.rect) ? { rect: prefs.rect } : {}),
+  };
+  const info = Object.keys(patch).length
+    ? await deck.overlay.update({ overlayHandle: overlay.overlayHandle, ...patch })
+    : overlay;
+  return { session: next, overlay: info, shortcut };
 }

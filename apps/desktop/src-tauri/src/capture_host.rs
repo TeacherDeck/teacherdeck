@@ -24,7 +24,6 @@ struct Owned<T> {
 struct Overlay {
     info: OverlayInfo,
     label: String,
-    toolbar: String,
 }
 struct Session {
     info: CaptureSession,
@@ -97,9 +96,9 @@ fn validate_style(style: &OverlayStyle) -> Result<(), DeckError> {
 fn check_rect(rect: &PhysicalRect) -> Result<(), DeckError> {
     crate::capture_native::validate_rect(rect.x, rect.y, rect.width, rect.height)
 }
-fn ui_for(inner: &Inner, overlay: &Overlay, toolbar: bool) -> OverlayUiState {
+fn ui_for(inner: &Inner, overlay: &Overlay) -> OverlayUiState {
     OverlayUiState {
-        toolbar,
+        toolbar: false,
         overlay: overlay.info.clone(),
         session: inner
             .sessions
@@ -112,16 +111,11 @@ fn emit_state(app: &AppHandle, inner: &Inner, overlay: &Overlay) {
     let _ = app.emit_to(
         &overlay.label,
         "deck://overlay-state",
-        ui_for(inner, overlay, false),
-    );
-    let _ = app.emit_to(
-        &overlay.toolbar,
-        "deck://overlay-state",
-        ui_for(inner, overlay, true),
+        ui_for(inner, overlay),
     );
 }
 fn windows(app: &AppHandle, overlay: &Overlay) -> Vec<tauri::WebviewWindow> {
-    [&overlay.label, &overlay.toolbar]
+    [&overlay.label]
         .into_iter()
         .filter_map(|l| app.get_webview_window(l))
         .collect()
@@ -136,44 +130,22 @@ fn set_visibility(app: &AppHandle, overlay: &Overlay) -> Result<(), DeckError> {
     }
     Ok(())
 }
-fn position_toolbar(app: &AppHandle, overlay: &Overlay) -> Result<(), DeckError> {
-    let Some(toolbar) = app.get_webview_window(&overlay.toolbar) else {
-        return Err(internal());
-    };
-    let rect = &overlay.info.rect;
-    let size = toolbar.outer_size().map_err(|_| internal())?;
-    let monitors = toolbar.available_monitors().map_err(|_| internal())?;
-    let monitor = monitors.iter().find(|m| {
-        let p = m.position();
-        let s = m.size();
-        i64::from(rect.x) >= i64::from(p.x)
-            && i64::from(rect.x) < i64::from(p.x) + i64::from(s.width)
-            && i64::from(rect.y) >= i64::from(p.y)
-            && i64::from(rect.y) < i64::from(p.y) + i64::from(s.height)
-    });
-    let mut x = i64::from(rect.x);
-    let mut y = i64::from(rect.y) - i64::from(size.height) - 8;
-    if let Some(m) = monitor {
-        let p = m.position();
-        let s = m.size();
-        if y < i64::from(p.y) {
-            y = i64::from(rect.y) + i64::from(rect.height) + 8;
-        }
-        x = x.clamp(
-            i64::from(p.x),
-            (i64::from(p.x) + i64::from(s.width) - i64::from(size.width)).max(i64::from(p.x)),
-        );
-        y = y.clamp(
-            i64::from(p.y),
-            (i64::from(p.y) + i64::from(s.height) - i64::from(size.height)).max(i64::from(p.y)),
-        );
+fn apply_geometry(
+    window: &tauri::WebviewWindow,
+    rect: &PhysicalRect,
+    border: u8,
+) -> Result<(), DeckError> {
+    for _ in 0..2 {
+        let scale = window.scale_factor().map_err(|_| internal())?;
+        let outer = deck_core::overlay_geometry::to_window(rect, border, scale)?;
+        window
+            .set_position(PhysicalPosition::new(outer.x, outer.y))
+            .map_err(|_| internal())?;
+        window
+            .set_size(PhysicalSize::new(outer.width, outer.height))
+            .map_err(|_| internal())?;
     }
-    toolbar
-        .set_position(PhysicalPosition::new(
-            i32::try_from(x).map_err(|_| invalid())?,
-            i32::try_from(y).map_err(|_| invalid())?,
-        ))
-        .map_err(|_| internal())
+    Ok(())
 }
 /// Shell commands identify owner from the trusted native label, never payload fields.
 #[tauri::command]
@@ -186,13 +158,9 @@ pub async fn overlay_ui_state(
     let overlay = inner
         .overlays
         .values()
-        .find(|o| o.value.label == webview.label() || o.value.toolbar == webview.label())
+        .find(|o| o.value.label == webview.label())
         .ok_or_else(denied)?;
-    Ok(ui_for(
-        &inner,
-        &overlay.value,
-        overlay.value.toolbar == webview.label(),
-    ))
+    Ok(ui_for(&inner, &overlay.value))
 }
 /// Called by native window movement; rect always comes from actual physical client geometry.
 pub fn window_changed(app: &AppHandle, label: &str) {
@@ -215,13 +183,17 @@ pub fn window_changed(app: &AppHandle, label: &str) {
         width: size.width,
         height: size.height,
     };
-    if check_rect(&rect).is_err() {
+    let Ok(scale) = window.scale_factor() else {
         return;
-    }
+    };
+    let Ok(rect) =
+        deck_core::overlay_geometry::from_window(&rect, slot.value.info.style.border_width, scale)
+    else {
+        return;
+    };
     slot.value.info.rect = rect;
     let key = slot.value.info.overlay_handle.clone();
     if let Some(slot) = inner.overlays.get(&key) {
-        let _ = position_toolbar(app, &slot.value);
         emit_state(app, &inner, &slot.value);
         if let Ok(payload) = to_value(&slot.value.info) {
             module_event(app, &slot.owner, "overlay.changed", payload);
@@ -247,7 +219,6 @@ pub fn overlay_call(
         let handle = token();
         let suffix = handle.strip_prefix("h_").ok_or_else(internal)?;
         let label = format!("capture-overlay-{suffix}");
-        let toolbar = format!("capture-toolbar-{suffix}");
         let info = OverlayInfo {
             overlay_handle: handle.clone(),
             rect: a.rect.clone(),
@@ -269,46 +240,20 @@ pub fn overlay_call(
             windows: vec![region.clone()],
             committed: false,
         };
-        region
-            .set_position(PhysicalPosition::new(a.rect.x, a.rect.y))
-            .map_err(|_| internal())?;
-        region
-            .set_size(PhysicalSize::new(a.rect.width, a.rect.height))
-            .map_err(|_| internal())?;
-        let bar = match WebviewWindowBuilder::new(app, &toolbar, WebviewUrl::App("overlay".into()))
-            .title("캡처 도구")
-            .decorations(false)
-            .skip_taskbar(true)
-            .always_on_top(a.always_on_top)
-            .inner_size(360.0, 128.0)
-            .resizable(false)
-            .visible(false)
-            .build()
-        {
-            Ok(w) => w,
-            Err(_) => {
-                let _ = region.close();
-                return Err(internal());
-            }
-        };
-        transaction.windows.push(bar.clone());
-        let overlay = Overlay {
-            info,
-            label,
-            toolbar,
-        };
-        position_toolbar(app, &overlay)?;
+        apply_geometry(&region, &a.rect, info.style.border_width)?;
+        let overlay = Overlay { info, label };
         let callback_app = app.clone();
         let callback_label = overlay.label.clone();
         region.on_window_event(move |event| {
             if matches!(
                 event,
-                tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_)
+                tauri::WindowEvent::Moved(_)
+                    | tauri::WindowEvent::Resized(_)
+                    | tauri::WindowEvent::ScaleFactorChanged { .. }
             ) {
                 window_changed(&callback_app, &callback_label);
             }
         });
-        let _ = bar;
         inner.overlays.insert(
             handle.clone(),
             Owned {
@@ -346,18 +291,14 @@ pub fn overlay_call(
             validate_style(style)?;
         }
         let overlay = owned_mut(&mut inner.overlays, owner, &a.overlay_handle)?;
-        if let Some(rect) = a.rect {
-            if let Some(w) = app.get_webview_window(&overlay.label) {
-                w.set_position(PhysicalPosition::new(rect.x, rect.y))
-                    .map_err(|_| internal())?;
-                w.set_size(PhysicalSize::new(rect.width, rect.height))
-                    .map_err(|_| internal())?;
-            }
-            overlay.info.rect = rect;
-        }
-        if let Some(style) = a.style {
-            overlay.info.style = style;
-        }
+        let rect = a.rect.unwrap_or_else(|| overlay.info.rect.clone());
+        let style = a.style.unwrap_or_else(|| overlay.info.style.clone());
+        let window = app
+            .get_webview_window(&overlay.label)
+            .ok_or_else(internal)?;
+        apply_geometry(&window, &rect, style.border_width)?;
+        overlay.info.rect = rect;
+        overlay.info.style = style;
         if let Some(top) = a.always_on_top {
             for w in windows(app, overlay) {
                 w.set_always_on_top(top).map_err(|_| internal())?;
@@ -366,7 +307,6 @@ pub fn overlay_call(
         }
         let key = a.overlay_handle;
         let overlay = owned(&inner.overlays, owner, &key)?;
-        position_toolbar(app, overlay)?;
         emit_state(app, &inner, overlay);
         module_event(app, owner, "overlay.changed", to_value(&overlay.info)?);
         return to_value(&overlay.info);
@@ -668,7 +608,7 @@ async fn trigger_inner(
         let info = slot.info.clone();
         let overlay = owned(&inner.overlays, owner, &info.overlay_handle)?;
         let rect = overlay.info.rect.clone();
-        let labels = vec![overlay.label.clone(), overlay.toolbar.clone()];
+        let labels = vec![overlay.label.clone()];
         let slot = owned_mut(&mut inner.sessions, owner, key)?;
         slot.info.busy = true;
         slot.last_trigger = Some(Instant::now());
@@ -1067,7 +1007,7 @@ pub async fn overlay_ui_action(
         let slot = inner
             .overlays
             .values()
-            .find(|o| o.value.label == webview.label() || o.value.toolbar == webview.label())
+            .find(|o| o.value.label == webview.label())
             .ok_or_else(denied)?;
         let session = inner
             .sessions

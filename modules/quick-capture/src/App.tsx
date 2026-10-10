@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-import type { CaptureSession, Deck, DestinationGrant, OverlayInfo, PhysicalRect } from "@deck/sdk";
+import type { CaptureSession, Deck, DestinationGrant, OverlayInfo, PhysicalRect, ShortcutInfo } from "@deck/sdk";
 import {
   Body,
   Button,
@@ -10,7 +10,9 @@ import {
   InfoBar,
   NumberBox,
   PageHeader,
-  SettingsCard,
+  BodyStrong,
+  ColorPicker,
+  tokens,
   SettingsExpander,
   TextBox,
   ToggleSwitch,
@@ -27,23 +29,44 @@ import {
   shortcutLabel,
   startCapture,
   validatePreferences,
+  applyPreferences,
+  ShortcutApplyError,
+  shortcutFromKey,
+  same,
   type Preferences,
 } from "./logic.ts";
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: deckTokens.sectionGap, padding: deckTokens.pagePadding },
   row: { display: "flex", flexWrap: "wrap", alignItems: "end", gap: deckTokens.inlineGap },
   stack: { display: "flex", flexDirection: "column", gap: deckTokens.itemGap },
+  cards: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2,minmax(0,1fr))",
+    gap: deckTokens.inlineGap,
+    "@media (max-width: 680px)": { gridTemplateColumns: "minmax(0,1fr)" },
+  },
+  card: {
+    display: "flex",
+    flexDirection: "column",
+    gap: deckTokens.itemGap,
+    padding: tokens.spacingVerticalM,
+    border: `${tokens.strokeWidthThin} solid ${deckTokens.cardStroke}`,
+    borderRadius: deckTokens.cardRadius,
+    backgroundColor: deckTokens.cardFill,
+    minWidth: 0,
+  },
   numbers: { display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: deckTokens.inlineGap },
 });
 const KEYS = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", ...Array.from({ length: 11 }, (_, i) => `F${i + 1}`)];
 export function App({ deck }: { deck: Deck }) {
   const s = useStyles();
-  const color = createDeckTheme(deck.theme.mode).colorBrandStroke1;
+  const color = createDeckTheme(deck.theme.mode).colorPaletteRedBorderActive;
   const [prefs, setPrefs] = useState<Preferences>(() => defaults(color));
   const [ready, setReady] = useState(false);
   const [session, setSession] = useState<CaptureSession | null>(null);
   const [overlay, setOverlay] = useState<OverlayInfo | null>(null);
   const [destination, setDestination] = useState<DestinationGrant | null>(null);
+  const [pendingDestination, setPendingDestination] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const locked = useRef(false);
   const currentSession = useRef(session);
@@ -51,6 +74,10 @@ export function App({ deck }: { deck: Deck }) {
   const currentOverlay = useRef(overlay);
   currentOverlay.current = overlay;
   const [message, setMessage] = useState("");
+  const [activeShortcut, setActiveShortcut] = useState<ShortcutInfo | null>(null);
+  const [recording, setRecording] = useState(false);
+  const blocked = useRef("");
+  const blockedShortcut = useRef("");
   const [remember, setRemember] = useState(true);
   const saved = useRef(Promise.resolve());
   const latestPrefs = useRef(prefs);
@@ -67,6 +94,10 @@ export function App({ deck }: { deck: Deck }) {
     [deck],
   );
   function changed(next: Partial<Preferences>) {
+    if (next.shortcut) {
+      blockedShortcut.current = "";
+      blocked.current = "";
+    }
     setPrefs((p) => ({ ...p, ...next }));
   }
   const visible = useRef(true);
@@ -81,6 +112,7 @@ export function App({ deck }: { deck: Deck }) {
       const registered = value.shortcutHandle
         ? await deck.globalShortcut.status({ shortcutHandle: value.shortcutHandle })
         : null;
+      setActiveShortcut(registered);
       if (restore)
         setPrefs((p) => ({
           ...p,
@@ -131,9 +163,15 @@ export function App({ deck }: { deck: Deck }) {
         }
       }),
       deck.on("overlay.changed", (info) => {
-        if (currentOverlay.current?.overlayHandle !== info.overlayHandle) return;
+        const previous = currentOverlay.current;
+        if (previous?.overlayHandle !== info.overlayHandle) return;
         setOverlay(info);
-        setPrefs((p) => ({ ...p, rect: info.rect, style: info.style, alwaysOnTop: info.alwaysOnTop }));
+        setPrefs((p) => ({
+          ...p,
+          ...(!p.rect || same(p.rect, previous.rect) ? { rect: info.rect } : {}),
+          ...(same(p.style, previous.style) ? { style: info.style } : {}),
+          ...(p.alwaysOnTop === previous.alwaysOnTop ? { alwaysOnTop: info.alwaysOnTop } : {}),
+        }));
       }),
       deck.on("module.visibility", ({ visible: shown }) => {
         visible.current = shown;
@@ -201,13 +239,39 @@ export function App({ deck }: { deck: Deck }) {
       setBusy(false);
     }
   }
+  async function attachDestination(grantHandle: string) {
+    const current = currentSession.current;
+    if (!current) {
+      setPendingDestination(null);
+      return;
+    }
+    try {
+      const updated = await deck.capture.update({
+        sessionHandle: current.sessionHandle,
+        destinationGrant: grantHandle,
+      });
+      setSession(updated);
+      setPendingDestination(null);
+      setMessage("새 저장 폴더를 연결했어요. 캡처를 계속할 수 있어요.");
+    } catch (error) {
+      if (typeof error === "object" && error !== null && "code" in error && error.code === "BUSY") {
+        setSession((p) => (p ? { ...p, busy: true } : p));
+        setMessage("캡처가 끝나면 새 저장 폴더를 연결해요.");
+      } else {
+        await deck.capture.stop({ sessionHandle: current.sessionHandle }).catch(() => undefined);
+        setSession(null);
+        setOverlay(null);
+        setActiveShortcut(null);
+        setPendingDestination(null);
+        setMessage("새 저장 폴더는 선택했지만 캡처에 연결하지 못했어요. 영역 띄우고 시작을 눌러 다시 연결해 주세요.");
+      }
+    }
+  }
   async function pickDestination() {
     const grant = await deck.fs.pickDestination({ remember });
     if (!grant) return null;
-    if (session)
-      setSession(
-        await deck.capture.update({ sessionHandle: session.sessionHandle, destinationGrant: grant.grantHandle }),
-      );
+    // Picking replaces the old authority immediately. Retain the new grant even
+    // when an in-flight capture temporarily prevents rebinding the session.
     setDestination(grant);
     setPrefs((p) => {
       const next = { ...p };
@@ -215,13 +279,26 @@ export function App({ deck }: { deck: Deck }) {
       if (grant.persistent) next.destinationGrant = grant.grantHandle;
       return next;
     });
+    if (currentSession.current) {
+      setPendingDestination(grant.grantHandle);
+      await attachDestination(grant.grantHandle);
+    }
     return grant;
   }
+  useEffect(() => {
+    if (!pendingDestination || !session || session.busy || busy || !visible.current) return;
+    void run(() => attachDestination(pendingDestination));
+  }, [pendingDestination, session?.sessionHandle, session?.busy, busy]);
   async function start() {
     validatePreferences(prefs);
     const grant = destination?.available ? destination : await pickDestination();
     if (!grant) return;
     const started = await startCapture(deck, prefs, grant.grantHandle);
+    setActiveShortcut(
+      started.session.shortcutHandle
+        ? await deck.globalShortcut.status({ shortcutHandle: started.session.shortcutHandle })
+        : null,
+    );
     setOverlay(started.overlay);
     setSession(started.session);
     changed({ rect: started.overlay.rect });
@@ -232,227 +309,260 @@ export function App({ deck }: { deck: Deck }) {
     await deck.capture.stop({ sessionHandle: session.sessionHandle });
     setSession(null);
     setOverlay(null);
+    setPendingDestination(null);
     setMessage("캡처를 종료했어요. 저장한 파일은 그대로 있어요.");
   }
   async function apply() {
-    if (!session || !overlay) return;
-    validatePreferences(prefs);
-    // replace guarantees the old binding survives a conflict.
-    const oldShortcut = session.shortcutHandle
-      ? await deck.globalShortcut.status({ shortcutHandle: session.shortcutHandle })
-      : null;
-    const shortcut = session.shortcutHandle
-      ? await deck.globalShortcut.replace({ shortcutHandle: session.shortcutHandle, ...prefs.shortcut })
-      : await deck.globalShortcut.register(prefs.shortcut);
-    let next: CaptureSession;
-    try {
-      next = await deck.capture.update({
-        sessionHandle: session.sessionHandle,
-        settings: prefs.settings,
-        shortcutHandle: shortcut.shortcutHandle,
-      });
-    } catch (error) {
-      if (oldShortcut)
-        await deck.globalShortcut
-          .replace({
-            shortcutHandle: oldShortcut.shortcutHandle,
-            modifiers: oldShortcut.modifiers,
-            key: oldShortcut.key,
-          })
-          .catch(() => undefined);
-      if (!session.shortcutHandle)
-        await deck.globalShortcut.unregister({ shortcutHandle: shortcut.shortcutHandle }).catch(() => undefined);
-      throw error;
-    }
-    setSession(next);
-    setOverlay(
-      await deck.overlay.update({
-        overlayHandle: overlay.overlayHandle,
-        style: prefs.style,
-        alwaysOnTop: prefs.alwaysOnTop,
-        ...(prefs.rect ? { rect: prefs.rect } : {}),
-      }),
-    );
-    setMessage("실행 중인 캡처에 설정을 적용했어요.");
+    if (!session || !overlay || session.busy) return;
+    const desired =
+      blockedShortcut.current === JSON.stringify(prefs.shortcut) && activeShortcut
+        ? { ...prefs, shortcut: { modifiers: activeShortcut.modifiers, key: activeShortcut.key } }
+        : prefs;
+    const updated = await applyPreferences(deck, desired, session, overlay, activeShortcut);
+    setSession(updated.session);
+    setOverlay(updated.overlay);
+    setActiveShortcut(updated.shortcut);
   }
+  useEffect(() => {
+    if (!ready || !session || !overlay || session.busy || busy || pendingDestination || !visible.current) return;
+    const shortcutChanged =
+      (!activeShortcut || !same({ modifiers: activeShortcut.modifiers, key: activeShortcut.key }, prefs.shortcut)) &&
+      blockedShortcut.current !== JSON.stringify(prefs.shortcut);
+    if (
+      !shortcutChanged &&
+      same(session.settings, prefs.settings) &&
+      same(overlay.style, prefs.style) &&
+      overlay.alwaysOnTop === prefs.alwaysOnTop &&
+      (!prefs.rect || same(overlay.rect, prefs.rect))
+    )
+      return;
+    const target = JSON.stringify({
+      settings: prefs.settings,
+      shortcut: prefs.shortcut,
+      style: prefs.style,
+      rect: prefs.rect,
+      alwaysOnTop: prefs.alwaysOnTop,
+    });
+    if (blocked.current === target) return;
+    const timer = setTimeout(() => {
+      if (locked.current) return;
+      locked.current = true;
+      setBusy(true);
+      void apply()
+        .then(() => {
+          blocked.current = "";
+        })
+        .catch(async (error: unknown) => {
+          if (error instanceof ShortcutApplyError) {
+            blockedShortcut.current = JSON.stringify(prefs.shortcut);
+            setMessage("이 단축키는 사용할 수 없어요. 기존 단축키를 유지해요. 다른 조합을 눌러 주세요.");
+          } else if (typeof error === "object" && error !== null && "code" in error && error.code === "BUSY") {
+            setSession((p) => (p ? { ...p, busy: true } : p));
+            setMessage("캡처가 끝나면 설정을 적용해요.");
+          } else {
+            blocked.current = target;
+            await refresh().catch(() => undefined);
+            setMessage("설정을 적용하지 못했어요. 입력과 화면 상태를 확인해 주세요.");
+          }
+        })
+        .finally(() => {
+          locked.current = false;
+          setBusy(false);
+        });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [deck, prefs, ready, session?.sessionHandle, session?.busy, busy, activeShortcut, overlay, pendingDestination]);
+  useEffect(() => {
+    if (!recording) return;
+    const listener = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.code === "Escape") {
+        setRecording(false);
+        return;
+      }
+      const shortcut = shortcutFromKey(event);
+      if (shortcut) {
+        changed({ shortcut });
+        setRecording(false);
+        setMessage("단축키를 선택했어요. 실행 중이면 자동 적용해요.");
+      }
+    };
+    window.addEventListener("keydown", listener, true);
+    return () => window.removeEventListener("keydown", listener, true);
+  }, [recording]);
   const disabled = busy || !ready;
   const rect = prefs.rect ?? { x: 0, y: 0, width: 600, height: 400 };
   return (
     <main className={s.page}>
-      <PageHeader
-        title="퀵캡처"
-        description="영역을 띄워 두고 단축키나 더블클릭으로 연속 캡처해요. 지정한 폴더에 바로 저장해요."
-      />
-      <div className={s.stack}>
-        <div className={s.row}>
-          <Button
-            appearance="primary"
-            icon={<CameraRegular />}
-            disabled={disabled || session?.busy === true}
-            onClick={() =>
-              void run(async () => {
-                if (session) {
-                  await deck.capture.trigger({ sessionHandle: session.sessionHandle });
-                  const current = await deck.capture.status({ sessionHandle: session.sessionHandle });
-                  setSession(current);
-                } else await start();
-              })
-            }
-          >
-            {session ? "지금 캡처" : "영역 띄우고 시작"}
-          </Button>
-          {session && (
-            <>
-              <Button
-                disabled={disabled}
-                onClick={() =>
-                  void run(async () => {
-                    if (overlay)
-                      setOverlay(
-                        await (overlay.visible
-                          ? deck.overlay.hide({ overlayHandle: overlay.overlayHandle })
-                          : deck.overlay.show({ overlayHandle: overlay.overlayHandle })),
-                      );
-                  })
-                }
-              >
-                {overlay?.visible ? "영역 숨기기" : "영역 다시 띄우기"}
-              </Button>
-              <Button disabled={disabled} onClick={() => void run(stop)}>
-                캡처 종료
-              </Button>
-            </>
-          )}
-        </div>
-        <Body>
-          {session
-            ? `${session.sequence}장 저장 · ${overlay?.rect.width ?? rect.width} × ${overlay?.rect.height ?? rect.height}px`
-            : "1. 폴더 선택 → 2. 영역 띄우기 → 3. 단축키로 반복 캡처"}
-        </Body>
-        <Caption secondary>
-          영역 안을 끌면 이동하고 가장자리나 모서리를 끌면 크기를 바꿔요. 다른 도구로 이동해도 캡처는 유지돼요.
-        </Caption>
-        {message && <InfoBar severity="informational" message={message} />}
-      </div>
-      <SettingsCard
-        header="저장 폴더"
-        description={
-          destination
-            ? `${destination.label}${destination.available ? " · 새 캡처가 여기에 저장돼요" : " · 다시 선택해 주세요"}`
-            : "한 번 선택하면 캡처할 때마다 저장 창이 뜨지 않아요."
-        }
-        action={
-          <Button
-            icon={<FolderOpenRegular />}
-            disabled={disabled}
-            onClick={() =>
-              void run(async () => {
-                await pickDestination();
-              })
-            }
-          >
-            {destination ? "폴더 바꾸기" : "폴더 선택"}
-          </Button>
-        }
-      />
+      <PageHeader title="퀵캡처" description="영역을 띄워 두고 단축키나 더블클릭으로 캡처해요. 설정은 자동 적용해요." />
       <div className={s.row}>
-        <CheckBox
-          checked={remember}
-          content="폴더를 새로 고를 때 다음 실행에도 기억"
-          disabled={disabled}
-          onChange={setRemember}
-        />
-        {destination && (
+        <Button
+          appearance="primary"
+          icon={<CameraRegular />}
+          disabled={disabled || session?.busy === true || pendingDestination !== null}
+          onClick={() =>
+            void run(async () => {
+              if (session) {
+                await apply();
+                const result = await deck.capture.trigger({ sessionHandle: session.sessionHandle });
+                setSession((p) => (p ? { ...p, sequence: result.sequence, lastResult: result } : p));
+              } else await start();
+            })
+          }
+        >
+          {session ? "지금 캡처" : "영역 띄우고 시작"}
+        </Button>
+        {session && (
           <>
-            <Button
-              disabled={disabled || !destination.available}
-              onClick={() => void run(() => deck.fs.revealDestination({ grantHandle: destination.grantHandle }))}
-            >
-              저장 폴더 열기
-            </Button>
             <Button
               disabled={disabled}
               onClick={() =>
                 void run(async () => {
-                  await stop();
-                  await deck.fs.revokeDestination({ grantHandle: destination.grantHandle });
-                  setDestination(null);
-                  setPrefs((p) => {
-                    const next = { ...p };
-                    delete next.destinationGrant;
-                    return next;
-                  });
-                  setMessage("저장 폴더 연결을 해제했어요. 저장한 파일은 그대로 있어요.");
+                  if (overlay)
+                    setOverlay(
+                      await (overlay.visible
+                        ? deck.overlay.hide({ overlayHandle: overlay.overlayHandle })
+                        : deck.overlay.show({ overlayHandle: overlay.overlayHandle })),
+                    );
                 })
               }
             >
-              폴더 연결 해제
+              {overlay?.visible ? "영역 숨기기" : "영역 다시 띄우기"}
+            </Button>
+            <Button disabled={disabled} onClick={() => void run(stop)}>
+              캡처 종료
             </Button>
           </>
         )}
+        <Body>
+          {session
+            ? `${session.sequence}장 저장 · ${overlay?.rect.width ?? rect.width} × ${overlay?.rect.height ?? rect.height}px`
+            : "폴더 선택 → 영역 띄우기 → 단축키로 캡처"}
+        </Body>
       </div>
-      <div className={s.row}>
-        <ComboBox
-          header="파일 형식"
-          value={prefs.settings.format}
-          disabled={disabled}
-          options={[
-            { value: "png", label: "PNG · 선명한 원본" },
-            { value: "jpeg", label: "JPG · 작은 용량" },
-          ]}
-          onChange={(v) => changed({ settings: { ...prefs.settings, format: v === "jpeg" ? "jpeg" : "png" } })}
-        />
-        {prefs.settings.format === "jpeg" && (
-          <NumberBox
-            header="JPG 품질"
-            min={1}
-            max={100}
-            value={prefs.settings.quality}
-            disabled={disabled}
-            onChange={(quality) => changed({ settings: { ...prefs.settings, quality } })}
+      {message && <InfoBar severity="informational" message={message} onClose={() => setMessage("")} />}
+      <div className={s.cards}>
+        <section className={s.card} aria-label="저장 설정">
+          <BodyStrong>저장 설정</BodyStrong>
+          <div className={s.row}>
+            <Body>{destination?.label ?? "저장 폴더를 선택해 주세요."}</Body>
+            <Button
+              icon={<FolderOpenRegular />}
+              disabled={disabled || session?.busy === true}
+              onClick={() =>
+                void run(async () => {
+                  await pickDestination();
+                })
+              }
+            >
+              {destination ? "폴더 바꾸기" : "폴더 선택"}
+            </Button>
+            {destination && (
+              <Button
+                disabled={disabled || !destination.available}
+                onClick={() => void run(() => deck.fs.revealDestination({ grantHandle: destination.grantHandle }))}
+              >
+                폴더 열기
+              </Button>
+            )}
+          </div>
+          <CheckBox checked={remember} content="다음 실행에도 폴더 기억" disabled={disabled} onChange={setRemember} />
+          <div className={s.numbers}>
+            <ComboBox
+              header="파일 형식"
+              value={prefs.settings.format}
+              disabled={!ready}
+              options={[
+                { value: "png", label: "PNG" },
+                { value: "jpeg", label: "JPG" },
+              ]}
+              onChange={(v) => changed({ settings: { ...prefs.settings, format: v === "jpeg" ? "jpeg" : "png" } })}
+            />
+            <ComboBox
+              header="파일명"
+              value={prefs.settings.naming.mode}
+              disabled={!ready}
+              options={[
+                { value: "numbered", label: "image_001_시각" },
+                { value: "datetime", label: "capture_날짜_시각" },
+                { value: "custom", label: "내 접두어_0001" },
+              ]}
+              onChange={(v) =>
+                changed({
+                  settings: {
+                    ...prefs.settings,
+                    naming: { ...prefs.settings.naming, mode: v === "custom" || v === "datetime" ? v : "numbered" },
+                  },
+                })
+              }
+            />
+          </div>
+          {prefs.settings.format === "jpeg" && (
+            <NumberBox
+              header="JPG 품질"
+              min={1}
+              max={100}
+              value={prefs.settings.quality}
+              disabled={!ready}
+              onChange={(quality) => changed({ settings: { ...prefs.settings, quality } })}
+            />
+          )}
+          {prefs.settings.naming.mode === "custom" && (
+            <TextBox
+              header="파일명 접두어"
+              value={prefs.settings.naming.prefix ?? ""}
+              disabled={!ready}
+              onChange={(prefix) =>
+                changed({ settings: { ...prefs.settings, naming: { ...prefs.settings.naming, prefix } } })
+              }
+            />
+          )}
+        </section>
+        <section className={s.card} aria-label="캡처 설정">
+          <BodyStrong>캡처 설정</BodyStrong>
+          <Caption>단축키 · 버튼을 누른 뒤 원하는 키 조합을 눌러요.</Caption>
+          <Button disabled={!ready} onClick={() => setRecording(true)}>
+            {recording ? "새 단축키를 눌러 주세요 · Esc 취소" : shortcutLabel(prefs.shortcut)}
+          </Button>
+          {activeShortcut &&
+            !same({ modifiers: activeShortcut.modifiers, key: activeShortcut.key }, prefs.shortcut) && (
+              <Caption>현재 단축키: {shortcutLabel(activeShortcut)}</Caption>
+            )}
+          <div className={s.row}>
+            <ColorPicker
+              header="테두리 색"
+              value={prefs.style.borderColor}
+              disabled={!ready}
+              onChange={(borderColor) => changed({ style: { ...prefs.style, borderColor } })}
+            />
+            <NumberBox
+              header="테두리 두께"
+              min={1}
+              max={12}
+              value={prefs.style.borderWidth}
+              disabled={!ready}
+              onChange={(borderWidth) => changed({ style: { ...prefs.style, borderWidth } })}
+            />
+          </div>
+          <ToggleSwitch
+            header="영역을 항상 위에 표시"
+            checked={prefs.alwaysOnTop}
+            disabled={!ready}
+            onChange={(alwaysOnTop) => changed({ alwaysOnTop })}
           />
-        )}
-        <ComboBox
-          header="파일명"
-          value={prefs.settings.naming.mode}
-          disabled={disabled}
-          options={[
-            { value: "numbered", label: "image_001_시각" },
-            { value: "datetime", label: "capture_날짜_시각" },
-            { value: "custom", label: "내 접두어_0001" },
-          ]}
-          onChange={(v) =>
-            changed({
-              settings: {
-                ...prefs.settings,
-                naming: { ...prefs.settings.naming, mode: v === "custom" || v === "datetime" ? v : "numbered" },
-              },
-            })
-          }
-        />
-        {prefs.settings.naming.mode === "custom" && (
-          <TextBox
-            header="파일명 접두어"
-            value={prefs.settings.naming.prefix ?? ""}
-            disabled={disabled}
-            onChange={(prefix) =>
-              changed({ settings: { ...prefs.settings, naming: { ...prefs.settings.naming, prefix } } })
-            }
-          />
-        )}
+          <Caption secondary>영역 안 드래그로 이동, 가장자리로 크기 조절. 화면을 닫아도 캡처는 유지돼요.</Caption>
+        </section>
       </div>
-      <SettingsExpander
-        header="단축키와 영역 설정"
-        description={`${shortcutLabel(prefs.shortcut)} · 테두리·크기·파일 연번`}
-      >
+      <SettingsExpander header="고급 설정" description="실제 픽셀 좌표 · 키 조합 직접 선택 · 색 코드 · 폴더 연결 해제">
         <div className={s.stack}>
           <div className={s.row}>
-            {(["control", "shift", "alt"] as const).map((modifier) => (
+            {(["control", "shift", "alt", "meta"] as const).map((modifier) => (
               <CheckBox
                 key={modifier}
-                content={{ control: "Ctrl", shift: "Shift", alt: "Alt" }[modifier]}
+                content={{ control: "Ctrl", shift: "Shift", alt: "Alt", meta: "Win" }[modifier]}
                 checked={prefs.shortcut.modifiers.includes(modifier)}
-                disabled={disabled}
+                disabled={!ready}
                 onChange={(value) =>
                   changed({
                     shortcut: {
@@ -468,33 +578,17 @@ export function App({ deck }: { deck: Deck }) {
             <ComboBox
               header="캡처 키"
               value={prefs.shortcut.key}
-              disabled={disabled}
+              disabled={!ready}
               options={KEYS.map((key) => ({ value: key, label: key }))}
               onChange={(key) => changed({ shortcut: { ...prefs.shortcut, key } })}
             />
           </div>
-          <ToggleSwitch
-            header="영역을 항상 위에 표시"
-            checked={prefs.alwaysOnTop}
-            disabled={disabled}
-            onChange={(alwaysOnTop) => changed({ alwaysOnTop })}
+          <TextBox
+            header="테두리 색 (#RRGGBB)"
+            value={prefs.style.borderColor}
+            disabled={!ready}
+            onChange={(borderColor) => changed({ style: { ...prefs.style, borderColor } })}
           />
-          <div className={s.row}>
-            <TextBox
-              header="테두리 색 (#RRGGBB)"
-              value={prefs.style.borderColor}
-              disabled={disabled}
-              onChange={(borderColor) => changed({ style: { ...prefs.style, borderColor } })}
-            />
-            <NumberBox
-              header="테두리 두께"
-              min={1}
-              max={12}
-              value={prefs.style.borderWidth}
-              disabled={disabled}
-              onChange={(borderWidth) => changed({ style: { ...prefs.style, borderWidth } })}
-            />
-          </div>
           <div className={s.numbers}>
             {(["x", "y", "width", "height"] as const).map((key) => (
               <NumberBox
@@ -503,36 +597,48 @@ export function App({ deck }: { deck: Deck }) {
                 value={rect[key]}
                 min={key === "width" || key === "height" ? 5 : -32768}
                 max={key === "width" || key === "height" ? 16384 : 32768}
-                disabled={disabled}
+                disabled={!ready}
                 onChange={(value) => changed({ rect: { ...rect, [key]: value } as PhysicalRect })}
               />
             ))}
           </div>
-          <Caption secondary>
-            화면 좌표와 크기는 실제 픽셀 기준이에요. 같은 이름이 있으면 번호를 붙여 새 파일로 저장해요.
-          </Caption>
-          {session && (
-            <Button
-              disabled={disabled}
-              onClick={() =>
-                void run(async () => {
-                  setSession(await deck.capture.resetSequence({ sessionHandle: session.sessionHandle }));
-                  setMessage("다음 캡처부터 연번 1로 저장해요. 기존 파일은 그대로 있어요.");
-                })
-              }
-            >
-              파일 연번 초기화
-            </Button>
-          )}
+          <div className={s.row}>
+            {session && (
+              <Button
+                disabled={disabled || session.busy}
+                onClick={() =>
+                  void run(async () => {
+                    setSession(await deck.capture.resetSequence({ sessionHandle: session.sessionHandle }));
+                    setMessage("다음 캡처부터 연번 1로 저장해요.");
+                  })
+                }
+              >
+                파일 연번 초기화
+              </Button>
+            )}
+            {destination && (
+              <Button
+                disabled={disabled}
+                onClick={() =>
+                  void run(async () => {
+                    await stop();
+                    await deck.fs.revokeDestination({ grantHandle: destination.grantHandle });
+                    setDestination(null);
+                    setPrefs((p) => {
+                      const next = { ...p };
+                      delete next.destinationGrant;
+                      return next;
+                    });
+                    setMessage("폴더 연결을 해제했어요. 저장한 파일은 그대로 있어요.");
+                  })
+                }
+              >
+                폴더 연결 해제
+              </Button>
+            )}
+          </div>
         </div>
       </SettingsExpander>
-      {session && (
-        <div className={s.row}>
-          <Button disabled={disabled || session.busy} onClick={() => void run(apply)}>
-            실행 중인 캡처에 설정 적용
-          </Button>
-        </div>
-      )}
     </main>
   );
 }

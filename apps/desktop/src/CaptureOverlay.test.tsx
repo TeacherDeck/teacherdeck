@@ -55,17 +55,32 @@ describe("capture overlay shell", () => {
     expect(controls.action).toHaveBeenNthCalledWith(2, "capture");
     expect(controls.drag).not.toHaveBeenCalled();
   });
-  it("separate toolbar exposes six actions and disables capture while the host is busy", async () => {
+  it("single window keeps five toolbar actions and the capture region and disables capture while the host is busy", async () => {
     const { controls, emit } = setup(true);
     render(<CaptureOverlay controls={controls} />);
     const capture = await screen.findByRole("button", { name: "지금 캡처" });
     expect(screen.getAllByRole("button")).toHaveLength(6);
+    expect(screen.getByRole("button", { name: /캡처 영역/ })).toBeTruthy();
+    expect(document.documentElement.style.background).toBe("transparent");
+    expect(document.body.style.background).toBe("transparent");
     fireEvent.click(screen.getByRole("button", { name: "설정 열기" }));
     expect(controls.action).toHaveBeenCalledWith("show-settings");
     if (!state.session) throw new Error("Missing synthetic session");
     emit({ ...state, toolbar: true, session: { ...state.session, busy: true } });
     expect((capture as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/캡처 중/)).toBeTruthy();
+  });
+  it("rounds the toolbar inset to the same physical pixel as the host at custom DPI", async () => {
+    const previous = window.devicePixelRatio;
+    Object.defineProperty(window, "devicePixelRatio", { value: 1.1, configurable: true });
+    try {
+      const { controls } = setup();
+      render(<CaptureOverlay controls={controls} />);
+      const region = await screen.findByRole("button", { name: /캡처 영역/ });
+      expect((region as HTMLElement).style.top).toBe(`${40 / 1.1}px`);
+    } finally {
+      Object.defineProperty(window, "devicePixelRatio", { value: previous, configurable: true });
+    }
   });
   it("unsubscribes state changes when window content unmounts", async () => {
     const { controls, off } = setup();

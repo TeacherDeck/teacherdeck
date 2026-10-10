@@ -17,6 +17,7 @@ pub mod catalog;
 pub mod error;
 pub mod handles;
 pub mod manifest;
+pub mod overlay_geometry;
 pub mod package;
 pub mod resolver;
 pub mod shell;

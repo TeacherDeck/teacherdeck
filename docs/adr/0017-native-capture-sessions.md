@@ -9,7 +9,7 @@ capture 1.0.0, overlay 1.0.0, global-shortcut 1.0.0와 fs 1.2.0을 추가한다.
 
 캡처 세션은 동일 모듈이 소유한 overlay·shortcut·명시 선택한 destination grant를 결합한다. UI가 숨겨져도 사용자 시작한 네이티브 세션은 유지한다. 기존 일반 RPC 권한·모듈 소유자 검사를 변경하지 않는다. 네이티브 트리거는 매번 설치·선언 캡·버전·grant와 사용자 시작 상태를 재검사한다. 재시작에는 자동 arm하지 않는다. 종료·모듈 제거·권한 해제에 리소스를 정리한다.
 
-오버레이는 고정 로컬 셸 route의 region/toolbar 두 창으로 구성한다. 정확한 label prefix capture-overlay-*와 capture-toolbar-*를 전용 ACL에만 등록한다. window label을 호스트 소유자 매핑으로 확인하며 별도 최소 ACL을 사용한다. 모듈 또는 보조 창에 일반 호스트/fs/shell/http 권한을 주지 않는다. 캡처 전 두 창을 숨기고 성공·실패 후 기존 visibility를 복원한다.
+오버레이는 고정 로컬 셸 `/overlay` route의 단일 투명 도구 창으로 구성한다. 상단36DIP 띠에30DIP 미니 툴바를 오른쪽 정렬하고 아래 영역은 Windows hit-test용 alpha1 수준으로 채운다. `overlay.rect`는 테두리와 툴바를 제외한 실제 물리 캡처 좌표이며, 내부에서 외부 창 좌표로 변환한다. CSS 테두리와 inset은 같은 물리 borderWidth를 사용한다. 창 label을 호스트 소유자 매핑으로 확인하며 기존 최소 ACL 안에서 동작한다. 셸 이벤트는 현재 Window target으로만 구독한다. 캡처 전에 이 창을 숨기고 성공·실패 후 살아 있는 표시 상태를 복원한다. 기존 미사용 capture-toolbar-* ACL은 이번 변경에서 추가·확대하지 않는다.
 
 fs 영속 grant는 명시한 폴더에 새 파일만 게시할 권한이다. 경로는 호스트에만 저장하고 일반 읽기/열거/덮어쓰기 권한을 주지 않는다. 저장은 원자적 새 파일 생성, 충돌 suffix, 성공 뒤 연번 증가를 지킨다. grant 해제는 메타데이터만 해제한다.
 
