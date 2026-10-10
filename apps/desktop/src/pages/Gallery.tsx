@@ -20,6 +20,8 @@ import {
   EmptyState,
   HyperlinkButton,
   InfoBar,
+  Image,
+  ImageCropPreview,
   ListView,
   NumberBox,
   PageHeader,
@@ -53,6 +55,20 @@ const CASES = [
 ] as const;
 type Case = (typeof CASES)[number]["value"];
 
+function CropSample() {
+  const [rect, setRect] = useState({ x: 20, y: 20, width: 80, height: 60 });
+  return (
+    <ImageCropPreview
+      header="자르기 영역"
+      alt="합성 사각형"
+      src={`data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120"><rect width="160" height="120" fill="gray"/><circle cx="80" cy="60" r="32" fill="white"/></svg>')}`}
+      imageWidth={160}
+      imageHeight={120}
+      rect={rect}
+      onRectChange={setRect}
+    />
+  );
+}
 function DialogSample() {
   const [open, setOpen] = useState(false);
   const [last, setLast] = useState("없음");
@@ -195,6 +211,16 @@ const SAMPLES: Record<ComponentName, () => ReactNode> = {
       icon={<DocumentRegular />}
       title="파일이 없어요"
       description="파일을 끌어 놓거나 '파일 선택'을 눌러 주세요."
+    />
+  ),
+  ImageCropPreview: () => <CropSample />,
+  Image: () => (
+    <Image
+      src={`data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="100"><rect width="80" height="100" fill="gray"/><circle cx="40" cy="30" r="15" fill="white"/><rect x="20" y="55" width="40" height="35" fill="white"/></svg>')}`}
+      alt="합성 인물 사진 예시"
+      width={80}
+      height={100}
+      objectFit="contain"
     />
   ),
   DropZone: () => <DropZone active description="한 번에 여러 개를 놓을 수 있어요." />,

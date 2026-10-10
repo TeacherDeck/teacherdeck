@@ -3,6 +3,10 @@
 // @deck/ui public entry (packages/ui/AGENTS.md). Modules import UI only from here (MOD-010); icons
 // come from @fluentui/react-icons. Every component export must appear in the shell UI gallery
 // (apps/desktop/src/pages/Gallery.tsx); components.test.tsx enforces it.
+export { ImageCropPreview } from "./ImageCropPreview.tsx";
+export type { ImageCropPreviewProps, CropRect } from "./ImageCropPreview.tsx";
+export { Image } from "./Image.tsx";
+export type { ImageProps } from "./Image.tsx";
 export { DeckProvider } from "./DeckProvider.tsx";
 export type { DeckProviderProps } from "./DeckProvider.tsx";
 export {
@@ -108,4 +112,6 @@ export const COMPONENTS = [
   "ToggleSwitch",
   "CheckBox",
   "ListView",
+  "Image",
+  "ImageCropPreview",
 ] as const;
