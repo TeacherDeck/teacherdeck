@@ -2,7 +2,7 @@
 
 선생님들이 자주 쓰는 작은 Windows 도구를 하나의 앱("덱")에 모아 두는 무료 오픈소스 프로젝트예요. 한 번 설치하면 업데이트로 새 도구가 계속 추가돼요.
 
-> **개발 초기 단계예요.** 타이머와 회의록·지도일배정기의 초기 버전이 있어요. 아직 정식 릴리스는 없어요.
+> **개발 초기 단계예요.** 타이머·회의록·지도일 배정·이미지 압축·명렬표 사진 추출·이미지 자르기·퀵캡처의 개발 버전이 있어요. 아직 정식 릴리스는 없어요.
 
 ## 무엇을 하나요
 
@@ -62,7 +62,7 @@ pnpm tauri build     # NSIS 설치본: target/release/bundle/nsis/
 
 기존 도구를 재구성하는 사용자 요구와 개발 순서 권고는 [제품 개발 계획 초안](docs/PRODUCT_PLAN.md)에 정리했어요.
 
-현재 추가한 도구의 사용법과 지원 범위는 [회의록](modules/meeting-note/README.md), [지도일배정기](modules/duty-planner/README.md)를 보세요. 파일 처리·공통 명부 연결의 다음 구현 범위는 [공통 기반 제안서](docs/proposals/module-foundations.md)에서 검토해요.
+현재 도구의 사용법과 지원 범위는 타이머, [회의록](modules/meeting-note/README.md), [지도일 배정](modules/duty-planner/README.md), [이미지 압축](modules/image-compress/README.md), [명렬표 사진 추출](modules/photo-extract/README.md), [이미지 자르기](modules/image-crop/README.md), [퀵캡처](modules/quick-capture/README.md)를 보세요. 파일 처리·공통 명부 연결의 다음 구현 범위는 [공통 기반 제안서](docs/proposals/module-foundations.md)에서 검토해요.
 
 최근 구현과 검증 결과, 남은 작업은 [개발 현황](docs/DEVELOPMENT_STATUS.md)에 정리했어요.
 
