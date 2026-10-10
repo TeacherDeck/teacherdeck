@@ -70,6 +70,8 @@ const useStyles = makeStyles({
     overflowX: "hidden",
     position: "relative",
     backgroundColor: deckTokens.layerSubtle,
+    // Divider between the rail and the content pane.
+    borderLeft: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
     borderTopLeftRadius: deckTokens.overlayRadius,
   },
   moduleLayer: { position: "absolute", inset: 0 },
