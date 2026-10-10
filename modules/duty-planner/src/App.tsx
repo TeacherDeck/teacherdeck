@@ -13,12 +13,13 @@ import {
   PageHeader,
   ProgressRing,
   TextBox,
+  SettingsExpander,
   deckTokens,
   makeStyles,
   tokens,
 } from "@deck/ui";
 import { useEffect, useRef, useState } from "react";
-import { calendar, counts, parseDays, parseRoster, type PlanInput, type PlanResult } from "./planner.ts";
+import { calendar, counts, parseRoster, type PlanInput, type PlanResult } from "./planner.ts";
 import { HOLIDAYS, HOLIDAY_YEAR } from "./holidays.ts";
 import { initialState, loadState, saveState, type PlannerState } from "./state.ts";
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
@@ -34,14 +35,24 @@ const useStyles = makeStyles({
     border: `${tokens.strokeWidthThin} solid ${deckTokens.cardStroke}`,
     backgroundColor: deckTokens.cardFill,
   },
+  workspace: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1fr)",
+    gap: deckTokens.sectionGap,
+    alignItems: "start",
+    "@media (max-width: 760px)": { gridTemplateColumns: "minmax(0, 1fr)" },
+  },
   calendar: { display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: tokens.spacingHorizontalXS },
-  dayButton: { minWidth: 0, width: "100%", paddingInline: tokens.spacingHorizontalXS },
   cell: {
     display: "flex",
     flexDirection: "column",
     gap: tokens.spacingVerticalXS,
     padding: tokens.spacingVerticalXS,
     minWidth: 0,
+    width: "100%",
+    alignItems: "flex-start",
+    justifyContent: "flex-start",
+    whiteSpace: "normal",
     border: `${tokens.strokeWidthThin} solid ${deckTokens.cardStroke}`,
     borderRadius: deckTokens.cardRadius,
     overflowWrap: "anywhere",
@@ -58,18 +69,16 @@ export function App({ deck }: { deck: Deck }) {
   const [storageBlocked, setStorageBlocked] = useState(false);
   const [teacherId, setTeacherId] = useState("");
   const [selectedDay, setSelectedDay] = useState("1");
-  const [fixedText, setFixedText] = useState("");
-  const [excludedText, setExcludedText] = useState("");
-  const [past, setPast] = useState(0);
-  const [weekdays, setWeekdays] = useState<number[]>([]);
   const [manualSelection, setManualSelection] = useState<string[]>([]);
-  const [globalExcluded, setGlobalExcluded] = useState("");
+  const [newName, setNewName] = useState("");
+  const nameInput = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  const composingName = useRef(false);
   const workerRef = useRef<Worker | null>(null);
   const input = { ...state.input, holidays: HOLIDAYS };
   const days = calendar(input);
   const teacher = state.input.teachers.find((t) => t.id === teacherId);
   const currentDay = days.find((d) => String(d.day) === selectedDay);
-  const projected = counts(input, state.assignments);
+  const projected = counts(input, { ...input.manual, ...state.assignments });
   useEffect(() => {
     let active = true;
     loadState(deck)
@@ -78,7 +87,6 @@ export function App({ deck }: { deck: Deck }) {
         if (saved) {
           setState(saved);
           setRoster(saved.input.teachers.map((t) => `${t.name}\t${t.past}`).join("\n"));
-          setGlobalExcluded(saved.input.excluded.join(", "));
         }
         setLoaded(true);
       })
@@ -96,12 +104,6 @@ export function App({ deck }: { deck: Deck }) {
       workerRef.current?.terminate();
     };
   }, [deck]);
-  useEffect(() => {
-    setFixedText(teacher?.fixed.join(", ") ?? "");
-    setExcludedText(teacher?.excluded.join(", ") ?? "");
-    setPast(teacher?.past ?? 0);
-    setWeekdays(teacher?.weekdays ?? []);
-  }, [teacher]);
   useEffect(() => {
     setManualSelection(state.assignments[selectedDay] ?? state.input.manual[selectedDay] ?? []);
   }, [selectedDay, state.assignments, state.input.manual]);
@@ -131,19 +133,27 @@ export function App({ deck }: { deck: Deck }) {
     setTeacherId(next[0]?.id ?? "");
     setMessage("명단을 적용했어요. 교사 조건을 설정한 뒤 배정해 주세요.");
   }
-  function applyTeacher() {
-    const fixed = parseDays(fixedText);
-    const excluded = parseDays(excludedText);
-    if (!fixed || !excluded || !Number.isInteger(past)) {
-      setMessage("날짜는 1~31일을 쉼표로 구분하고 과거 횟수는 정수로 입력해 주세요.");
+  function editTeacher(patch: Partial<PlanInput["teachers"][number]>) {
+    const teachers = input.teachers.map((t) => (t.id === teacherId ? { ...t, ...patch } : t));
+    updateInput({ teachers });
+    setRoster(teachers.map((t) => `${t.name}\t${t.past}`).join("\n"));
+  }
+  function addTeacher() {
+    const name = newName.trim();
+    if (!name || name.includes("\n") || name.includes(",") || name.includes("\t")) {
+      setMessage("교사 이름을 한 명씩 입력해 주세요.");
       return;
     }
-    const nextTeachers = input.teachers.map((t) =>
-      t.id === teacherId ? { ...t, fixed, excluded, weekdays, past } : t,
-    );
-    updateInput({ teachers: nextTeachers });
-    setRoster(nextTeachers.map((t) => `${t.name}\t${t.past}`).join("\n"));
-    setMessage("교사 조건을 적용했어요. 조건이 겹치면 배정할 때 원인을 알려 드려요.");
+    const next = parseRoster([...input.teachers.map((t) => `${t.name}\t${t.past}`), name].join("\n"), input.teachers);
+    if (!next) {
+      setMessage("이미 등록된 이름인지 확인해 주세요. 명단은 최대 500명이에요.");
+      return;
+    }
+    updateInput({ teachers: next });
+    setRoster(next.map((t) => `${t.name}\t${t.past}`).join("\n"));
+    setTeacherId(next.at(-1)?.id ?? "");
+    setNewName("");
+    nameInput.current?.focus();
   }
   function generate() {
     const worker = new Worker(new URL("./planner.worker.ts", import.meta.url), { type: "module" });
@@ -167,19 +177,19 @@ export function App({ deck }: { deck: Deck }) {
     };
     worker.postMessage(input);
   }
-  function applyManual() {
+  function applyManual(selection = manualSelection) {
     if (!currentDay || currentDay.excluded) {
       setMessage("제외된 날짜에는 배정할 수 없어요. 날짜 제외 조건을 먼저 조정해 주세요.");
       return;
     }
-    if (manualSelection.filter(Boolean).length !== input.perDay || new Set(manualSelection).size !== input.perDay) {
+    if (selection.filter(Boolean).length !== input.perDay || new Set(selection).size !== input.perDay) {
       setMessage("하루 인원에 맞게 서로 다른 교사를 선택해 주세요.");
       return;
     }
     const fixed = input.teachers.filter((t) => t.fixed.includes(currentDay.day));
     if (
-      fixed.some((t) => !manualSelection.includes(t.id)) ||
-      manualSelection.some((id) => {
+      fixed.some((t) => !selection.includes(t.id)) ||
+      selection.some((id) => {
         const t = input.teachers.find((item) => item.id === id);
         return !t || t.excluded.includes(currentDay.day) || t.weekdays.includes(currentDay.weekday);
       })
@@ -189,9 +199,10 @@ export function App({ deck }: { deck: Deck }) {
     }
     setState((prev) => ({
       ...prev,
-      input: { ...prev.input, manual: { ...prev.input.manual, [selectedDay]: manualSelection } },
-      assignments: { ...prev.assignments, [selectedDay]: manualSelection },
+      input: { ...prev.input, manual: { ...prev.input.manual, [selectedDay]: selection } },
+      assignments: { ...prev.assignments, [selectedDay]: selection },
     }));
+    setManualSelection(selection);
     setIssues([]);
     setMessage("직접 배정을 적용했어요. 다시 배정해도 이 날짜는 유지돼요.");
   }
@@ -209,142 +220,40 @@ export function App({ deck }: { deck: Deck }) {
     <main className={s.page}>
       <PageHeader
         title="지도일배정기"
-        description="교사 조건을 먼저 지키고, 과거 횟수를 포함한 총횟수를 균등하게 배정해요."
+        description="달력에서 제외일과 담당 교사를 고르고, 남은 날짜를 균등하게 배정해요."
       />
-      {message && <InfoBar message={message} onClose={() => setMessage("")} />}
-      {issues.map((issue, index) => (
-        <InfoBar key={`${index}-${issue}`} severity="error" message={issue} />
-      ))}
-      <InfoBar
-        severity={input.year === HOLIDAY_YEAR ? "informational" : "warning"}
-        message={
-          input.year === HOLIDAY_YEAR
-            ? "2026년 법정 공휴일과 대체공휴일을 자동 제외해요. 임시공휴일·학교 휴업일은 직접 추가해 주세요."
-            : "공휴일 자동 제외는 2026년만 지원해요. 이 연도의 공휴일·학교 휴업일은 월 전체 제외 날짜에 입력해 주세요."
-        }
-      />
-      <section className={s.card} aria-label="월과 명단">
-        <div className={s.row}>
-          <NumberBox
-            header="연도"
-            min={1900}
-            max={2100}
-            value={input.year}
-            disabled={busy}
-            onChange={(year) => updateInput({ year })}
-          />
-          <NumberBox
-            header="월"
-            min={1}
-            max={12}
-            value={input.month}
-            disabled={busy}
-            onChange={(month) => updateInput({ month })}
-          />
-          <NumberBox
-            header="하루 인원"
-            min={1}
-            max={3}
-            value={input.perDay}
-            disabled={busy}
-            onChange={(perDay) => updateInput({ perDay })}
-          />
-          <CheckBox
-            content="주말 제외"
-            checked={input.weekends}
-            disabled={busy}
-            onChange={(weekends) => updateInput({ weekends })}
-          />
-        </div>
-        <Caption secondary>
-          월을 바꿔도 일 번호로 입력한 고정·제외·직접 배정은 유지돼요. 새 달의 조건을 확인해 주세요.
-        </Caption>
-        <TextBox
-          header="교사 명단"
-          multiline
-          value={roster}
-          disabled={busy}
-          onChange={setRoster}
-          placeholder={"교사A\t0\n교사B\t3"}
-          description="한 줄에 이름을 입력해 주세요. 과거 횟수는 이름 뒤 탭 또는 쉼표로 구분해요."
-        />
-        <div className={s.row}>
-          <Button onClick={applyRoster} disabled={busy}>
-            명단 적용
-          </Button>
-          <TextBox
-            header="월 전체 제외 날짜"
-            value={globalExcluded}
-            disabled={busy}
-            onChange={setGlobalExcluded}
-            placeholder="1, 5, 20"
-          />
-          <Button
-            disabled={busy}
-            onClick={() => {
-              const excluded = parseDays(globalExcluded);
-              if (!excluded) setMessage("제외 날짜는 1~31일을 쉼표로 구분해 주세요.");
-              else updateInput({ excluded });
-            }}
-          >
-            제외 날짜 적용
-          </Button>
-        </div>
-      </section>
-      <section className={s.card} aria-label="교사별 조건">
-        <BodyStrong>교사별 조건</BodyStrong>
-        <ComboBox
-          header="조건을 바꿀 교사"
-          options={teacherOptions}
-          value={teacherId}
-          disabled={busy}
-          onChange={setTeacherId}
-        />
-        {teacher && (
-          <>
-            <div className={s.row}>
-              <NumberBox
-                header="과거 실제 수행 횟수"
-                value={past}
-                min={0}
-                max={100000}
-                disabled={busy}
-                onChange={setPast}
-              />
-              <TextBox
-                header="고정 날짜"
-                value={fixedText}
-                disabled={busy}
-                onChange={setFixedText}
-                placeholder="3, 10"
-              />
-              <TextBox
-                header="제외 날짜"
-                value={excludedText}
-                disabled={busy}
-                onChange={setExcludedText}
-                placeholder="5, 12"
-              />
-            </div>
-            <div className={s.row}>
-              {WEEKDAYS.map((label, i) => (
-                <CheckBox
-                  key={label}
-                  content={`${label}요일 제외`}
-                  checked={weekdays.includes(i)}
-                  disabled={busy}
-                  onChange={(on) => setWeekdays(on ? [...weekdays, i] : weekdays.filter((n) => n !== i))}
-                />
-              ))}
-            </div>
-            <Button disabled={busy} onClick={applyTeacher}>
-              교사 조건 적용
-            </Button>
-          </>
-        )}
-      </section>
       <div className={s.row}>
-        <Button appearance="primary" disabled={busy || input.teachers.length === 0} onClick={generate}>
+        <NumberBox
+          header="연도"
+          min={1900}
+          max={2100}
+          value={input.year}
+          disabled={busy}
+          onChange={(year) => updateInput({ year })}
+        />
+        <NumberBox
+          header="월"
+          min={1}
+          max={12}
+          value={input.month}
+          disabled={busy}
+          onChange={(month) => updateInput({ month })}
+        />
+        <NumberBox
+          header="하루 인원"
+          min={1}
+          max={3}
+          value={input.perDay}
+          disabled={busy}
+          onChange={(perDay) => updateInput({ perDay })}
+        />
+        <CheckBox
+          content="주말 제외"
+          checked={input.weekends}
+          disabled={busy}
+          onChange={(weekends) => updateInput({ weekends })}
+        />
+        <Button appearance="primary" disabled={busy || !input.teachers.length} onClick={generate}>
           배정
         </Button>
         <Button
@@ -355,7 +264,7 @@ export function App({ deck }: { deck: Deck }) {
               .catch((error: unknown) =>
                 setMessage(
                   error instanceof Error && error.message === "STORAGE_SIZE_LIMIT"
-                    ? "저장 용량을 넘었어요. 명단이나 조건을 줄인 뒤 다시 저장해 주세요."
+                    ? "저장 용량을 넘었어요. 명단이나 조건을 줄여 주세요."
                     : "저장하지 못했어요. 다시 저장해 주세요.",
                 ),
               )
@@ -365,93 +274,224 @@ export function App({ deck }: { deck: Deck }) {
         </Button>
         {busy && <ProgressRing label="조건에 맞게 배정해요" />}
       </div>
-      <Caption secondary>
-        미리보기와 다시 배정은 실제 수행 횟수를 올리지 않아요. 과거 실제 수행 횟수는 직접 입력해요. 입력을 바꾼 뒤에는
-        각 적용 버튼을 눌러 주세요.
-      </Caption>
-      <section className={s.card} aria-label="월별 배정 달력">
-        <BodyStrong>
-          {input.year}년 {input.month}월
-        </BodyStrong>
-        <div className={s.calendar}>
-          {WEEKDAYS.map((day) => (
-            <BodyStrong key={day}>{day}</BodyStrong>
-          ))}
-          {Array.from({ length: days[0]?.weekday ?? 0 }, (_, i) => (
-            <div key={`blank-${i}`} aria-hidden="true" />
-          ))}
-          {days.map((d) => (
-            <div key={d.day} className={s.cell}>
+      {message && <InfoBar message={message} onClose={() => setMessage("")} />}
+      {issues.map((issue, index) => (
+        <InfoBar key={`${index}-${issue}`} severity="error" message={issue} />
+      ))}
+      {!input.teachers.length && <InfoBar message="아래에서 교사 이름을 추가한 뒤 배정을 눌러 주세요." />}
+      <div className={s.row}>
+        <TextBox
+          header="교사 이름"
+          value={newName}
+          onChange={setNewName}
+          disabled={busy}
+          placeholder="이름 입력 후 Enter"
+          inputRef={nameInput}
+          onCompositionStart={() => {
+            composingName.current = true;
+          }}
+          onCompositionEnd={() => {
+            composingName.current = false;
+          }}
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" &&
+              !composingName.current &&
+              !event.nativeEvent.isComposing &&
+              event.keyCode !== 229
+            ) {
+              event.preventDefault();
+              addTeacher();
+            }
+          }}
+        />
+        <Button onClick={addTeacher} disabled={busy || !newName.trim()}>
+          추가
+        </Button>
+      </div>
+      <div className={s.workspace}>
+        <section className={s.card} aria-label="월별 배정 달력">
+          <BodyStrong>
+            {input.year}년 {input.month}월
+          </BodyStrong>
+          <Caption secondary>날짜를 누르면 담당 교사를 바꾸거나 지도 없는 날로 지정할 수 있어요.</Caption>
+          <div className={s.calendar}>
+            {WEEKDAYS.map((day) => (
+              <BodyStrong key={day}>{day}</BodyStrong>
+            ))}
+            {Array.from({ length: days[0]?.weekday ?? 0 }, (_, i) => (
+              <div key={`blank-${i}`} aria-hidden="true" />
+            ))}
+            {days.map((d) => (
               <Button
-                className={s.dayButton}
+                key={d.day}
+                className={s.cell}
                 appearance={selectedDay === String(d.day) ? "primary" : "subtle"}
                 disabled={busy}
                 aria-label={`${d.day}일 배정 편집`}
                 onClick={() => setSelectedDay(String(d.day))}
               >
-                {d.day}
+                <BodyStrong>{d.day}</BodyStrong>
+                {d.excluded ? (
+                  <Caption>{d.reason}</Caption>
+                ) : (
+                  <>
+                    <Caption>
+                      {(state.assignments[String(d.day)] ?? input.manual[String(d.day)] ?? [])
+                        .map((id) => input.teachers.find((t) => t.id === id)?.name ?? "")
+                        .join(" · ") || "미배정"}
+                    </Caption>
+                    {input.manual[String(d.day)] && <Caption>직접 배정</Caption>}
+                    {input.teachers.some((t) => t.fixed.includes(d.day)) && <Caption>고정 조건</Caption>}
+                  </>
+                )}
               </Button>
-              {d.excluded ? (
-                <Caption secondary>{d.reason}</Caption>
-              ) : (
-                <>
-                  <Caption>
-                    {(state.assignments[String(d.day)] ?? [])
-                      .map((id) => input.teachers.find((t) => t.id === id)?.name ?? "")
-                      .join(" · ") || "미배정"}
-                  </Caption>
-                  {input.manual[String(d.day)] && <Caption secondary>직접 배정</Caption>}
-                  {input.teachers.some((t) => t.fixed.includes(d.day)) && <Caption secondary>고정 조건</Caption>}
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-      </section>
-      <section className={s.card} aria-label="날짜별 직접 배정">
-        <BodyStrong>{selectedDay}일 직접 배정·교체</BodyStrong>
-        {currentDay?.excluded ? (
-          <Body>제외된 날짜예요. 제외 조건을 먼저 조정해 주세요.</Body>
-        ) : (
-          <>
-            <div className={s.row}>
+            ))}
+          </div>
+        </section>
+        <section className={s.card} aria-label="날짜별 직접 배정">
+          <BodyStrong>
+            {selectedDay}일 {currentDay ? WEEKDAYS[currentDay.weekday] : ""}요일
+          </BodyStrong>
+          <CheckBox
+            content="이 날짜는 지도하지 않아요"
+            checked={input.excluded.includes(Number(selectedDay))}
+            disabled={busy}
+            onChange={(on) =>
+              updateInput({
+                excluded: on
+                  ? [...input.excluded, Number(selectedDay)]
+                  : input.excluded.filter((day) => day !== Number(selectedDay)),
+              })
+            }
+          />
+          {currentDay?.excluded ? (
+            <Body>{currentDay.reason}로 제외된 날짜예요.</Body>
+          ) : (
+            <>
               {Array.from({ length: input.perDay }, (_, i) => (
                 <ComboBox
                   key={i}
                   header={`${i + 1}번째 교사`}
-                  disabled={busy}
                   options={teacherOptions}
                   value={manualSelection[i] ?? ""}
-                  onChange={(id) =>
-                    setManualSelection((prev) =>
-                      Array.from({ length: input.perDay }, (_, n) => (n === i ? id : (prev[n] ?? ""))),
-                    )
-                  }
+                  disabled={busy}
+                  onChange={(id) => {
+                    const selection = Array.from({ length: input.perDay }, (_, n) =>
+                      n === i ? id : (manualSelection[n] ?? ""),
+                    );
+                    setManualSelection(selection);
+                    if (selection.every(Boolean)) applyManual(selection);
+                  }}
                 />
               ))}
-            </div>
-            <div className={s.row}>
-              <Button disabled={busy} onClick={applyManual}>
-                직접 배정 적용
-              </Button>
+              <Caption secondary>담당자를 바꾸면 바로 반영돼요. 다시 배정해도 직접 고른 담당자는 유지돼요.</Caption>
               <Button disabled={busy || !input.manual[selectedDay]} onClick={clearManual}>
                 직접 배정 해제
               </Button>
-            </div>
-          </>
-        )}
-      </section>
-      <section className={s.card} aria-label="교사별 배정 횟수">
-        <BodyStrong>배정 횟수 미리보기</BodyStrong>
+            </>
+          )}
+          <BodyStrong>선택한 교사 조건</BodyStrong>
+          <ComboBox
+            header="조건을 바꿀 교사"
+            options={teacherOptions}
+            value={teacherId}
+            disabled={busy}
+            onChange={setTeacherId}
+          />
+          {teacher && (
+            <>
+              <CheckBox
+                content={`${selectedDay}일에 ${teacher.name} 고정`}
+                checked={teacher.fixed.includes(Number(selectedDay))}
+                disabled={busy}
+                onChange={(on) =>
+                  editTeacher({
+                    fixed: on
+                      ? [...teacher.fixed, Number(selectedDay)]
+                      : teacher.fixed.filter((day) => day !== Number(selectedDay)),
+                  })
+                }
+              />
+              <CheckBox
+                content={`${selectedDay}일에 ${teacher.name} 제외`}
+                checked={teacher.excluded.includes(Number(selectedDay))}
+                disabled={busy}
+                onChange={(on) =>
+                  editTeacher({
+                    excluded: on
+                      ? [...teacher.excluded, Number(selectedDay)]
+                      : teacher.excluded.filter((day) => day !== Number(selectedDay)),
+                  })
+                }
+              />
+              <NumberBox
+                header="과거 실제 수행 횟수"
+                value={teacher.past}
+                min={0}
+                max={100000}
+                disabled={busy}
+                onChange={(past) => editTeacher({ past })}
+              />
+              <Caption secondary>배정하지 않는 요일</Caption>
+              <div className={s.row}>
+                {WEEKDAYS.map((label, i) => (
+                  <CheckBox
+                    key={label}
+                    content={`${label}요일 제외`}
+                    checked={teacher.weekdays.includes(i)}
+                    disabled={busy}
+                    onChange={(on) =>
+                      editTeacher({ weekdays: on ? [...teacher.weekdays, i] : teacher.weekdays.filter((n) => n !== i) })
+                    }
+                  />
+                ))}
+              </div>
+              <Caption secondary>
+                고정: {teacher.fixed.join(" · ") || "없음"} / 제외: {teacher.excluded.join(" · ") || "없음"}
+              </Caption>
+            </>
+          )}
+        </section>
+      </div>
+      <section className={s.card} aria-label="교사 명단과 배정 횟수">
+        <BodyStrong>교사 명단 · {input.teachers.length}명</BodyStrong>
         <div className={s.row}>
           {input.teachers.map((t) => (
-            <Body key={t.id}>
-              {t.name}: 과거 {t.past} + 이번 배정 {projected[t.id] ?? 0} = 총 {t.past + (projected[t.id] ?? 0)}
-            </Body>
+            <Button
+              key={t.id}
+              appearance={teacherId === t.id ? "primary" : "subtle"}
+              disabled={busy}
+              onClick={() => setTeacherId(t.id)}
+            >
+              {t.name} · 과거 {t.past} + 이번 {projected[t.id] ?? 0} = {t.past + (projected[t.id] ?? 0)}회
+            </Button>
           ))}
         </div>
+        <SettingsExpander header="여러 명 붙여넣기" description="이름을 한 줄씩 입력하거나 엑셀 명단을 붙여넣어요.">
+          <TextBox
+            header="교사 명단"
+            multiline
+            value={roster}
+            disabled={busy}
+            onChange={setRoster}
+            placeholder={"교사A\n교사B"}
+            description="이름만 넣어도 돼요. 과거 횟수가 있으면 이름 옆 열에 함께 붙여넣어요."
+          />
+          <Button onClick={applyRoster} disabled={busy}>
+            명단 적용
+          </Button>
+        </SettingsExpander>
       </section>
-      <Caption secondary>명단은 이 모듈에만 저장돼요. 공통 명부 연결과 파일 내보내기는 후속 기능이에요.</Caption>
+      <Caption secondary>
+        {input.year === HOLIDAY_YEAR
+          ? "2026년 법정 공휴일은 자동 제외해요. 임시공휴일·학교 휴업일은 달력에서 추가해 주세요."
+          : "공휴일 자동 제외는 2026년만 지원해요. 이 연도 공휴일은 달력에서 직접 제외해 주세요."}
+      </Caption>
+      <Caption secondary>
+        다시 배정해도 실제 수행 횟수는 늘지 않아요. 월을 바꾸면 유지된 고정·제외 조건을 확인해 주세요. 명단은 이
+        모듈에만 저장돼요.
+      </Caption>
     </main>
   );
 }
