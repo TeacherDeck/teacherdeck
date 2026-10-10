@@ -90,7 +90,7 @@ Additional terms: see LICENSE-ADDITIONAL-TERMS
 | MOD-007 | MUST | optional 캡은 `deck.has(cap)`로 확인한 뒤 사용하고, 없으면 `CapabilityGate`로 "앱 업데이트 후 사용 가능"을 표시한다. | SDK 미확인 호출 경고 로그, [manual] | [modules.md](modules.md) |
 | MOD-008 | MUST NOT | 외부 네트워크 요청을 하지 않는다. | 모듈 CSP `connect-src 'self'` | [modules.md](modules.md) |
 | MOD-009 | MUST NOT | 영속 데이터에 `localStorage`, `indexedDB`, `document.cookie`, `caches`를 쓰지 않는다. | eslint `deck/no-web-storage` | [modules.md](modules.md) |
-| MOD-010 | MUST | UI는 `@deck/ui`와 Fluent UI v9 컴포넌트·토큰만 쓴다(UI-001~003). | eslint | [modules.md](modules.md) |
+| MOD-010 | MUST | UI 컴포넌트·타입 램프·토큰·스타일 도구는 `@deck/ui`에서만 가져오고, 아이콘은 `@fluentui/react-icons`에서만 가져온다. | eslint `no-restricted-imports` | [modules.md](modules.md) |
 | MOD-011 | MUST | 파일을 일괄 처리하는 도구는 `ToolLayout` 골격을 따른다(UI-008). | [manual] | [modules.md](modules.md) |
 | MOD-012 | MUST | `authors`에 실제 기여자를 기록하고 기존 저자를 제거하지 않는다. | 스키마 `minItems: 1`, [manual] | [modules.md](modules.md) |
 | MOD-013 | MUST | 사용자에게 보이는 변경은 버전 bump와 모듈 CHANGELOG를 동반한다(VER-004). | `check-modules`(현재 버전의 CHANGELOG 항목), CI의 base 브랜치 대비 버전 비교(`check-module-bumps`) | [modules.md](modules.md) |
@@ -127,7 +127,7 @@ Additional terms: see LICENSE-ADDITIONAL-TERMS
 | UI-003 | MUST | 아이콘은 `@fluentui/react-icons`만 쓴다(모듈 `icon.svg` 제외). | eslint | [design-system.md](design-system.md) |
 | UI-004 | MUST | 셸과 모듈의 루트 배경은 투명(Mica)이고, 표면은 레이어 토큰으로 표현한다. | `DeckProvider` 기본값, [manual] | [design-system.md](design-system.md) |
 | UI-005 | MUST | 키보드만으로 전부 조작할 수 있고, 포커스가 보이며, 텍스트 150%·DPI 200%에서 잘림이 없고, 대비가 WCAG AA를 만족한다. | [manual] 체크리스트, axe 자동 테스트는 미구현 | [design-system.md](design-system.md) |
-| UI-006 | MUST NOT | `@deck/ui`에 있는 패턴을 모듈에서 재구현하지 않는다. | [manual] | [design-system.md](design-system.md) |
+| UI-006 | MUST NOT | `@deck/ui`에 있는 패턴을 모듈에서 재구현하지 않는다. | [manual], 모듈의 Fluent 직접 import 금지(MOD-010) | [design-system.md](design-system.md) |
 | UI-007 | MUST | 문구 규칙. | [manual] | [design-system.md](design-system.md) |
 | UI-008 | MUST | 일괄 처리 도구는 `ToolLayout`(입력 → 옵션 → 미리보기 → 실행 → 결과) 골격을 따른다. | [manual] | [design-system.md](design-system.md) |
 | PRV-001 | MUST NOT | 호스트 외에는 네트워크 통신을 하지 않는다. | 셸·모듈 CSP, 코드 리뷰 | [privacy.md](privacy.md) |

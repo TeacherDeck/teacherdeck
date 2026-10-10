@@ -11,7 +11,6 @@
   "dependencies": {
     "@deck/sdk": "workspace:*",
     "@deck/ui": "workspace:*",
-    "@fluentui/react-components": "9.74.9",
     "@fluentui/react-icons": "2.0.343",
     "react": "19.3.0",
     "react-dom": "19.3.0"
