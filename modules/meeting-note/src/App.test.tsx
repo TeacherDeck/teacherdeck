@@ -73,6 +73,7 @@ describe("original meeting interaction flow", () => {
   it("does not count an agenda heading as the selected speaker's statement", async () => {
     const { deck, view } = await setup(seeded());
     const input = await screen.findByRole("textbox", { name: "발언 입력" });
+    fireEvent.click(screen.getByRole("button", { name: "종류 · 비공개 선택" }));
     fireEvent.click(screen.getByRole("button", { name: "안건" }));
     fireEvent.change(input, { target: { value: "새 안건" } });
     fireEvent.keyDown(input, { key: "Enter" });
@@ -126,7 +127,7 @@ describe("original meeting interaction flow", () => {
     fireEvent.keyDown(input, { key: "Enter" });
     fireEvent.change(input, { target: { value: "두 번째 발언" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(screen.getAllByText("발언 · 가상 화자 B")).toHaveLength(2);
+    expect(within(screen.getByRole("list", { name: "회의 기록" })).getAllByText("가상 화자 B")).toHaveLength(2);
     const log = screen.getByRole("list", { name: "회의 기록" });
     expect(
       within(log)
@@ -150,11 +151,11 @@ describe("original meeting interaction flow", () => {
     });
     expect(screen.getAllByText("한글 조합 완료")).toHaveLength(1);
     fireEvent.keyDown(input, { code: "Digit1", key: "1", ctrlKey: true, altKey: true });
-    expect(screen.getByText("발언 · 가상 화자 A")).toBeTruthy();
+    expect(within(screen.getByRole("list", { name: "회의 기록" })).getByText("가상 화자 A")).toBeTruthy();
     fireEvent.keyDown(input, { code: "ArrowDown", key: "ArrowDown", altKey: true });
     fireEvent.change(input, { target: { value: "두 번째 발언" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(screen.getByText("발언 · 가상 화자 B")).toBeTruthy();
+    expect(within(screen.getByRole("list", { name: "회의 기록" })).getByText("가상 화자 B")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "두 번째 발언 수정" }));
     fireEvent.change(input, { target: { value: "수정한 발언" } });
     fireEvent.keyDown(input, { key: "Enter" });
@@ -170,6 +171,7 @@ describe("original meeting interaction flow", () => {
   it("offers kind/private controls, F4/F8/F9 dialogs and excludes private records from readable export", async () => {
     const { deck, view, store } = await setup(seeded());
     const input = await screen.findByRole("textbox", { name: "발언 입력" });
+    fireEvent.click(screen.getByRole("button", { name: "종류 · 비공개 선택" }));
     fireEvent.click(screen.getByRole("button", { name: "결정" }));
     fireEvent.change(input, { target: { value: "공개 가결" } });
     fireEvent.keyDown(input, { key: "Enter" });
@@ -267,6 +269,7 @@ it("separates same-name people in the live UI and retags a specific record", asy
   fireEvent.click(screen.getByRole("button", { name: "가상 동명 (2번) · Alt+2" }));
   fireEvent.change(input, { target: { value: "둘째 발언" } });
   fireEvent.keyDown(input, { key: "Enter" });
+  fireEvent.click(screen.getByRole("button", { name: "둘째 발언 화자 변경" }));
   const picker = screen.getByRole("combobox", { name: "이 기록의 화자" });
   fireEvent.click(picker);
   fireEvent.click(screen.getByRole("option", { name: "1. 가상 동명" }));
@@ -274,5 +277,28 @@ it("separates same-name people in the live UI and retags a specific record", asy
     const saved = store.get(MEETING_KEY) as Meeting;
     expect(saved.entries[0]?.speakerId).toBe(saved.speakerIds?.[0]);
   });
+  deck.dispose();
+});
+
+it("keeps current agenda, colored shortcut chips and compact records visible during continuous entry", async () => {
+  const { deck } = await setup(seeded());
+  const input = await screen.findByRole("textbox", { name: "발언 입력" });
+  expect(screen.getByRole("button", { name: "종류 · 비공개 선택" }).getAttribute("aria-expanded")).toBe("false");
+  const speaker = screen.getByRole("button", { name: "가상 화자 B · Alt+2" });
+  expect(within(speaker).getByText("2")).toBeTruthy();
+  expect(speaker.querySelector("[aria-hidden='true']")?.getAttribute("style")).toContain("background-color");
+  fireEvent.change(input, { target: { value: "# 합성 안건" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(screen.getByText("현재 안건: 합성 안건")).toBeTruthy();
+  fireEvent.click(speaker);
+  fireEvent.change(input, { target: { value: "연속 입력 발언" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() => expect(document.activeElement).toBe(input));
+  const rows = within(screen.getByRole("list", { name: "회의 기록" })).getAllByRole("listitem");
+  expect(rows).toHaveLength(2);
+  expect(within(rows[1] as HTMLElement).getByText("가상 화자 B")).toBeTruthy();
+  expect(screen.queryByRole("combobox", { name: "이 기록의 화자" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "연속 입력 발언 화자 변경" }));
+  expect(screen.getByRole("combobox", { name: "이 기록의 화자" })).toBeTruthy();
   deck.dispose();
 });

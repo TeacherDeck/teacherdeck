@@ -19,6 +19,7 @@ import {
   ToggleButton,
   deckTokens,
   makeStyles,
+  mergeClasses,
   tokens,
 } from "@deck/ui";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -46,6 +47,20 @@ import {
 import { mergeRosters, pickRosters, saveRosters } from "./roster-files.ts";
 import { activeSpeakers, identifySpeakers, reviseSpeakers as applyRoster, speakerLabel } from "./speakers.ts";
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "="];
+const SPEAKER_COLORS = [
+  tokens.colorPaletteBlueForeground2,
+  tokens.colorPaletteGreenForeground2,
+  tokens.colorPaletteRedForeground2,
+  tokens.colorPalettePurpleForeground2,
+  tokens.colorPaletteMarigoldForeground2,
+  tokens.colorPaletteTealForeground2,
+  tokens.colorPaletteBerryForeground2,
+  tokens.colorPaletteDarkOrangeForeground2,
+  tokens.colorPaletteTealForeground2,
+  tokens.colorPaletteLightGreenForeground2,
+  tokens.colorPalettePlumForeground2,
+  tokens.colorPalettePinkForeground2,
+];
 const KINDS: EntryKind[] = ["발언", "결정", "조치", "질의", "안건"];
 const lines = (value: string) =>
   value
@@ -53,7 +68,112 @@ const lines = (value: string) =>
     .map((name) => name.trim())
     .filter(Boolean);
 const useStyles = makeStyles({
-  page: { display: "flex", flexDirection: "column", gap: deckTokens.inlineGap, padding: deckTokens.pagePadding },
+  page: {
+    display: "flex",
+    flexDirection: "column",
+    gap: tokens.spacingVerticalS,
+    padding: tokens.spacingHorizontalM,
+    height: "100vh",
+    minHeight: 0,
+    boxSizing: "border-box",
+  },
+  setup: {
+    width: "100%",
+    maxWidth: "64rem",
+    marginInline: "auto",
+    display: "flex",
+    flexDirection: "column",
+    gap: tokens.spacingVerticalM,
+  },
+  toolbar: { display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalS, alignItems: "center", flexShrink: 0 },
+  saved: { marginInlineStart: "auto" },
+  composer: {
+    gridArea: "composer",
+    display: "flex",
+    flexDirection: "column",
+    gap: tokens.spacingVerticalXS,
+    paddingTop: tokens.spacingVerticalS,
+    borderTop: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
+    minWidth: 0,
+  },
+  current: {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: tokens.spacingHorizontalM,
+    backgroundColor: tokens.colorBrandBackground2,
+    padding: tokens.spacingHorizontalS,
+    borderRadius: tokens.borderRadiusSmall,
+  },
+  key: {
+    paddingInline: tokens.spacingHorizontalXS,
+    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1}`,
+    borderRadius: tokens.borderRadiusSmall,
+    fontFamily: tokens.fontFamilyMonospace,
+    flexShrink: 0,
+  },
+  speakerButton: {
+    display: "flex",
+    justifyContent: "flex-start",
+    gap: tokens.spacingHorizontalS,
+    width: "100%",
+    border: `${tokens.strokeWidthThin} solid ${tokens.colorTransparentStroke}`,
+    paddingBlock: tokens.spacingVerticalXS,
+  },
+  selectedSpeaker: {
+    backgroundColor: tokens.colorBrandBackground2,
+    border: `${tokens.strokeWidthThin} solid ${tokens.colorBrandStroke1}`,
+  },
+  dot: {
+    width: tokens.spacingHorizontalS,
+    height: tokens.spacingVerticalS,
+    borderRadius: tokens.borderRadiusCircular,
+    flexShrink: 0,
+  },
+  time: { whiteSpace: "nowrap", fontFamily: tokens.fontFamilyMonospace },
+  stats: {
+    display: "flex",
+    flexDirection: "column",
+    gap: tokens.spacingVerticalXS,
+    borderTop: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
+    paddingTop: tokens.spacingVerticalS,
+  },
+  record: {
+    display: "grid",
+    gridTemplateColumns: "11ch minmax(6ch, 12ch) minmax(0, 1fr) auto",
+    alignItems: "baseline",
+    gap: tokens.spacingHorizontalS,
+    width: "100%",
+    "&:hover [data-record-actions]": { opacity: 1 },
+    "&:focus-within [data-record-actions]": { opacity: 1 },
+    "@media (max-width: 720px)": { gridTemplateColumns: "11ch minmax(4ch, 8ch) minmax(0, 1fr) auto" },
+  },
+  agenda: {
+    backgroundColor: tokens.colorBrandBackground2,
+    borderLeft: `${tokens.strokeWidthThick} solid ${tokens.colorBrandStroke1}`,
+    padding: tokens.spacingHorizontalS,
+    gridColumn: "1 / -1",
+    display: "flex",
+    alignItems: "center",
+    gap: tokens.spacingHorizontalS,
+  },
+  recordBody: { display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalXS, minWidth: 0 },
+  recordActions: {
+    display: "flex",
+    gap: tokens.spacingHorizontalXS,
+    opacity: 0,
+    "@media (hover: none)": { opacity: 1 },
+  },
+  tag: {
+    paddingInline: tokens.spacingHorizontalXS,
+    borderRadius: tokens.borderRadiusSmall,
+    backgroundColor: tokens.colorNeutralBackground3,
+  },
+  decision: { backgroundColor: tokens.colorPaletteMarigoldBackground2, color: tokens.colorPaletteMarigoldForeground2 },
+  action: { backgroundColor: tokens.colorPaletteGreenBackground2, color: tokens.colorPaletteGreenForeground2 },
+  question: { backgroundColor: tokens.colorPalettePurpleBackground2, color: tokens.colorPalettePurpleForeground2 },
+  private: { opacity: 0.65, fontStyle: "italic" },
+  retag: { gridColumn: "2 / -1", maxWidth: "20rem" },
   row: { display: "flex", flexWrap: "wrap", gap: deckTokens.inlineGap, alignItems: "center" },
   grid: {
     display: "grid",
@@ -63,30 +183,49 @@ const useStyles = makeStyles({
   },
   workspace: {
     display: "grid",
-    gridTemplateColumns: "minmax(0, 3fr) minmax(0, 1fr)",
-    gridTemplateAreas: '"editor speakers"',
-    gap: deckTokens.sectionGap,
-    alignItems: "start",
-    "@media (max-width: 720px)": { gridTemplateColumns: "minmax(0, 1fr)", gridTemplateAreas: '"speakers" "editor"' },
+    flex: "1",
+    minHeight: 0,
+    gridTemplateColumns: "minmax(0, 1fr) minmax(12rem, 15rem)",
+    gridTemplateRows: "minmax(0, 1fr) auto",
+    gridTemplateAreas: '"records speakers" "composer composer"',
+    gap: tokens.spacingHorizontalM,
+    "@media (max-width: 720px)": {
+      gridTemplateColumns: "minmax(0, 1fr)",
+      gridTemplateRows: "auto minmax(0, 1fr) auto",
+      gridTemplateAreas: '"speakers" "records" "composer"',
+    },
   },
-  editor: { gridArea: "editor", display: "flex", flexDirection: "column", gap: deckTokens.inlineGap, minWidth: 0 },
+  editor: { display: "contents" },
   speakers: {
     gridArea: "speakers",
     display: "flex",
     flexDirection: "column",
-    gap: deckTokens.inlineGap,
+    gap: tokens.spacingVerticalXS,
     minWidth: 0,
-    "@media (max-width: 720px)": { flexDirection: "row", flexWrap: "wrap" },
+    overflowY: "auto",
+    borderLeft: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
+    paddingLeft: tokens.spacingHorizontalS,
+    "@media (max-width: 720px)": {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      maxHeight: "20vh",
+      borderLeft: "none",
+      paddingLeft: 0,
+    },
   },
   speakerHeading: { "@media (max-width: 720px)": { flexBasis: "100%" } },
   stack: { display: "flex", flexDirection: "column", gap: deckTokens.inlineGap, minWidth: 0 },
   log: {
+    gridArea: "records",
     overflowY: "auto",
-    maxHeight: "40vh",
-    minHeight: "10vh",
-    "@media (max-width: 720px)": { maxHeight: "20vh" },
-    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
-    borderRadius: deckTokens.cardRadius,
+    minHeight: 0,
+    borderRadius: tokens.borderRadiusSmall,
+    "& [role='listitem']": {
+      minHeight: "auto",
+      paddingBlock: tokens.spacingVerticalXS,
+      paddingInline: tokens.spacingHorizontalXS,
+      borderBottom: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke3}`,
+    },
   },
   text: { whiteSpace: "pre-wrap", overflowWrap: "anywhere" },
 });
@@ -106,50 +245,96 @@ const Records = memo(function Records({
   retag: (id: string, speakerId: string) => void;
 }) {
   const s = useStyles();
+  const [changing, setChanging] = useState("");
   return (
     <ListView
       header="회의 기록"
       items={entries}
       getKey={(entry) => entry.id}
-      emptyText="화자를 고르고 발언을 입력한 뒤 Enter를 눌러 주세요."
-      renderItem={(entry) => (
-        <div className={s.stack}>
-          <div className={s.row}>
-            <BodyStrong>
-              {entry.private ? "비공개 · " : ""}
-              {entry.kind}
-              {entry.speaker ? ` · ${entry.speaker}` : ""}
-            </BodyStrong>
-            {entry.timestamp && (
-              <Caption secondary>
-                {new Date(entry.timestamp).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
-              </Caption>
+      emptyText="Alt+숫자로 화자를 고르고, 발언을 입력한 뒤 Enter를 눌러 주세요."
+      renderItem={(entry) => {
+        const index = speakers.findIndex((speaker) => speaker.value === entry.speakerId);
+        const color = SPEAKER_COLORS[Math.max(0, index) % SPEAKER_COLORS.length];
+        const actions = (
+          <div className={s.recordActions} data-record-actions>
+            {entry.kind !== "안건" && (
+              <Button
+                size="small"
+                disabled={busy}
+                onClick={() => setChanging(changing === entry.id ? "" : entry.id)}
+                aria-label={`${entry.text} 화자 변경`}
+              >
+                화자
+              </Button>
             )}
-            <Button disabled={busy} size="small" onClick={() => edit(entry)} aria-label={`${entry.text} 수정`}>
+            <Button size="small" disabled={busy} onClick={() => edit(entry)} aria-label={`${entry.text} 수정`}>
               수정
             </Button>
-            <Button disabled={busy} size="small" onClick={() => remove(entry.id)} aria-label={`${entry.text} 삭제`}>
+            <Button size="small" disabled={busy} onClick={() => remove(entry.id)} aria-label={`${entry.text} 삭제`}>
               삭제
             </Button>
           </div>
-          {entry.kind !== "안건" && (
-            <ComboBox
-              header="이 기록의 화자"
-              disabled={busy}
-              value={entry.speakerId ?? ""}
-              options={[{ value: "", label: "미지정" }, ...speakers]}
-              onChange={(speakerId) => retag(entry.id, speakerId)}
-            />
-          )}
-          <Body className={s.text}>{entry.text}</Body>
-          {(entry.owner || entry.due) && (
-            <Caption secondary>
-              {entry.owner ? `담당: ${entry.owner} ` : ""}
-              {entry.due ? `기한: ${entry.due}` : ""}
-            </Caption>
-          )}
-        </div>
-      )}
+        );
+        return (
+          <div className={s.record}>
+            {entry.kind === "안건" ? (
+              <div className={s.agenda}>
+                <BodyStrong>안건 · {entry.text}</BodyStrong>
+                {actions}
+              </div>
+            ) : (
+              <>
+                <Caption secondary className={s.time}>
+                  {entry.timestamp
+                    ? new Date(entry.timestamp).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })
+                    : "—"}
+                </Caption>
+                <span style={{ color }}>
+                  <BodyStrong>{entry.speaker || "미지정"}</BodyStrong>
+                </span>
+                <div className={mergeClasses(s.recordBody, entry.private && s.private)}>
+                  {entry.kind !== "발언" && (
+                    <Caption
+                      className={mergeClasses(
+                        s.tag,
+                        entry.kind === "결정" && s.decision,
+                        entry.kind === "조치" && s.action,
+                        entry.kind === "질의" && s.question,
+                      )}
+                    >
+                      {entry.kind}
+                    </Caption>
+                  )}
+                  {entry.private && <Caption className={s.tag}>비공개</Caption>}
+                  <Body className={s.text}>{entry.text}</Body>
+                  {(entry.owner || entry.due) && (
+                    <Caption secondary>
+                      {entry.owner ? `담당: ${entry.owner} ` : ""}
+                      {entry.due ? `기한: ${entry.due}` : ""}
+                    </Caption>
+                  )}
+                </div>
+                {actions}
+                {changing === entry.id && (
+                  <div className={s.retag}>
+                    <ComboBox
+                      header="이 기록의 화자"
+                      showHeader={false}
+                      disabled={busy}
+                      value={entry.speakerId ?? ""}
+                      options={[{ value: "", label: "미지정" }, ...speakers]}
+                      onChange={(speakerId) => {
+                        retag(entry.id, speakerId);
+                        setChanging("");
+                      }}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        );
+      }}
     />
   );
 });
@@ -183,6 +368,7 @@ export function App({ deck }: { deck: Deck }) {
   const editingId = useRef<string | null>(null);
   const previousDraft = useRef("");
   const input = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  const attendeeInput = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const log = useRef<HTMLDivElement>(null);
   const composing = useRef(false);
   const queued = useRef(false);
@@ -240,6 +426,9 @@ export function App({ deck }: { deck: Deck }) {
       active = false;
     };
   }, [deck]);
+  useEffect(() => {
+    if (ready) queueMicrotask(() => (running ? input.current : attendeeInput.current)?.focus());
+  }, [ready, running]);
   useEffect(() => {
     const flush = () => {
       if (!busyRef.current && revision.current > 0) void write(latest.current).catch(() => undefined);
@@ -598,6 +787,19 @@ export function App({ deck }: { deck: Deck }) {
       setLibrary(next);
       setStatus("위원회 명단을 저장했어요.");
     });
+  const currentAgenda = useMemo(
+    () => [...meeting.entries].reverse().find((entry) => entry.kind === "안건")?.text ?? "",
+    [meeting.entries],
+  );
+  const recordStats = useMemo(
+    () => ({
+      speech: meeting.entries.filter((e) => e.kind === "발언").length,
+      decision: meeting.entries.filter((e) => e.kind === "결정").length,
+      action: meeting.entries.filter((e) => e.kind === "조치").length,
+      agenda: meeting.entries.filter((e) => e.kind === "안건").length,
+    }),
+    [meeting.entries],
+  );
   const [format, setFormat] = useState<ExportFormat>("md");
   const exportBody = useMemo(() => (dialog === "export" ? exportText(meeting, format) : ""), [dialog, format, meeting]);
   const saveExport = (backup: boolean) =>
@@ -617,6 +819,7 @@ export function App({ deck }: { deck: Deck }) {
     <div className={s.grid}>
       <TextBox
         header="참석자"
+        inputRef={attendeeInput}
         multiline
         rows={6}
         value={names}
@@ -756,7 +959,7 @@ export function App({ deck }: { deck: Deck }) {
   return (
     <div className={s.page}>
       {!running ? (
-        <>
+        <div className={s.setup}>
           <PageHeader
             title="회의록 시작"
             description="참석자를 입력하면 바로 시작해요. 회의 중에도 F9로 명단을 바꿀 수 있어요."
@@ -784,19 +987,42 @@ export function App({ deck }: { deck: Deck }) {
               파일(.json) 불러오기
             </Button>
           </div>
+          {library.rosters.length > 0 && (
+            <div className={s.row}>
+              <BodyStrong>저장된 위원회</BodyStrong>
+              {library.rosters.map((roster) => (
+                <Button
+                  key={roster.name}
+                  disabled={busy}
+                  onClick={() => {
+                    setNames(roster.people.join("\n"));
+                    setRosterName(roster.name);
+                    update({ ...latest.current, title: roster.title, place: roster.place });
+                  }}
+                >
+                  {roster.name} 불러오기
+                </Button>
+              ))}
+            </div>
+          )}
           {rosterFields}
           {library.archive.length > 0 && archiveList}
-        </>
+        </div>
       ) : (
         <>
-          <div className={s.row}>
+          <div className={s.toolbar}>
             <BodyStrong>{meeting.title}</BodyStrong>
             <Caption secondary>
               {meeting.place}
               {meeting.place ? " · " : ""}참석 {meeting.speakers.length}명
               {meeting.absentees?.length ? ` · 결석 ${meeting.absentees.length}명` : ""}
             </Caption>
-            <Button onClick={() => setDialog("export")}>내보내기 (F8)</Button>
+            <Caption secondary className={s.saved}>
+              {status}
+            </Caption>
+            <Button size="small" onClick={() => setDialog("export")}>
+              내보내기 (F8)
+            </Button>
             <Button
               onClick={() => {
                 setNames(activeSpeakers(latest.current).join("\n"));
@@ -826,96 +1052,104 @@ export function App({ deck }: { deck: Deck }) {
                   retag={retagEntry}
                 />
               </div>
-              <div className={s.row}>
-                <BodyStrong>
-                  {editing ? "수정 중" : "현재 화자"}:{" "}
-                  {editing
-                    ? meeting.entries.find((entry) => entry.id === editing)?.speaker || "미지정"
-                    : meeting.selected || "미지정"}
-                </BodyStrong>
-                {editing && (
-                  <Button disabled={busy} onClick={cancelEdit}>
-                    수정 취소 (Esc)
-                  </Button>
-                )}
-                <Caption secondary>Enter 기록 · Shift+Enter 줄바꿈 · Alt+↑↓ 화자 이동</Caption>
-              </div>
-              <div className={s.row}>
-                {KINDS.map((item) => (
-                  <ToggleButton
-                    disabled={busy}
-                    key={item}
-                    checked={kind === item}
-                    onClick={() => {
-                      kindChosen.current = true;
-                      setKind(item);
-                      focusInput();
-                    }}
-                  >
-                    {item}
-                  </ToggleButton>
-                ))}
-                <CheckBox
+              <div className={s.composer}>
+                <div className={s.current}>
+                  <BodyStrong>현재 안건: {currentAgenda || "일반 안건"}</BodyStrong>
+                  <BodyStrong>
+                    {editing ? "수정 중" : "현재 화자"}:{" "}
+                    {editing
+                      ? meeting.entries.find((entry) => entry.id === editing)?.speaker || "미지정"
+                      : meeting.selected || "미지정"}
+                  </BodyStrong>
+                  {editing && (
+                    <Button disabled={busy} onClick={cancelEdit}>
+                      수정 취소 (Esc)
+                    </Button>
+                  )}
+                  <Caption secondary>
+                    Alt+숫자 화자 · ! 결정 · * 조치 · # 안건 · ? 질의 · // 비공개 · Enter 기록
+                  </Caption>
+                </div>
+                <SettingsExpander header="종류 · 비공개 선택" description="접두어로 바로 입력하거나 여기서 선택해요.">
+                  <div className={s.row}>
+                    {KINDS.map((item) => (
+                      <ToggleButton
+                        disabled={busy}
+                        key={item}
+                        checked={kind === item}
+                        onClick={() => {
+                          kindChosen.current = true;
+                          setKind(item);
+                          focusInput();
+                        }}
+                      >
+                        {item}
+                      </ToggleButton>
+                    ))}
+                    <CheckBox
+                      disabled={busy}
+                      content="비공개 메모"
+                      checked={privateNote}
+                      onChange={(checked) => {
+                        if (busyRef.current) return;
+                        privateChosen.current = true;
+                        setPrivateNote(checked);
+                      }}
+                    />
+                  </div>
+                </SettingsExpander>
+                <TextBox
                   disabled={busy}
-                  content="비공개 메모"
-                  checked={privateNote}
-                  onChange={(checked) => {
-                    if (busyRef.current) return;
-                    privateChosen.current = true;
-                    setPrivateNote(checked);
+                  header="발언 입력"
+                  showHeader={false}
+                  multiline
+                  rows={2}
+                  value={draft}
+                  inputRef={input}
+                  onChange={setInput}
+                  placeholder="발언 내용을 입력하고 Enter"
+                  onCompositionStart={() => {
+                    composing.current = true;
+                  }}
+                  onCompositionEnd={() => {
+                    composing.current = false;
+                    if (queued.current) {
+                      queued.current = false;
+                      queueMicrotask(commit);
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (
+                      (event.key !== "Enter" && event.code !== "Enter" && event.code !== "NumpadEnter") ||
+                      event.shiftKey ||
+                      event.repeat
+                    )
+                      return;
+                    event.preventDefault();
+                    if (event.ctrlKey) {
+                      composing.current = false;
+                      queued.current = false;
+                      commit();
+                    } else if (composing.current || event.nativeEvent.isComposing || event.keyCode === 229)
+                      queued.current = true;
+                    else commit();
                   }}
                 />
-              </div>
-              <TextBox
-                disabled={busy}
-                header="발언 입력"
-                multiline
-                rows={2}
-                value={draft}
-                inputRef={input}
-                onChange={setInput}
-                placeholder="발언 내용을 입력하고 Enter"
-                onCompositionStart={() => {
-                  composing.current = true;
-                }}
-                onCompositionEnd={() => {
-                  composing.current = false;
-                  if (queued.current) {
-                    queued.current = false;
-                    queueMicrotask(commit);
-                  }
-                }}
-                onKeyDown={(event) => {
-                  if (
-                    (event.key !== "Enter" && event.code !== "Enter" && event.code !== "NumpadEnter") ||
-                    event.shiftKey ||
-                    event.repeat
-                  )
-                    return;
-                  event.preventDefault();
-                  if (event.ctrlKey) {
-                    composing.current = false;
-                    queued.current = false;
-                    commit();
-                  } else if (composing.current || event.nativeEvent.isComposing || event.keyCode === 229)
-                    queued.current = true;
-                  else commit();
-                }}
-              />
-              <div className={s.row}>
-                <Button disabled={busy} appearance="primary" onClick={commit}>
-                  {editing ? "수정 저장" : "기록"}
-                </Button>
-                <Button disabled={busy || !undo.current.length} onClick={() => restoreUndo()}>
-                  기록 되돌리기
-                </Button>
-                <Button disabled={busy || !redo.current.length} onClick={() => restoreUndo(true)}>
-                  다시 적용
-                </Button>
-                <Button onClick={saveNow} disabled={busy}>
-                  지금 저장
-                </Button>
-                <Caption secondary>전체 {meeting.entries.length}건</Caption>
+                <div className={s.row}>
+                  <Button disabled={busy} appearance="primary" onClick={commit}>
+                    {editing ? "수정 저장" : "기록"}
+                  </Button>
+                  <Button disabled={busy || !undo.current.length} onClick={() => restoreUndo()}>
+                    기록 되돌리기
+                  </Button>
+                  <Button disabled={busy || !redo.current.length} onClick={() => restoreUndo(true)}>
+                    다시 적용
+                  </Button>
+                  <Button onClick={saveNow} disabled={busy}>
+                    지금 저장
+                  </Button>
+                  <Caption secondary>전체 {meeting.entries.length}건 · Shift+Enter 줄바꿈 · Alt+↑↓ 화자 이동</Caption>
+                </div>
               </div>
             </div>
             <div className={s.speakers}>
@@ -923,6 +1157,12 @@ export function App({ deck }: { deck: Deck }) {
               {meeting.speakers.map((name, index) => (
                 <ToggleButton
                   disabled={busy}
+                  className={mergeClasses(
+                    s.speakerButton,
+                    (editing
+                      ? meeting.entries.find((entry) => entry.id === editing)?.speakerId
+                      : meeting.selectedId) === meeting.speakerIds?.[index] && s.selectedSpeaker,
+                  )}
                   key={meeting.speakerIds?.[index] ?? index}
                   aria-label={`${speakerLabel(meeting, index)}${index < (meeting.activeSpeakerCount ?? 12) && KEYS[index] ? ` · Alt+${KEYS[index]}` : ""}`}
                   checked={
@@ -932,21 +1172,35 @@ export function App({ deck }: { deck: Deck }) {
                   }
                   onClick={() => selectSpeaker(name, false, meeting.speakerIds?.[index] ?? "")}
                 >
-                  {speakerLabel(meeting, index)}
-                  {index < (meeting.activeSpeakerCount ?? 12) && KEYS[index]
-                    ? ` · Alt+${KEYS[index]}`
-                    : " · 이전 참석자"}{" "}
-                  · {speakerCounts.get(meeting.speakerIds?.[index] ?? name) ?? 0}건
+                  <span className={s.key}>
+                    {index < (meeting.activeSpeakerCount ?? 12) && KEYS[index] ? KEYS[index] : "이전"}
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className={s.dot}
+                    style={{ backgroundColor: SPEAKER_COLORS[index % SPEAKER_COLORS.length] }}
+                  />
+                  <span style={{ color: SPEAKER_COLORS[index % SPEAKER_COLORS.length] }}>
+                    <BodyStrong>{speakerLabel(meeting, index)}</BodyStrong>
+                  </span>
+                  <Caption secondary>{speakerCounts.get(meeting.speakerIds?.[index] ?? name) ?? 0}건</Caption>
                 </ToggleButton>
               ))}
               <ToggleButton disabled={busy} checked={!meeting.selected} onClick={() => selectSpeaker("")}>
                 화자 미지정 · Alt+`
               </ToggleButton>
+              <div className={s.stats}>
+                <Caption secondary>Alt+숫자 선택 · Alt+↑↓ 이동</Caption>
+                <Body>
+                  발언 {recordStats.speech} · 결정 {recordStats.decision} · 조치 {recordStats.action}
+                </Body>
+                <Caption secondary>안건 {recordStats.agenda}개</Caption>
+              </div>
             </div>
           </div>
         </>
       )}
-      <Caption secondary>{status}</Caption>
+      {!running && <Caption secondary>{status}</Caption>}
       {busy && <ProgressRing label="파일과 회의록을 처리하는 중" />}
       {saveFailed.current && <InfoBar severity="error" message={status} />}
       <ContentDialog
