@@ -17,3 +17,4 @@
 - 셸: 덱 홈·카테고리·검색, 모듈 화면(keepAlive), 설정(테마·업데이트), 정보·크레딧, UI 갤러리(개발용)
 - 모듈 파이프라인: `pnpm new:module`, `pack:module`, `bundle:modules`, 레퍼런스 모듈 `timer`
 - CI·릴리스 워크플로, Dependabot, CODEOWNERS, Claude Code 가드레일(보호 경로 훅, 스킬 3종)
+- main 머지 정책: PR + `verify` 필수, 승인은 권장(ADR-0010, CI-006)

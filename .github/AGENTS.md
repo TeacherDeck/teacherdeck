@@ -13,7 +13,7 @@ GitHub Actions 워크플로, CODEOWNERS, Dependabot 설정이 있다. 루트 [AG
 | CI-003 | workflow `permissions`는 최소로 둔다(기본 `contents: read`). |
 | CI-004 | 서명 시크릿은 `release` environment에만 두고 태그 트리거 릴리스 잡에서만 접근한다. |
 | CI-005 | CI 검증은 로컬 `pnpm verify`와 같은 명령을 쓴다. |
-| CI-006 | workflow 변경은 CODEOWNERS 리뷰를 필수로 한다. |
+| CI-006 | main은 PR과 `verify` 통과로만 바꾼다. 보호 경로 변경은 다른 원저작자 리뷰 권장. |
 | SEC-009 | 비밀값을 워크플로나 레포에 두지 않는다. ([security.md](../docs/spec/security.md#3-규칙)) |
 
 `.github/workflows/**`와 `.github/CODEOWNERS`는 보호 경로다. 변경은 보안 설정 변경에 해당하므로 정지 조건(GEN-005)으로 다룬다. 키 관리는 [keys.md](../docs/security/keys.md)를 본다.

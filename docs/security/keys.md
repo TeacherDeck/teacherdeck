@@ -35,8 +35,9 @@
 
 ## 5. 계정 보호
 
-- GitHub org에서 2FA를 강제한다.
-- workflow·CODEOWNERS·Tauri ACL 변경은 CODEOWNERS 리뷰를 거친다(CI-006).
+- GitHub org에서 2FA를 강제하지 않는다. 원저작자는 각자 계정에서 2FA를 켜기를 권장한다([ADR-0010](../adr/0010-solo-merge-policy.md)).
+- main은 PR과 `verify` 통과로만 바뀐다. workflow·CODEOWNERS·Tauri ACL 변경은 다른 원저작자의 리뷰를 권장한다(CI-006).
+- 서명키는 `release` environment 필수 승인자로 보호한다(3절).
 
 ## 6. 회전 절차
 

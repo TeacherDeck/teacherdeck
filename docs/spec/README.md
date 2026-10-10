@@ -153,5 +153,5 @@ Additional terms: see LICENSE-ADDITIONAL-TERMS
 | CI-003 | MUST | workflow `permissions`는 최소로 한다(기본 `contents: read`). | `check-security` | [ci.md](ci.md) |
 | CI-004 | MUST | 서명 시크릿은 `release` environment에만 두고 태그 트리거 릴리스 잡에서만 접근한다. | `check-security` | [ci.md](ci.md) |
 | CI-005 | MUST | CI 검증은 로컬 `pnpm verify`와 같은 명령을 쓴다. | workflow 리뷰 | [ci.md](ci.md) |
-| CI-006 | MUST | workflow 변경은 CODEOWNERS 리뷰를 필수로 한다. | CODEOWNERS, ruleset(사람 설정) | [ci.md](ci.md) |
+| CI-006 | MUST | main은 PR과 `verify` 통과로만 바꾼다. | ruleset(사람 설정) | [ci.md](ci.md) |
 <!-- rule-index:end -->
