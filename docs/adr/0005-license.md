@@ -26,7 +26,7 @@
 | BSD-2-Clause, BSD-3-Clause, ISC, Zlib, 0BSD | |
 | Unicode-3.0, CC0-1.0 | |
 | MPL-2.0 | 파일 단위 copyleft. GPL-3.0과 호환된다. |
-| OFL-1.1 | 폰트 전용(Pretendard) |
+| OFL-1.1 | 폰트 전용. 2026-10-10부터 번들 폰트 없음([ADR-0011](0011-winui-aligned-deck-ui.md)) |
 | ~~LGPL-2.1, LGPL-3.0~~ | **제외(2026-10-09 확정).** Rust는 정적 링크가 기본이라 동적 링크 조건을 지키기 어렵다. 필요하면 패키지 단위 예외로 따로 승인한다. |
 
 허용 목록은 `tools/checks/licenses.allow.json`(npm)과 `deny.toml`(Rust)에 같은 내용으로 둔다. 목록 밖 라이선스는 패키지 단위 예외로만 허용하며, 승인 사유를 `licenses.allow.json`의 `packages`에 기록한다. 예: `minimatch`(BlueOak-1.0.0, ESLint 개발 도구 전용, 2026-10-08 승인), `@csstools/color-helpers`·`@csstools/css-syntax-patches-for-csstree`(MIT-0)·`lru-cache`(BlueOak-1.0.0)(jsdom 테스트 환경 전용, 2026-10-09 승인).

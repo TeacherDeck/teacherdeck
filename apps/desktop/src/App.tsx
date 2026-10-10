@@ -62,7 +62,7 @@ const useStyles = makeStyles({
     overflowY: "auto",
     position: "relative",
     backgroundColor: deckTokens.layerSubtle,
-    borderTopLeftRadius: deckTokens.cardRadius,
+    borderTopLeftRadius: deckTokens.overlayRadius,
   },
   moduleLayer: { position: "absolute", inset: 0 },
   hidden: { display: "none" },

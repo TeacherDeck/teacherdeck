@@ -1,45 +1,64 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-// Shared patterns (design-system.md §6). Register every new component in the shell UI gallery
+// Page patterns (design-system.md §6), shaped like Windows 11 Settings / PowerToys: a page title,
+// group headers, and 4px-stacked cards on Mica. Register every new component in the shell UI gallery
 // (apps/desktop/src/pages/Gallery.tsx); a test fails otherwise.
-import {
-  Body1,
-  Button,
-  Caption1,
-  Card,
-  Subtitle2,
-  Title3,
-  makeStyles,
-  mergeClasses,
-  tokens,
-} from "@fluentui/react-components";
-import { ArrowUploadRegular, ChevronDownRegular, ChevronRightRegular, LockClosedRegular } from "@fluentui/react-icons";
+import { Button, createFocusOutlineStyle, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { ArrowUploadRegular, ChevronDownRegular, ChevronRightRegular, ChevronUpRegular } from "@fluentui/react-icons";
 import type { Deck } from "@deck/sdk";
-import { type ReactNode, useId, useState } from "react";
+import { type MouseEvent, type ReactNode, createContext, useContext, useId, useState } from "react";
+import { InfoBar } from "./controls.tsx";
 import { deckTokens } from "./tokens/index.ts";
+import { Body, BodyStrong, Caption, Subtitle, Title } from "./typography.tsx";
 
 const useStyles = makeStyles({
-  layout: { display: "flex", flexDirection: "column", gap: deckTokens.sectionGap, padding: deckTokens.pagePadding },
-  header: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS },
-  section: {
+  page: { display: "flex", flexDirection: "column", gap: deckTokens.sectionGap, padding: deckTokens.pagePadding },
+  pageHeader: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS },
+  group: { display: "flex", flexDirection: "column", gap: deckTokens.cardGap },
+  groupHeader: { paddingBottom: tokens.spacingVerticalS },
+  section: { display: "flex", flexDirection: "column", gap: deckTokens.itemGap },
+  card: {
     display: "flex",
-    flexDirection: "column",
-    gap: deckTokens.itemGap,
-    padding: tokens.spacingHorizontalL,
+    alignItems: "center",
+    gap: deckTokens.inlineGap,
+    minHeight: deckTokens.cardMinHeight,
+    boxSizing: "border-box",
+    width: "100%",
+    paddingInline: deckTokens.cardPadding,
+    paddingBlock: tokens.spacingVerticalM,
+    backgroundColor: deckTokens.cardFill,
+    border: `${tokens.strokeWidthThin} solid ${deckTokens.cardStroke}`,
     borderRadius: deckTokens.cardRadius,
-    backgroundColor: deckTokens.layer,
+    color: tokens.colorNeutralForeground1,
+    fontFamily: "inherit",
+    textAlign: "start",
   },
-  row: { display: "flex", alignItems: "center", gap: deckTokens.inlineGap },
-  grow: { flexGrow: 1, display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXXS },
-  icon: { fontSize: tokens.fontSizeBase500, color: tokens.colorNeutralForeground2, display: "flex" },
-  card: { padding: tokens.spacingHorizontalL, backgroundColor: deckTokens.layer },
+  clickable: {
+    cursor: "pointer",
+    ":hover": { backgroundColor: deckTokens.cardFillHover },
+    ":active": { color: tokens.colorNeutralForeground2 },
+    ...createFocusOutlineStyle(),
+  },
+  // Rows inside an expander: no own surface, indented so text lines up with the header text.
+  flat: {
+    backgroundColor: "transparent",
+    border: "none",
+    borderRadius: tokens.borderRadiusNone,
+    paddingInlineStart: deckTokens.expanderIndent,
+  },
+  texts: { flexGrow: 1, display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXXS, minWidth: 0 },
+  icon: { fontSize: tokens.fontSizeBase500, color: tokens.colorNeutralForeground1, display: "flex", flexShrink: 0 },
+  action: { display: "flex", alignItems: "center", gap: deckTokens.inlineGap, flexShrink: 0 },
+  expander: {
+    backgroundColor: deckTokens.cardFill,
+    border: `${tokens.strokeWidthThin} solid ${deckTokens.cardStroke}`,
+    borderRadius: deckTokens.cardRadius,
+  },
+  expanderHeader: { backgroundColor: "transparent", border: "none", cursor: "pointer" },
   expanderBody: {
     display: "flex",
     flexDirection: "column",
-    gap: deckTokens.itemGap,
-    paddingTop: tokens.spacingVerticalM,
-    borderTop: `${tokens.strokeWidthThin} solid ${deckTokens.stroke}`,
-    marginTop: tokens.spacingVerticalM,
+    "& > *": { borderTop: `${tokens.strokeWidthThin} solid ${deckTokens.cardStroke}` },
   },
   empty: {
     display: "flex",
@@ -54,8 +73,49 @@ const useStyles = makeStyles({
     border: `${tokens.strokeWidthThick} dashed ${tokens.colorNeutralStroke1}`,
     borderRadius: deckTokens.cardRadius,
   },
-  dropActive: { border: `${tokens.strokeWidthThick} dashed ${tokens.colorBrandStroke1}`, backgroundColor: tokens.colorBrandBackground2 },
+  dropActive: {
+    border: `${tokens.strokeWidthThick} dashed ${tokens.colorBrandStroke1}`,
+    backgroundColor: tokens.colorBrandBackground2,
+  },
 });
+
+/* ---------- PageHeader / SettingsGroup ---------- */
+
+export interface PageHeaderProps {
+  title: string;
+  description?: string;
+}
+
+/** Page title (WinUI Title, 28px) with an optional one-line description. */
+export function PageHeader({ title, description }: PageHeaderProps) {
+  const s = useStyles();
+  return (
+    <header className={s.pageHeader}>
+      <Title as="h1">{title}</Title>
+      {description !== undefined && <Body secondary>{description}</Body>}
+    </header>
+  );
+}
+
+export interface SettingsGroupProps {
+  /** Group header, e.g. "동작". */
+  header: string;
+  /** SettingsCard / SettingsExpander items. */
+  children: ReactNode;
+}
+
+/** Group header plus cards stacked 4px apart (PowerToys settings group). */
+export function SettingsGroup({ header, children }: SettingsGroupProps) {
+  const s = useStyles();
+  return (
+    <section className={s.group} aria-label={header}>
+      <BodyStrong as="h2" className={s.groupHeader}>
+        {header}
+      </BodyStrong>
+      {children}
+    </section>
+  );
+}
 
 /* ---------- ToolLayout (UI-008, MOD-011) ---------- */
 
@@ -72,11 +132,8 @@ export interface ToolLayoutProps {
 export function ToolLayout({ title, description, children }: ToolLayoutProps) {
   const s = useStyles();
   return (
-    <main className={s.layout}>
-      <header className={s.header}>
-        <Title3 as="h1">{title}</Title3>
-        {description !== undefined && <Body1>{description}</Body1>}
-      </header>
+    <main className={s.page}>
+      <PageHeader title={title} {...(description === undefined ? {} : { description })} />
       {children}
     </main>
   );
@@ -92,7 +149,7 @@ function ToolSection({ step, title, children }: ToolSectionProps) {
   const s = useStyles();
   return (
     <section className={s.section} data-step={step} aria-label={title}>
-      <Subtitle2 as="h2">{title}</Subtitle2>
+      <BodyStrong as="h2">{title}</BodyStrong>
       {children}
     </section>
   );
@@ -101,64 +158,114 @@ ToolLayout.Section = ToolSection;
 
 /* ---------- SettingsCard / SettingsExpander ---------- */
 
-export interface SettingsCardProps {
+/** True inside a SettingsExpander body: cards render as flat, indented rows. */
+const InExpander = createContext(false);
+
+interface CardContent {
   icon?: ReactNode;
   header: string;
   description?: string;
-  /** Control on the right (switch, dropdown, button). */
-  action?: ReactNode;
 }
 
-/** One settings row (PowerToys SettingsCard). */
-export function SettingsCard({ icon, header, description, action }: SettingsCardProps) {
+export type SettingsCardProps = CardContent &
+  (
+    | {
+        /** Control on the right (ToggleSwitch with showHeader={false}, ComboBox, Button). */
+        action?: ReactNode;
+        onClick?: never;
+      }
+    | {
+        /** Makes the whole card a button with a chevron (WinUI IsClickEnabled), e.g. to open a page. */
+        onClick: () => void;
+        action?: never;
+      }
+  );
+
+function CardTexts({ icon, header, description }: CardContent) {
   const s = useStyles();
   return (
-    <Card className={s.card}>
-      <div className={s.row}>
-        {icon !== undefined && <span className={s.icon}>{icon}</span>}
-        <div className={s.grow}>
-          <Body1>{header}</Body1>
-          {description !== undefined && <Caption1>{description}</Caption1>}
-        </div>
-        {action}
-      </div>
-    </Card>
+    <>
+      {icon !== undefined && (
+        <span className={s.icon} aria-hidden>
+          {icon}
+        </span>
+      )}
+      <span className={s.texts}>
+        <Body>{header}</Body>
+        {description !== undefined && <Caption secondary>{description}</Caption>}
+      </span>
+    </>
   );
 }
 
-export interface SettingsExpanderProps extends Omit<SettingsCardProps, "action"> {
+/** One settings row (WinUI SettingsCard): icon, header, description, control on the right. */
+export function SettingsCard({ icon, header, description, action, onClick }: SettingsCardProps) {
+  const s = useStyles();
+  const flat = useContext(InExpander);
+  const texts = <CardTexts {...{ icon, header, ...(description === undefined ? {} : { description }) }} />;
+  if (onClick !== undefined) {
+    return (
+      <button type="button" className={mergeClasses(s.card, s.clickable, flat && s.flat)} onClick={onClick}>
+        {texts}
+        <span className={s.icon} aria-hidden>
+          <ChevronRightRegular />
+        </span>
+      </button>
+    );
+  }
+  return (
+    <div className={mergeClasses(s.card, flat && s.flat)}>
+      {texts}
+      {action !== undefined && <div className={s.action}>{action}</div>}
+    </div>
+  );
+}
+
+export interface SettingsExpanderProps extends CardContent {
+  /** Control in the header, e.g. a ToggleSwitch that enables the whole group. */
+  action?: ReactNode;
   defaultExpanded?: boolean;
+  /** SettingsCard rows; they render flat and indented. */
   children: ReactNode;
 }
 
-/** Expandable group of settings (PowerToys SettingsExpander). Keyboard: Enter/Space toggles. */
-export function SettingsExpander({ icon, header, description, defaultExpanded = false, children }: SettingsExpanderProps) {
+/** Expandable group of settings (WinUI SettingsExpander). Click the header or press the chevron. */
+export function SettingsExpander({
+  icon,
+  header,
+  description,
+  action,
+  defaultExpanded = false,
+  children,
+}: SettingsExpanderProps) {
   const s = useStyles();
   const [open, setOpen] = useState(defaultExpanded);
   const bodyId = useId();
+  const toggle = () => setOpen((o) => !o);
+  const stop = (e: MouseEvent) => e.stopPropagation();
   return (
-    <Card className={s.card}>
-      <div className={s.row}>
-        {icon !== undefined && <span className={s.icon}>{icon}</span>}
-        <div className={s.grow}>
-          <Body1>{header}</Body1>
-          {description !== undefined && <Caption1>{description}</Caption1>}
+    <div className={s.expander}>
+      {/* Mouse convenience only: keyboard and screen readers use the chevron button. */}
+      <div className={mergeClasses(s.card, s.expanderHeader)} onClick={toggle}>
+        <CardTexts {...{ icon, header, ...(description === undefined ? {} : { description }) }} />
+        <div className={s.action} onClick={stop}>
+          {action}
+          <Button
+            appearance="subtle"
+            icon={open ? <ChevronUpRegular /> : <ChevronDownRegular />}
+            aria-expanded={open}
+            aria-controls={bodyId}
+            aria-label={header}
+            onClick={toggle}
+          />
         </div>
-        <Button
-          appearance="subtle"
-          icon={open ? <ChevronDownRegular /> : <ChevronRightRegular />}
-          aria-expanded={open}
-          aria-controls={bodyId}
-          aria-label={open ? `${header} 접기` : `${header} 펼치기`}
-          onClick={() => setOpen((o) => !o)}
-        />
       </div>
       {open && (
-        <div id={bodyId} className={s.expanderBody}>
-          {children}
+        <div id={bodyId} role="group" aria-label={header} className={s.expanderBody}>
+          <InExpander.Provider value>{children}</InExpander.Provider>
         </div>
       )}
-    </Card>
+    </div>
   );
 }
 
@@ -176,10 +283,14 @@ export interface EmptyStateProps {
 export function EmptyState({ icon, title, description, action }: EmptyStateProps) {
   const s = useStyles();
   return (
-    <div className={s.empty} role="status">
-      {icon !== undefined && <span className={s.emptyIcon}>{icon}</span>}
-      <Subtitle2>{title}</Subtitle2>
-      {description !== undefined && <Body1>{description}</Body1>}
+    <div className={s.empty}>
+      {icon !== undefined && (
+        <span className={s.emptyIcon} aria-hidden>
+          {icon}
+        </span>
+      )}
+      <Subtitle>{title}</Subtitle>
+      {description !== undefined && <Body secondary>{description}</Body>}
       {action}
     </div>
   );
@@ -195,14 +306,13 @@ export interface CapabilityGateProps {
   children: ReactNode;
 }
 
-/** Renders children only when the optional capability is available (MOD-007). */
+/** Renders children only when the optional capability is available, else an InfoBar (MOD-007). */
 export function CapabilityGate({ deck, cap, feature, children }: CapabilityGateProps) {
   if (deck.has(cap)) return <>{children}</>;
   return (
-    <EmptyState
-      icon={<LockClosedRegular />}
+    <InfoBar
       title={`${feature}은(는) 앱 업데이트 후 사용 가능해요`}
-      description="설정 > 정보에서 업데이트를 확인해 주세요."
+      message="설정 > 정보에서 업데이트를 확인해 주세요."
     />
   );
 }
@@ -219,7 +329,12 @@ export interface DropZoneProps {
 }
 
 /** Drop target visual. Actual drops arrive as the `fs.dropped` event, not DOM drop events. */
-export function DropZone({ active = false, title = "파일을 여기에 끌어 놓으세요", description, onPick }: DropZoneProps) {
+export function DropZone({
+  active = false,
+  title = "파일을 여기에 끌어 놓으세요",
+  description,
+  onPick,
+}: DropZoneProps) {
   const s = useStyles();
   return (
     <div className={mergeClasses(s.drop, active && s.dropActive)}>

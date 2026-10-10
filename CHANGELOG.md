@@ -18,3 +18,10 @@
 - 모듈 파이프라인: `pnpm new:module`, `pack:module`, `bundle:modules`, 레퍼런스 모듈 `timer`
 - CI·릴리스 워크플로, Dependabot, CODEOWNERS, Claude Code 가드레일(보호 경로 훅, 스킬 3종)
 - main 머지 정책: PR + `verify` 필수, 승인은 권장(ADR-0010, CI-006)
+- `@deck/ui` WinUI 컨트롤: InfoBar, ProgressBar/Ring, ContentDialog, TextBox, NumberBox, ComboBox, RadioButtons, ToggleSwitch, CheckBox, ListView, HyperlinkButton, 타입 램프, PageHeader, SettingsGroup(ADR-0011)
+
+### 변경
+
+- `@deck/ui` 카드·SettingsExpander를 WinUI 모양과 동작으로 맞춤(그림자 제거, 4px 반경, 반투명 카드 배경, 머리글 전체로 펼침)
+- 폰트를 시스템 폰트(Segoe UI Variable, 맑은 고딕)로 바꾸고 Pretendard 번들 제거. 셸과 모듈의 글꼴이 같아짐
+- 모듈은 UI를 `@deck/ui`에서만 가져옴(MOD-010 강화)
