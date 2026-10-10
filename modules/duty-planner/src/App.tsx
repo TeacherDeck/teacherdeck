@@ -19,9 +19,36 @@ import {
   tokens,
 } from "@deck/ui";
 import { useEffect, useRef, useState } from "react";
-import { calendar, counts, parseRoster, type PlanInput, type PlanResult } from "./planner.ts";
+import {
+  averagePast,
+  calendar,
+  counts,
+  eligibleSlot,
+  parseRoster,
+  slotsForDay,
+  type PlanInput,
+  type PlanResult,
+} from "./planner.ts";
 import { HOLIDAYS, HOLIDAY_YEAR } from "./holidays.ts";
-import { initialState, loadState, saveState, type PlannerState } from "./state.ts";
+import { initialState, loadState, type PlannerState } from "./state.ts";
+import {
+  closeMonth,
+  cumulativeInput,
+  decodeBackup,
+  encodeBackup,
+  exportCsv,
+  exportLegacy,
+  loadMonths,
+  monthKey,
+  recordAssigned,
+  readBackup,
+  saveMonth,
+  selectCurrent,
+  switchMonth,
+  writeExport,
+  type Months,
+} from "./history.ts";
+import { parseTimetable } from "./timetable.ts";
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: deckTokens.sectionGap, padding: deckTokens.pagePadding },
@@ -61,6 +88,9 @@ const useStyles = makeStyles({
 export function App({ deck }: { deck: Deck }) {
   const s = useStyles();
   const [state, setState] = useState<PlannerState>(initialState);
+  const [months, setMonths] = useState<Months>({});
+  const [backupText, setBackupText] = useState("");
+  const [timetableText, setTimetableText] = useState("");
   const [roster, setRoster] = useState("");
   const [message, setMessage] = useState("");
   const [issues, setIssues] = useState<string[]>([]);
@@ -74,15 +104,19 @@ export function App({ deck }: { deck: Deck }) {
   const nameInput = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const composingName = useRef(false);
   const workerRef = useRef<Worker | null>(null);
+  const cumulative = cumulativeInput(state, months);
   const input = { ...state.input, holidays: HOLIDAYS };
+  const daySlots = slotsForDay(input, Number(selectedDay));
   const days = calendar(input);
   const teacher = state.input.teachers.find((t) => t.id === teacherId);
   const currentDay = days.find((d) => String(d.day) === selectedDay);
   const projected = counts(input, { ...input.manual, ...state.assignments });
   useEffect(() => {
     let active = true;
-    loadState(deck)
-      .then((saved) => {
+    Promise.all([loadState(deck), loadMonths(deck)])
+      .then(([latestState, storedMonths]) => {
+        const saved = selectCurrent(latestState, storedMonths);
+        setMonths(storedMonths);
         if (!active) return;
         if (saved) {
           setState(saved);
@@ -107,6 +141,26 @@ export function App({ deck }: { deck: Deck }) {
   useEffect(() => {
     setManualSelection(state.assignments[selectedDay] ?? state.input.manual[selectedDay] ?? []);
   }, [selectedDay, state.assignments, state.input.manual]);
+  function changeMonth(year: number, month: number) {
+    const drafts = { ...months, [monthKey(state)]: state };
+    setMonths(drafts);
+    const next = switchMonth(state, drafts, year, month);
+    setState(next);
+    setRoster(next.input.teachers.map((t) => `${t.name}\t${t.past}`).join("\n"));
+    setIssues([]);
+  }
+  async function persist(next = state) {
+    for (const draft of Object.values({ ...months, [monthKey(next)]: next })) await saveMonth(deck, draft);
+    await saveMonth(deck, next);
+    setMonths((prev) => ({ ...prev, [monthKey(next)]: next }));
+  }
+  async function exportFile(name: string, text: string) {
+    try {
+      if (await writeExport(deck, name, text)) setMessage("새 결과 폴더에 저장했어요.");
+    } catch {
+      setMessage("파일을 저장하지 못했어요. 다시 저장해 주세요.");
+    }
+  }
   function updateInput(patch: Partial<PlanInput>) {
     setState((prev) => ({ ...prev, input: { ...prev.input, ...patch }, assignments: {} }));
     setIssues([]);
@@ -115,6 +169,14 @@ export function App({ deck }: { deck: Deck }) {
     const next = parseRoster(roster, input.teachers);
     if (!next) {
       setMessage("명단은 이름과 과거 횟수를 한 줄씩 입력해 주세요. 중복 이름 없이 최대 500명이에요.");
+      return;
+    }
+    if (
+      Object.values(state.actual ?? {})
+        .flat()
+        .some((id) => !next.some((t) => t.id === id))
+    ) {
+      setMessage("실제 수행 기록이 있는 교사를 빼려면 해당 날짜의 수행자를 먼저 수정하거나 비워 주세요.");
       return;
     }
     if (
@@ -149,6 +211,8 @@ export function App({ deck }: { deck: Deck }) {
       setMessage("이미 등록된 이름인지 확인해 주세요. 명단은 최대 500명이에요.");
       return;
     }
+    const added = next.at(-1);
+    if (added) added.past = averagePast(cumulative.teachers);
     updateInput({ teachers: next });
     setRoster(next.map((t) => `${t.name}\t${t.past}`).join("\n"));
     setTeacherId(next.at(-1)?.id ?? "");
@@ -175,23 +239,29 @@ export function App({ deck }: { deck: Deck }) {
       worker.terminate();
       workerRef.current = null;
     };
-    worker.postMessage(input);
+    worker.postMessage({ ...cumulativeInput(state, months), holidays: HOLIDAYS });
   }
   function applyManual(selection = manualSelection) {
     if (!currentDay || currentDay.excluded) {
       setMessage("제외된 날짜에는 배정할 수 없어요. 날짜 제외 조건을 먼저 조정해 주세요.");
       return;
     }
-    if (selection.filter(Boolean).length !== input.perDay || new Set(selection).size !== input.perDay) {
+    if (selection.filter(Boolean).length !== daySlots || new Set(selection).size !== daySlots) {
       setMessage("하루 인원에 맞게 서로 다른 교사를 선택해 주세요.");
       return;
     }
     const fixed = input.teachers.filter((t) => t.fixed.includes(currentDay.day));
     if (
       fixed.some((t) => !selection.includes(t.id)) ||
-      selection.some((id) => {
+      selection.some((id, slot) => {
         const t = input.teachers.find((item) => item.id === id);
-        return !t || t.excluded.includes(currentDay.day) || t.weekdays.includes(currentDay.weekday);
+        return (
+          !t ||
+          !eligibleSlot(t, currentDay.weekday, slot) ||
+          t.participating === false ||
+          t.excluded.includes(currentDay.day) ||
+          t.weekdays.includes(currentDay.weekday)
+        );
       })
     ) {
       setMessage("고정·교사 제외 조건과 직접 배정이 겹쳐요. 교사 조건을 먼저 조정해 주세요.");
@@ -229,7 +299,7 @@ export function App({ deck }: { deck: Deck }) {
           max={2100}
           value={input.year}
           disabled={busy}
-          onChange={(year) => updateInput({ year })}
+          onChange={(year) => changeMonth(year, input.month)}
         />
         <NumberBox
           header="월"
@@ -237,29 +307,29 @@ export function App({ deck }: { deck: Deck }) {
           max={12}
           value={input.month}
           disabled={busy}
-          onChange={(month) => updateInput({ month })}
+          onChange={(month) => changeMonth(input.year, month)}
         />
         <NumberBox
           header="하루 인원"
           min={1}
           max={3}
           value={input.perDay}
-          disabled={busy}
+          disabled={busy || !!state.closed}
           onChange={(perDay) => updateInput({ perDay })}
         />
         <CheckBox
           content="주말 제외"
           checked={input.weekends}
-          disabled={busy}
+          disabled={busy || !!state.closed}
           onChange={(weekends) => updateInput({ weekends })}
         />
-        <Button appearance="primary" disabled={busy || !input.teachers.length} onClick={generate}>
+        <Button appearance="primary" disabled={busy || !!state.closed || !input.teachers.length} onClick={generate}>
           배정
         </Button>
         <Button
           disabled={busy || storageBlocked}
           onClick={() =>
-            void saveState(deck, state)
+            void persist()
               .then(() => setMessage("이 PC에 명단·조건·배정표를 저장했어요."))
               .catch((error: unknown) =>
                 setMessage(
@@ -284,7 +354,7 @@ export function App({ deck }: { deck: Deck }) {
           header="교사 이름"
           value={newName}
           onChange={setNewName}
-          disabled={busy}
+          disabled={busy || !!state.closed}
           placeholder="이름 입력 후 Enter"
           inputRef={nameInput}
           onCompositionStart={() => {
@@ -305,7 +375,7 @@ export function App({ deck }: { deck: Deck }) {
             }
           }}
         />
-        <Button onClick={addTeacher} disabled={busy || !newName.trim()}>
+        <Button onClick={addTeacher} disabled={busy || !!state.closed || !newName.trim()}>
           추가
         </Button>
       </div>
@@ -356,7 +426,7 @@ export function App({ deck }: { deck: Deck }) {
           <CheckBox
             content="이 날짜는 지도하지 않아요"
             checked={input.excluded.includes(Number(selectedDay))}
-            disabled={busy}
+            disabled={busy || !!state.closed}
             onChange={(on) =>
               updateInput({
                 excluded: on
@@ -365,19 +435,94 @@ export function App({ deck }: { deck: Deck }) {
               })
             }
           />
+          <CheckBox
+            content="고사일 · 한 명 배정"
+            checked={input.exam?.includes(Number(selectedDay)) ?? false}
+            disabled={busy || !!state.closed}
+            onChange={(on) =>
+              updateInput({
+                exam: on
+                  ? [...(input.exam ?? []), Number(selectedDay)]
+                  : (input.exam ?? []).filter((d) => d !== Number(selectedDay)),
+              })
+            }
+          />
+          <TextBox
+            header="날짜 메모"
+            value={state.memo?.[selectedDay] ?? ""}
+            disabled={busy || !!state.closed}
+            onChange={(value) =>
+              setState((prev) => ({ ...prev, memo: { ...prev.memo, [selectedDay]: value.slice(0, 2000) } }))
+            }
+          />
+          <BodyStrong>실제 수행 기록</BodyStrong>
+          <Button
+            disabled={busy || !!state.closed}
+            onClick={() => {
+              try {
+                setState(recordAssigned(state, [Number(selectedDay)]));
+                setMessage("선택한 날짜를 배정대로 수행했다고 기록했어요.");
+              } catch {
+                setMessage("미래 날짜는 실제 수행으로 기록할 수 없어요. 수행한 날짜를 선택해 주세요.");
+              }
+            }}
+          >
+            이 날짜 배정대로 수행 기록
+          </Button>
+          <Button
+            disabled={busy || !!state.closed}
+            onClick={() => {
+              const now = new Date();
+              const end =
+                state.input.year === now.getFullYear() && state.input.month === now.getMonth() + 1 ? now.getDate() : 31;
+              try {
+                setState(
+                  recordAssigned(
+                    state,
+                    Array.from({ length: end }, (_, i) => i + 1),
+                  ),
+                );
+                setMessage("오늘까지의 날짜를 배정대로 수행했다고 기록했어요. 대체 수행자가 있으면 수정해 주세요.");
+              } catch {
+                setMessage("미래 달은 실제 수행으로 기록할 수 없어요.");
+              }
+            }}
+          >
+            오늘까지 배정대로 수행 기록
+          </Button>
+          {Array.from({ length: daySlots }, (_, i) => (
+            <ComboBox
+              key={`actual-${i}`}
+              header={`${i + 1}번째 실제 수행자`}
+              value={state.actual?.[selectedDay]?.[i] ?? ""}
+              options={teacherOptions}
+              disabled={busy || !!state.closed}
+              onChange={(id) => {
+                const next = Array.from({ length: daySlots }, (_, n) =>
+                  n === i ? id : (state.actual?.[selectedDay]?.[n] ?? ""),
+                );
+                if (id && next.filter((x) => x === id).length > 1) {
+                  setMessage("실제 수행자는 서로 다르게 선택해 주세요.");
+                  return;
+                }
+                setState((prev) => ({ ...prev, actual: { ...prev.actual, [selectedDay]: next.filter(Boolean) } }));
+              }}
+            />
+          ))}
+          <Caption secondary>배정만으로 횟수가 늘지 않아요. 실제 수행자를 기록하고 월을 마감해요.</Caption>
           {currentDay?.excluded ? (
             <Body>{currentDay.reason}로 제외된 날짜예요.</Body>
           ) : (
             <>
-              {Array.from({ length: input.perDay }, (_, i) => (
+              {Array.from({ length: daySlots }, (_, i) => (
                 <ComboBox
                   key={i}
                   header={`${i + 1}번째 교사`}
                   options={teacherOptions}
                   value={manualSelection[i] ?? ""}
-                  disabled={busy}
+                  disabled={busy || !!state.closed}
                   onChange={(id) => {
-                    const selection = Array.from({ length: input.perDay }, (_, n) =>
+                    const selection = Array.from({ length: daySlots }, (_, n) =>
                       n === i ? id : (manualSelection[n] ?? ""),
                     );
                     setManualSelection(selection);
@@ -386,7 +531,7 @@ export function App({ deck }: { deck: Deck }) {
                 />
               ))}
               <Caption secondary>담당자를 바꾸면 바로 반영돼요. 다시 배정해도 직접 고른 담당자는 유지돼요.</Caption>
-              <Button disabled={busy || !input.manual[selectedDay]} onClick={clearManual}>
+              <Button disabled={busy || !!state.closed || !input.manual[selectedDay]} onClick={clearManual}>
                 직접 배정 해제
               </Button>
             </>
@@ -396,15 +541,21 @@ export function App({ deck }: { deck: Deck }) {
             header="조건을 바꿀 교사"
             options={teacherOptions}
             value={teacherId}
-            disabled={busy}
+            disabled={busy || !!state.closed}
             onChange={setTeacherId}
           />
           {teacher && (
             <>
               <CheckBox
+                content="이번 달 배정에 참여해요"
+                checked={teacher.participating !== false}
+                disabled={busy || !!state.closed}
+                onChange={(participating) => editTeacher({ participating })}
+              />
+              <CheckBox
                 content={`${selectedDay}일에 ${teacher.name} 고정`}
                 checked={teacher.fixed.includes(Number(selectedDay))}
-                disabled={busy}
+                disabled={busy || !!state.closed}
                 onChange={(on) =>
                   editTeacher({
                     fixed: on
@@ -416,7 +567,7 @@ export function App({ deck }: { deck: Deck }) {
               <CheckBox
                 content={`${selectedDay}일에 ${teacher.name} 제외`}
                 checked={teacher.excluded.includes(Number(selectedDay))}
-                disabled={busy}
+                disabled={busy || !!state.closed}
                 onChange={(on) =>
                   editTeacher({
                     excluded: on
@@ -425,12 +576,52 @@ export function App({ deck }: { deck: Deck }) {
                   })
                 }
               />
+              <SettingsExpander
+                header="순번별 허용 요일"
+                description="중식 1차·2차처럼 순번마다 담당 가능한 요일을 나눠요."
+              >
+                {Array.from({ length: input.perDay }, (_, slot) => (
+                  <div key={slot}>
+                    <BodyStrong>{slot + 1}번째 담당 가능 요일</BodyStrong>
+                    <div className={s.row}>
+                      {WEEKDAYS.map((label, weekday) => (
+                        <CheckBox
+                          key={label}
+                          content={`${slot + 1}번째 ${label}요일`}
+                          checked={eligibleSlot(teacher, weekday, slot)}
+                          disabled={busy || !!state.closed}
+                          onChange={(on) => {
+                            const rows = Array.from({ length: 3 }, (_, n) => [
+                              ...(teacher.slotWeekdays?.[n] ?? [0, 1, 2, 3, 4, 5, 6]),
+                            ]);
+                            rows[slot] = on
+                              ? [...(rows[slot] ?? []), weekday]
+                              : (rows[slot] ?? []).filter((d) => d !== weekday);
+                            editTeacher({ slotWeekdays: rows });
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </SettingsExpander>
+              <Button
+                disabled={busy || !!state.closed}
+                onClick={() =>
+                  editTeacher({
+                    past: averagePast(cumulative.teachers.filter((t) => t.id !== teacher.id)),
+                  })
+                }
+              >
+                다른 참여 교사 평균으로 기초 보정
+              </Button>
               <NumberBox
+                step={0.1}
                 header="과거 실제 수행 횟수"
                 value={teacher.past}
                 min={0}
                 max={100000}
-                disabled={busy}
+                disabled={busy || !!state.closed}
                 onChange={(past) => editTeacher({ past })}
               />
               <Caption secondary>배정하지 않는 요일</Caption>
@@ -440,7 +631,7 @@ export function App({ deck }: { deck: Deck }) {
                     key={label}
                     content={`${label}요일 제외`}
                     checked={teacher.weekdays.includes(i)}
-                    disabled={busy}
+                    disabled={busy || !!state.closed}
                     onChange={(on) =>
                       editTeacher({ weekdays: on ? [...teacher.weekdays, i] : teacher.weekdays.filter((n) => n !== i) })
                     }
@@ -461,36 +652,131 @@ export function App({ deck }: { deck: Deck }) {
             <Button
               key={t.id}
               appearance={teacherId === t.id ? "primary" : "subtle"}
-              disabled={busy}
+              disabled={busy || !!state.closed}
               onClick={() => setTeacherId(t.id)}
             >
-              {t.name} · 과거 {t.past} + 이번 {projected[t.id] ?? 0} = {t.past + (projected[t.id] ?? 0)}회
+              {t.name} · 과거 {t.past} · 누적 {cumulative.teachers.find((x) => x.id === t.id)?.past ?? t.past} + 이번{" "}
+              {projected[t.id] ?? 0}회
             </Button>
           ))}
         </div>
+        <SettingsExpander
+          header="시간표 추출표 붙여넣기"
+          description="교사명·요일·교시·교과/교실 열을 붙여 넣으면 4교시 수업 없는 날은 1번째, 있는 날은 2번째 담당으로 설정해요."
+        >
+          <TextBox
+            header="시간표 TSV"
+            multiline
+            value={timetableText}
+            onChange={setTimetableText}
+            disabled={busy || !!state.closed}
+          />
+          <Button
+            disabled={busy || !!state.closed}
+            onClick={() => {
+              const teachers = parseTimetable(timetableText, state.input.teachers, averagePast(cumulative.teachers));
+              if (!teachers) {
+                setMessage("교사명·요일·교시·교과/교실 열과 월~금 요일을 확인해 주세요.");
+                return;
+              }
+              updateInput({ teachers });
+              setRoster(teachers.map((t) => `${t.name}\t${t.past}`).join("\n"));
+              setMessage("시간표에서 순번별 허용 요일을 설정했어요. 시간강사는 참여 여부를 꺼 주세요.");
+            }}
+          >
+            시간표 조건 적용
+          </Button>
+        </SettingsExpander>
         <SettingsExpander header="여러 명 붙여넣기" description="이름을 한 줄씩 입력하거나 엑셀 명단을 붙여넣어요.">
           <TextBox
             header="교사 명단"
             multiline
             value={roster}
-            disabled={busy}
+            disabled={busy || !!state.closed}
             onChange={setRoster}
             placeholder={"교사A\n교사B"}
             description="이름만 넣어도 돼요. 과거 횟수가 있으면 이름 옆 열에 함께 붙여넣어요."
           />
-          <Button onClick={applyRoster} disabled={busy}>
+          <Button onClick={applyRoster} disabled={busy || !!state.closed}>
             명단 적용
           </Button>
         </SettingsExpander>
       </section>
+      <SettingsExpander header="월 마감 · 백업 · 내보내기">
+        <div className={s.row}>
+          <Button
+            disabled={busy || storageBlocked || !!state.closed}
+            onClick={() => {
+              const next = closeMonth(state);
+              void persist(next)
+                .then(() => {
+                  setState(next);
+                  setMessage("실제 수행 횟수로 월을 마감했어요.");
+                })
+                .catch(() => setMessage("월 마감을 저장하지 못했어요. 다시 시도해 주세요."));
+            }}
+          >
+            월 마감
+          </Button>
+          {state.closed && (
+            <Button disabled={busy} onClick={() => setState((prev) => ({ ...prev, closed: false }))}>
+              마감 수정 열기
+            </Button>
+          )}
+          <Button onClick={() => void exportFile("backup.json", encodeBackup({ ...months, [monthKey(state)]: state }))}>
+            JSON 백업 저장
+          </Button>
+          <Button onClick={() => void exportFile("schedule.csv", exportCsv({ ...state, input }))}>
+            Excel CSV 저장
+          </Button>
+          <Button onClick={() => void exportFile("legacy.json", exportLegacy({ ...months, [monthKey(state)]: state }))}>
+            기존 형식 JSON 저장
+          </Button>
+          <Button
+            onClick={() =>
+              void readBackup(deck)
+                .then((text) => {
+                  if (text !== null) setBackupText(text);
+                })
+                .catch(() => setMessage("백업을 읽지 못했어요. 5MiB 이하 UTF-8 JSON 파일을 선택해 주세요."))
+            }
+          >
+            백업 파일 열기
+          </Button>
+        </div>
+        {state.closed && (
+          <InfoBar message="마감한 달이에요. 수행 기록을 수정하려면 마감 수정 열기를 누르고 수정 후 다시 저장·마감해 주세요." />
+        )}
+        <SettingsExpander header="JSON 백업 복원">
+          <TextBox header="복원할 JSON" multiline value={backupText} onChange={setBackupText} />
+          <Caption>복원은 화면의 작업 상태를 바꿔요. 확인 후 저장을 누르면 복원한 모든 달이 이 PC에 저장돼요.</Caption>
+          <Button
+            disabled={storageBlocked}
+            onClick={() => {
+              const restored = decodeBackup(backupText);
+              if (!restored) {
+                setMessage("TeacherDeck 백업 구조를 확인해 주세요.");
+                return;
+              }
+              const first = Object.values(restored)[0];
+              if (!first) return;
+              setMonths(restored);
+              setState(first);
+              setRoster(first.input.teachers.map((t) => `${t.name}\t${t.past}`).join("\n"));
+              setMessage("백업을 화면에 복원했어요. 내용을 확인하고 저장해 주세요.");
+            }}
+          >
+            복원 적용
+          </Button>
+        </SettingsExpander>
+      </SettingsExpander>
       <Caption secondary>
         {input.year === HOLIDAY_YEAR
           ? "2026년 법정 공휴일은 자동 제외해요. 임시공휴일·학교 휴업일은 달력에서 추가해 주세요."
           : "공휴일 자동 제외는 2026년만 지원해요. 이 연도 공휴일은 달력에서 직접 제외해 주세요."}
       </Caption>
       <Caption secondary>
-        다시 배정해도 실제 수행 횟수는 늘지 않아요. 월을 바꾸면 유지된 고정·제외 조건을 확인해 주세요. 명단은 이
-        모듈에만 저장돼요.
+        다시 배정해도 실제 수행 횟수는 늘지 않아요. 월별 조건과 수행 기록을 따로 보관해요. 명단은 이 모듈에만 저장돼요.
       </Caption>
     </main>
   );

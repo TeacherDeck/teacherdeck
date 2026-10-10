@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import type { Deck } from "@deck/sdk";
-import { type PlanInput, type Teacher } from "./planner.ts";
+import { validPast, type PlanInput, type Teacher } from "./planner.ts";
 export const STATE_KEY = "planner.v1";
 export interface PlannerState {
   input: PlanInput;
   assignments: Record<string, string[]>;
+  actual?: Record<string, string[]>;
+  memo?: Record<string, string>;
+  closed?: boolean;
 }
 export function initialState(now = new Date()): PlannerState {
   return {
@@ -18,8 +21,12 @@ export function initialState(now = new Date()): PlannerState {
       teachers: [],
       manual: {},
       holidays: {},
+      exam: [],
     },
     assignments: {},
+    actual: {},
+    memo: {},
+    closed: false,
   };
 }
 function object(v: unknown): v is Record<string, unknown> {
@@ -41,12 +48,15 @@ function teacher(v: unknown): v is Teacher {
     v["name"].length > 0 &&
     v["name"].length <= 100 &&
     typeof v["past"] === "number" &&
-    Number.isSafeInteger(v["past"]) &&
-    v["past"] >= 0 &&
-    v["past"] <= 100000 &&
+    validPast(v["past"]) &&
+    (v["slotWeekdays"] === undefined ||
+      (Array.isArray(v["slotWeekdays"]) &&
+        v["slotWeekdays"].length <= 3 &&
+        v["slotWeekdays"].every((x) => ints(x, 0, 6)))) &&
     ints(v["excluded"], 1, 31) &&
     ints(v["fixed"], 1, 31) &&
-    ints(v["weekdays"], 0, 6)
+    ints(v["weekdays"], 0, 6) &&
+    (v["participating"] === undefined || typeof v["participating"] === "boolean")
   );
 }
 function assignments(v: unknown, ids: Set<string>): v is Record<string, string[]> {
@@ -91,7 +101,15 @@ export function sanitizeState(value: unknown): PlannerState | null {
     ids.size !== teachers.length ||
     new Set(teachers.map((t) => t.name)).size !== teachers.length ||
     !assignments(i["manual"], ids) ||
-    !assignments(value["assignments"], ids)
+    !assignments(value["assignments"], ids) ||
+    (value["actual"] !== undefined && !assignments(value["actual"], ids)) ||
+    (i["exam"] !== undefined && !ints(i["exam"], 1, 31)) ||
+    (value["closed"] !== undefined && typeof value["closed"] !== "boolean") ||
+    (value["memo"] !== undefined &&
+      (!object(value["memo"]) ||
+        Object.entries(value["memo"]).some(
+          ([k, v]) => !/^([1-9]|[12][0-9]|3[01])$/.test(k) || typeof v !== "string" || v.length > 2000,
+        )))
   )
     return null;
   // Holiday tables are bundled code, never trusted from a stored draft.
@@ -105,8 +123,12 @@ export function sanitizeState(value: unknown): PlannerState | null {
       teachers,
       manual: i["manual"],
       holidays: {},
+      exam: (i["exam"] as number[] | undefined) ?? [],
     },
     assignments: value["assignments"],
+    actual: (value["actual"] as Record<string, string[]> | undefined) ?? {},
+    memo: (value["memo"] as Record<string, string> | undefined) ?? {},
+    closed: (value["closed"] as boolean | undefined) ?? false,
   };
 }
 export async function loadState(deck: Pick<Deck, "storage">): Promise<PlannerState | null> {

@@ -28,6 +28,7 @@ async function open(saved: unknown = null) {
     module: { id: "duty-planner", version: "0.2.0" },
     granted: ["storage"],
     handlers: {
+      "storage.keys": () => [...values.keys()],
       "storage.get": (args) => values.get((args as { key: string }).key) ?? null,
       "storage.set": (args) => {
         const a = args as { key: string; value: unknown };
@@ -46,6 +47,24 @@ async function open(saved: unknown = null) {
   return { deck, values };
 }
 describe("planner user flow", () => {
+  it("protects actual performer identities when replacing a roster", async () => {
+    const state = initialState(new Date(2026, 9, 1));
+    state.input.teachers = [
+      { id: "A", name: "교사A", past: 0, fixed: [], excluded: [], weekdays: [] },
+      { id: "B", name: "교사B", past: 0, fixed: [], excluded: [], weekdays: [] },
+    ];
+    state.actual = { "1": ["A"] };
+    const { deck, values } = await open(state);
+    fireEvent.click(screen.getByText("여러 명 붙여넣기"));
+    fireEvent.change(screen.getByRole("textbox", { name: "교사 명단" }), { target: { value: "교사B" } });
+    fireEvent.click(screen.getByRole("button", { name: "명단 적용" }));
+    await screen.findByText("실제 수행 기록이 있는 교사를 빼려면 해당 날짜의 수행자를 먼저 수정하거나 비워 주세요.");
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect((values.get(STATE_KEY) as PlannerState).actual).toEqual({ "1": ["A"] }));
+    expect((values.get(STATE_KEY) as PlannerState).input.teachers.map((t) => t.id)).toEqual(["A", "B"]);
+    deck.dispose();
+  });
+
   it("opens date editing from teacher names and holiday text anywhere in the date button", async () => {
     const state = initialState(new Date(2026, 9, 1));
     state.input.teachers = [{ id: "A", name: "교사A", past: 0, fixed: [], excluded: [], weekdays: [] }];

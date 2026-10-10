@@ -4,7 +4,7 @@
   "id": "duty-planner",
   "name": "지도일배정기",
   "description": "교사별 고정·제외 조건과 과거 횟수를 반영해 월별 지도일을 균등하게 배정해요.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "category": "classroom",
   "icon": "icon.svg",
   "entry": "index.html",
@@ -14,7 +14,8 @@
     }
   ],
   "requires": {
-    "storage": "^1.0"
+    "storage": "^1.0",
+    "fs": "^1.1.0"
   },
   "optional": {}
 }
