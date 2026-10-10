@@ -46,4 +46,4 @@ CI는 로컬과 같은 명령을 쓴다(CI-005). 모든 검사기는 다음 형�
 - **CI-003** [MUST] workflow `permissions`는 최소로 한다(기본 `contents: read`). — 강제: `check-security`
 - **CI-004** [MUST] 서명 시크릿은 `release` environment에만 두고 태그 트리거 릴리스 잡에서만 접근한다. — 강제: `check-security`
 - **CI-005** [MUST] CI 검증은 로컬 `pnpm verify`와 같은 명령을 쓴다. — 강제: workflow 리뷰
-- **CI-006** [MUST] workflow 변경은 CODEOWNERS 리뷰를 필수로 한다. — 강제: CODEOWNERS, ruleset(사람 설정)
+- **CI-006** [MUST] main은 PR과 `verify` 통과로만 바꾼다. 직접 push, 강제 push, 삭제를 하지 않는다. 승인은 필수가 아니며, 보호 경로(workflow, CODEOWNERS, Tauri ACL) 변경은 다른 원저작자의 리뷰를 권장한다([ADR-0010](../adr/0010-solo-merge-policy.md)). — 강제: ruleset(사람 설정)

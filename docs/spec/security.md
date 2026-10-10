@@ -20,7 +20,7 @@
 | 업데이트 하이재킹 | 가짜 업데이트 서버 | updater 서명 검증(SEC-008), 키 분리([keys.md](../security/keys.md)) |
 | 카탈로그 롤백 | 예전 취약 버전 재배포 | `seq` 단조 증가 검사([catalog.md](catalog.md)), revoke |
 | 데이터 유출 | 모듈의 외부 전송, 로그에 개인정보 | 모듈 CSP `connect-src 'self'`(MOD-008), PRV-001, PRV-003 |
-| 공급망 | 악성 의존성, workflow 변조 | cargo-deny·라이선스 검사(SEC-011), action SHA 고정(CI-002), CODEOWNERS(CI-006) |
+| 공급망 | 악성 의존성, workflow 변조 | cargo-deny·라이선스 검사(SEC-011), action SHA 고정(CI-002), PR·`verify` 필수(CI-006) |
 | 비밀 유출 | 서명키 커밋 | SEC-009, gitleaks, push protection |
 
 학교 PC에는 백신·보안 에이전트가 많다. 서명되지 않은 실행 파일은 차단될 수 있으므로 Authenticode 서명은 별도로 다룬다(`TODO(human)`, 범위 밖).
