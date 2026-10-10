@@ -4,7 +4,7 @@
   "id": "timer",
   "name": "타이머",
   "description": "수업 시간을 크게 보여 주는 타이머예요. 발표 모드와 프리셋을 지원해요.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "category": "classroom",
   "icon": "icon.svg",
   "entry": "index.html",

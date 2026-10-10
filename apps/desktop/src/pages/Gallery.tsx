@@ -22,6 +22,7 @@ import {
   InfoBar,
   Image,
   ImageCropPreview,
+  ColorPicker,
   ListView,
   NumberBox,
   PageHeader,
@@ -55,6 +56,10 @@ const CASES = [
 ] as const;
 type Case = (typeof CASES)[number]["value"];
 
+function ColorSample() {
+  const [value, setValue] = useState(createDeckTheme("light").colorPaletteRedBorderActive);
+  return <ColorPicker header="테두리 색" value={value} onChange={setValue} />;
+}
 function CropSample() {
   const [rect, setRect] = useState({ x: 20, y: 20, width: 80, height: 60 });
   return (
@@ -214,6 +219,7 @@ const SAMPLES: Record<ComponentName, () => ReactNode> = {
     />
   ),
   ImageCropPreview: () => <CropSample />,
+  ColorPicker: () => <ColorSample />,
   Image: () => (
     <Image
       src={`data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="100"><rect width="80" height="100" fill="gray"/><circle cx="40" cy="30" r="15" fill="white"/><rect x="20" y="55" width="40" height="35" fill="white"/></svg>')}`}

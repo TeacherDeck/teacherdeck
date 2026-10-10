@@ -4,7 +4,7 @@
   "id": "image-compress",
   "name": "이미지 용량 줄이기",
   "description": "여러 이미지의 크기와 용량을 줄여 원본을 보존한 채 새 폴더에 저장해요.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "category": "image",
   "icon": "icon.svg",
   "entry": "index.html",

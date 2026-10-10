@@ -47,6 +47,8 @@ function defined<T extends Record<string, unknown>>(o: T): { [K in keyof T]?: Ex
 }
 
 const useStyles = makeStyles({
+  field: { minWidth: 0 },
+  fit: { minWidth: 0, maxWidth: "100%" },
   stack: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalS },
   list: {
     border: `${tokens.strokeWidthThin} solid ${deckTokens.cardStroke}`,
@@ -245,10 +247,12 @@ export interface NumberBoxProps extends HeaderedProps {
 
 /** Number input with spin buttons; out-of-range values are clamped (WinUI NumberBox). */
 export function NumberBox({ value, onChange, min, max, step = 1, validationMessage, ...header }: NumberBoxProps) {
+  const s = useStyles();
   const clamp = (n: number) => Math.min(max ?? Infinity, Math.max(min ?? -Infinity, n));
   return (
-    <Field {...fieldProps(header, validationMessage)}>
+    <Field className={s.field} {...fieldProps(header, validationMessage)}>
       <SpinButton
+        className={s.fit}
         value={value}
         step={step}
         aria-label={header.header}
@@ -338,10 +342,12 @@ export interface ComboBoxProps<T extends string> extends HeaderedProps {
 
 /** Pick one of several options from a dropdown (WinUI ComboBox, non-editable). */
 export function ComboBox<T extends string>({ options, value, onChange, ...header }: ComboBoxProps<T>) {
+  const s = useStyles();
   const current = options.find((o) => o.value === value);
   return (
-    <Field {...fieldProps(header)}>
+    <Field className={s.field} {...fieldProps(header)}>
       <Dropdown
+        className={s.fit}
         aria-label={header.header}
         value={current?.label ?? ""}
         selectedOptions={[value]}

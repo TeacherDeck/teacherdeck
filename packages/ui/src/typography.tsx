@@ -31,6 +31,7 @@ export interface TypographyProps {
 }
 
 const useStyles = makeStyles({
+  reset: { margin: 0 },
   display: { fontFamily: deckTokens.fontFamilyDisplay },
   secondary: { color: tokens.colorNeutralForeground2 },
 });
@@ -42,7 +43,7 @@ function useTextProps({ secondary = false, className, children, ...rest }: Typog
   return {
     ...rest,
     children,
-    className: mergeClasses(display && s.display, secondary && s.secondary, className),
+    className: mergeClasses(s.reset, display && s.display, secondary && s.secondary, className),
   };
 }
 

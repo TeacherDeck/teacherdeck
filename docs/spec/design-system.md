@@ -51,33 +51,34 @@ GPLv3의 Appropriate Legal Notices를 겸한다. 다음을 모두 보여 준다.
 
 **페이지 패턴**
 
-| 컴포넌트 | WinUI 대응 | 용도 |
-|---|---|---|
-| `DeckProvider` | — | 셸이 보낸 theme으로 `FluentProvider` 구성, 투명 루트 배경 기본값 |
-| `PageHeader` | 페이지 제목 | Title(28px) 제목과 설명 한 줄 |
-| `ToolLayout` (+ `.Section`) | — | 일괄 처리 도구 골격: 입력 → 옵션 → 미리보기 → 실행 → 결과 |
-| `SettingsGroup` | 설정 그룹 머리글 | BodyStrong 머리글 + 4px 간격 카드 묶음 |
-| `SettingsCard` | SettingsCard | 한 줄 설정 항목. `action`(오른쪽 컨트롤) 또는 `onClick`(카드 전체 버튼 + 셰브런) |
-| `SettingsExpander` | SettingsExpander | 머리글 전체로 펼침, 셰브런 ↓/↑, 안의 SettingsCard는 들여쓴 평면 행 |
-| `CapabilityGate` | InfoBar | optional 캡이 없을 때 "앱 업데이트 후 사용 가능" 알림 |
-| `EmptyState` | — | 빈 화면과 다음 행동 안내 |
-| `DropZone` | — | 드롭 영역 표시용. 실제 드롭은 셸 이벤트 `fs.dropped`로 받는다. |
+| 컴포넌트                    | WinUI 대응       | 용도                                                                             |
+| --------------------------- | ---------------- | -------------------------------------------------------------------------------- |
+| `DeckProvider`              | —                | 셸이 보낸 theme으로 `FluentProvider` 구성, 투명 루트 배경 기본값                 |
+| `PageHeader`                | 페이지 제목      | Title(28px) 제목과 설명 한 줄                                                    |
+| `ToolLayout` (+ `.Section`) | —                | 일괄 처리 도구 골격: 입력 → 옵션 → 미리보기 → 실행 → 결과                        |
+| `SettingsGroup`             | 설정 그룹 머리글 | BodyStrong 머리글 + 4px 간격 카드 묶음                                           |
+| `SettingsCard`              | SettingsCard     | 한 줄 설정 항목. `action`(오른쪽 컨트롤) 또는 `onClick`(카드 전체 버튼 + 셰브런) |
+| `SettingsExpander`          | SettingsExpander | 머리글 전체로 펼침, 셰브런 ↓/↑, 안의 SettingsCard는 들여쓴 평면 행               |
+| `CapabilityGate`            | InfoBar          | optional 캡이 없을 때 "앱 업데이트 후 사용 가능" 알림                            |
+| `EmptyState`                | —                | 빈 화면과 다음 행동 안내                                                         |
+| `DropZone`                  | —                | 드롭 영역 표시용. 실제 드롭은 셸 이벤트 `fs.dropped`로 받는다.                   |
 
 **컨트롤**
 
-| 컴포넌트 | WinUI 대응 | 용도 |
-|---|---|---|
-| `Button`, `ToggleButton`, `Tooltip` | Button(AccentButton = `appearance="primary"`), ToggleButton, ToolTip | Fluent 그대로 다시 내보냄 |
-| `HyperlinkButton` | HyperlinkButton | 글자 모양 보조 동작. URL을 열지 않는다 |
-| `InfoBar` | InfoBar | 오류·완료·안내. 토스트 대신 쓴다 |
-| `ProgressBar`, `ProgressRing` | ProgressBar, ProgressRing | 일괄 처리 진행(값 없으면 불확정), 대기 표시 |
-| `ContentDialog` | ContentDialog | 확인 대화상자. 결과 `primary`/`secondary`/`none`. 덮어쓰기 확인(PRV-006) |
-| `TextBox`, `NumberBox` | TextBox, NumberBox | 텍스트(여러 줄 가능), 범위 제한 숫자 |
-| `ComboBox`, `RadioButtons` | ComboBox, RadioButtons | 하나 고르기(많으면 ComboBox, 2~5개면 RadioButtons) |
-| `ToggleSwitch`, `CheckBox` | ToggleSwitch(켬/끔 표시), CheckBox | 즉시 적용 설정, 선택 항목 |
-| `ListView` | ListView | 파일 목록 등. 선택 없음/하나/여러 개, 빈 목록 안내 |
-| `Image` | Image | 로컬 이미지 미리보기. 대체 설명 필수, 크기·채우기 방식 선택 |
-| `ImageCropPreview` | Canvas + Image + Thumb | 이미지 좌표의 사각형 선택·이동·크기 조절. 드래그와 방향키, 대체 설명·머리글 |
+| 컴포넌트                            | WinUI 대응                                                           | 용도                                                                        |
+| ----------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `Button`, `ToggleButton`, `Tooltip` | Button(AccentButton = `appearance="primary"`), ToggleButton, ToolTip | Fluent 그대로 다시 내보냄                                                   |
+| `HyperlinkButton`                   | HyperlinkButton                                                      | 글자 모양 보조 동작. URL을 열지 않는다                                      |
+| `InfoBar`                           | InfoBar                                                              | 오류·완료·안내. 토스트 대신 쓴다                                            |
+| `ProgressBar`, `ProgressRing`       | ProgressBar, ProgressRing                                            | 일괄 처리 진행(값 없으면 불확정), 대기 표시                                 |
+| `ContentDialog`                     | ContentDialog                                                        | 확인 대화상자. 결과 `primary`/`secondary`/`none`. 덮어쓰기 확인(PRV-006)    |
+| `TextBox`, `NumberBox`              | TextBox, NumberBox                                                   | 텍스트(여러 줄 가능), 범위 제한 숫자                                        |
+| `ComboBox`, `RadioButtons`          | ComboBox, RadioButtons                                               | 하나 고르기(많으면 ComboBox, 2~5개면 RadioButtons)                          |
+| `ColorPicker`                       | ColorPicker                                                          | 테두리 등 사용자 선택 색. 색 견본을 눌러 OS 색 선택창에서 지정              |
+| `ToggleSwitch`, `CheckBox`          | ToggleSwitch(켬/끔 표시), CheckBox                                   | 즉시 적용 설정, 선택 항목                                                   |
+| `ListView`                          | ListView                                                             | 파일 목록 등. 선택 없음/하나/여러 개, 빈 목록 안내                          |
+| `Image`                             | Image                                                                | 로컬 이미지 미리보기. 대체 설명 필수, 크기·채우기 방식 선택                 |
+| `ImageCropPreview`                  | Canvas + Image + Thumb                                               | 이미지 좌표의 사각형 선택·이동·크기 조절. 드래그와 방향키, 대체 설명·머리글 |
 
 **타입 램프**: `Caption`, `Body`, `BodyStrong`, `Subtitle`, `Title`, `TitleLarge`, `Display`([4절](#4-폰트)). `secondary`로 보조 글자색을 쓴다.
 
@@ -91,12 +92,12 @@ GPLv3의 Appropriate Legal Notices를 겸한다. 다음을 모두 보여 준다.
 
 UI-007을 따른다. 예시:
 
-| 상황 | 좋은 예 | 나쁜 예 |
-|---|---|---|
-| 버튼 | 변환 | 변환하기 시작 |
-| 완료 알림 | 3개 파일을 변환했어요. | 작업이 성공적으로 완료되었습니다! |
-| 오류 | 파일이 다른 프로그램에서 열려 있어요. 닫고 다시 시도해 주세요. | 죄송합니다. 오류가 발생했습니다. |
-| 빈 화면 | 파일을 끌어 놓거나 "파일 선택"을 눌러 주세요. | 파일 없음 |
+| 상황      | 좋은 예                                                        | 나쁜 예                           |
+| --------- | -------------------------------------------------------------- | --------------------------------- |
+| 버튼      | 변환                                                           | 변환하기 시작                     |
+| 완료 알림 | 3개 파일을 변환했어요.                                         | 작업이 성공적으로 완료되었습니다! |
+| 오류      | 파일이 다른 프로그램에서 열려 있어요. 닫고 다시 시도해 주세요. | 죄송합니다. 오류가 발생했습니다.  |
+| 빈 화면   | 파일을 끌어 놓거나 "파일 선택"을 눌러 주세요.                  | 파일 없음                         |
 
 ## 8. 규칙
 
@@ -113,4 +114,5 @@ UI-007을 따른다. 예시:
   - 빈 화면은 다음 행동을 안내한다.
 
   — 강제: [manual]
+
 - **UI-008** [MUST] 일괄 처리 도구는 `ToolLayout`(입력 → 옵션 → 미리보기 → 실행 → 결과) 골격을 따른다. — 강제: [manual]
