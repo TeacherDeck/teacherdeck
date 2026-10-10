@@ -2,21 +2,24 @@
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 // Reference module UI. Copy these patterns:
 // - host features only via `deck` (MOD-006); storage instead of localStorage (MOD-009)
-// - @deck/ui + Fluent components and tokens only, no raw style values (MOD-010, UI-002)
+// - UI only from @deck/ui (WinUI controls, type ramp, tokens); icons from react-icons (MOD-010, UI-002)
+// - errors as an InfoBar, inputs with a header (NumberBox), settings as SettingsCard
 // - keyboard: Space start/pause, R reset, F presentation mode (UI-005)
 // - 해요체 wording, same action = same word (UI-007)
 import type { Deck } from "@deck/sdk";
-import { SettingsCard, deckTokens } from "@deck/ui";
 import {
   Button,
-  SpinButton,
-  Switch,
-  Text,
-  Title3,
+  Display,
+  InfoBar,
+  NumberBox,
+  SettingsCard,
+  Subtitle,
+  ToggleSwitch,
+  deckTokens,
   makeStyles,
   mergeClasses,
   tokens,
-} from "@fluentui/react-components";
+} from "@deck/ui";
 import { ArrowResetRegular, FullScreenMaximizeRegular, PauseRegular, PinRegular, PlayRegular } from "@fluentui/react-icons";
 import { useCallback, useEffect, useState } from "react";
 import { DEFAULT_PRESETS_SEC, addPreset, loadPresets } from "./presets.ts";
@@ -31,18 +34,21 @@ const useStyles = makeStyles({
     gap: deckTokens.itemGap,
     padding: tokens.spacingVerticalXXXL,
     borderRadius: deckTokens.cardRadius,
-    backgroundColor: deckTokens.layer,
+    border: `${tokens.strokeWidthThin} solid ${deckTokens.cardStroke}`,
+    backgroundColor: deckTokens.cardFill,
   },
-  digits: { fontSize: tokens.fontSizeHero1000, lineHeight: tokens.lineHeightHero1000, fontWeight: tokens.fontWeightSemibold },
+  digits: { fontVariantNumeric: "tabular-nums" },
   presentation: {
     position: "fixed",
     inset: 0,
     justifyContent: "center",
     borderRadius: tokens.borderRadiusNone,
+    border: "none",
   },
   presentationDigits: { fontSize: `calc(${tokens.fontSizeHero1000} * 4)`, lineHeight: tokens.lineHeightHero1000 },
-  finished: { backgroundColor: tokens.colorPaletteRedBackground3, color: tokens.colorNeutralForegroundOnBrand },
-  row: { display: "flex", flexWrap: "wrap", gap: deckTokens.inlineGap, alignItems: "center" },
+  // Static white on the strong red stays readable in both themes (UI-005).
+  finished: { backgroundColor: tokens.colorPaletteRedBackground3, color: tokens.colorNeutralForegroundStaticInverted },
+  row: { display: "flex", flexWrap: "wrap", gap: deckTokens.inlineGap, alignItems: "end" },
 });
 
 export function App({ deck }: { deck: Deck }) {
@@ -126,8 +132,8 @@ export function App({ deck }: { deck: Deck }) {
       aria-live="polite"
       aria-label="남은 시간"
     >
-      <Text className={mergeClasses(s.digits, presenting && s.presentationDigits)}>{format(left)}</Text>
-      {finished && <Title3>시간이 끝났어요</Title3>}
+      <Display className={mergeClasses(s.digits, presenting && s.presentationDigits)}>{format(left)}</Display>
+      {finished && <Subtitle>시간이 끝났어요</Subtitle>}
       <div className={s.row}>
         <Button
           appearance="primary"
@@ -151,7 +157,7 @@ export function App({ deck }: { deck: Deck }) {
   return (
     <main className={s.page}>
       {face}
-      {message !== null && <Text role="alert">{message}</Text>}
+      {message !== null && <InfoBar severity="error" message={message} onClose={() => setMessage(null)} />}
       <div className={s.row} aria-label="프리셋">
         {presets.map((sec) => (
           <Button key={sec} onClick={() => choose(sec)}>
@@ -160,13 +166,7 @@ export function App({ deck }: { deck: Deck }) {
         ))}
       </div>
       <div className={s.row}>
-        <SpinButton
-          aria-label="분"
-          min={1}
-          max={180}
-          value={customMin}
-          onChange={(_, d) => setCustomMin(d.value ?? (Number(d.displayValue) || 1))}
-        />
+        <NumberBox header="분" min={1} max={180} value={customMin} onChange={setCustomMin} />
         <Button onClick={() => choose(customMin * 60)}>설정</Button>
         <Button
           onClick={() =>
@@ -183,14 +183,15 @@ export function App({ deck }: { deck: Deck }) {
         header="항상 위"
         description="다른 창 위에 타이머를 띄워요."
         action={
-          <Switch
-            aria-label="항상 위"
+          <ToggleSwitch
+            header="항상 위"
+            showHeader={false}
             checked={onTop}
-            onChange={(_, d) => {
+            onChange={(on) => {
               void deck.window
-                .setAlwaysOnTop(d.checked)
-                .then(() => setOnTop(d.checked))
-                .catch(() => setMessage("항상 위로 바꾸지 못했어요."));
+                .setAlwaysOnTop(on)
+                .then(() => setOnTop(on))
+                .catch(() => setMessage("항상 위로 바꾸지 못했어요. 다시 시도해 주세요."));
             }}
           />
         }
