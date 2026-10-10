@@ -26,7 +26,8 @@
 | `src/host.ts` | Rust 명령 호출(`@tauri-apps/api`는 여기서만) |
 | `src/bridge/ModuleBridge.ts` | 브리지 셸 측 규칙(BRG-001·003·006·007). React와 분리돼 단위 테스트한다 |
 | `src/bridge/keepAlive.ts` | keepAlive LRU |
-| `src/App.tsx` | 내비 레일, 페이지 전환, 테마 push, `fs.dropped` 전달 |
+| `src/App.tsx` | 상단바, 내비 레일, 페이지 전환, 테마 push, `fs.dropped` 전달 |
+| `src/TitleBar.tsx` | 테두리 없는 창의 상단바(드래그 영역, 캡션 버튼). 창 조작은 `host.ts`의 `windowControls`로만 한다 |
 | `src/pages/` | 덱(Home), 모듈 화면(ModuleHost), 설정, 정보(About, GEN-007 테스트), UI 갤러리(dev) |
 | `src/generated/` | Rust에서 생성한 타입과 서드파티 목록(GEN-006) |
 
