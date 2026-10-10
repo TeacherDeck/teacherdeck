@@ -47,7 +47,8 @@ const CATEGORY_ICONS: Record<Category, ReactElement> = {
 };
 
 const useStyles = makeStyles({
-  shell: { display: "flex", height: "100vh" },
+  // The shell never scrolls as a whole; only the content pane scrolls, and only vertically.
+  shell: { display: "flex", height: "100vh", overflow: "hidden" },
   rail: {
     display: "flex",
     flexDirection: "column",
@@ -59,7 +60,9 @@ const useStyles = makeStyles({
   railButton: { justifyContent: "flex-start" },
   content: {
     flexGrow: 1,
+    minWidth: 0,
     overflowY: "auto",
+    overflowX: "hidden",
     position: "relative",
     backgroundColor: deckTokens.layerSubtle,
     borderTopLeftRadius: deckTokens.overlayRadius,
