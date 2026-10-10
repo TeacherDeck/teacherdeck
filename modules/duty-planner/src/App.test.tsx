@@ -198,3 +198,26 @@ describe("planner user flow", () => {
     deck.dispose();
   });
 });
+
+it("shows holiday names and semantic weekdays without hiding selected fixed markers", async () => {
+  const state = initialState(new Date(2026, 9, 1));
+  state.input.year = 2026;
+  state.input.month = 10;
+  state.input.teachers = [{ id: "a", name: "교사A", past: 0, fixed: [8], excluded: [], weekdays: [] }];
+  state.input.manual = { "8": ["a"] };
+  state.assignments = { "8": ["a"] };
+  state.actual = { "8": ["a"] };
+  const { deck } = await open(state);
+  const calendar = screen.getByRole("region", { name: "월별 배정 달력" });
+  expect(within(calendar).getByText("한글날")).toBeTruthy();
+  expect(within(calendar).getByText("일").getAttribute("data-day-tone")).toBe("red");
+  expect(within(calendar).getByText("토").getAttribute("data-day-tone")).toBe("blue");
+  expect(screen.getByRole("button", { name: "9일 배정 편집" }).getAttribute("data-day-tone")).toBe("red");
+  fireEvent.click(screen.getByRole("button", { name: "8일 배정 편집" }));
+  const cell = screen.getByRole("button", { name: "8일 배정 편집" });
+  expect(cell.getAttribute("aria-pressed")).toBe("true");
+  expect(within(cell).getByText(/직접 배정 · 고정 조건/)).toBeTruthy();
+  expect(within(cell).getByText(/수행 기록 1명/)).toBeTruthy();
+  expect(screen.getByRole("combobox", { name: "1번째 교사" })).toBeTruthy();
+  deck.dispose();
+});
