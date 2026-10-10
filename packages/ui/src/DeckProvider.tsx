@@ -48,6 +48,12 @@ export function DeckProvider({ deck, theme, mica, children }: DeckProviderProps)
 
   const resolved = theme !== undefined ? toTheme(theme) : payload !== undefined ? payloadToTheme(payload) : createDeckTheme("light");
   const transparent = mica ?? payload?.mica ?? false;
+  // Native scrollbars and form controls follow color-scheme on the root element, so they match
+  // the theme instead of staying light in dark mode.
+  const mode = theme !== undefined ? ("mode" in theme ? theme.mode : undefined) : payload?.mode;
+  useEffect(() => {
+    document.documentElement.style.colorScheme = mode ?? "light";
+  }, [mode]);
   return (
     <FluentProvider theme={resolved} className={transparent ? styles.transparent : styles.opaque}>
       {children}

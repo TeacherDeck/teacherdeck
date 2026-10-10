@@ -20,7 +20,7 @@ export const HELLO_TIMEOUT_MS = 10_000;
 /** Maximum serialized message size (BRG-007). */
 export const MAX_MESSAGE_BYTES = 1024 * 1024;
 /** Shell origins (release, dev). Fixed in apps/desktop/src-tauri/src/origins.rs. */
-export const SHELL_ORIGINS: readonly string[] = ["http://tauri.localhost", "http://localhost:1420"];
+export const SHELL_ORIGINS: readonly string[] = ["http://tauri.localhost", "http://localhost:8265"];
 /** Module origin (SEC-002). */
 export const MODULE_ORIGIN = "http://deckmod.localhost";
 

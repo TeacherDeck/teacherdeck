@@ -69,3 +69,20 @@ export function format(ms: number): string {
   const ss = String(sec).padStart(2, "0");
   return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
 }
+
+export interface Parts {
+  readonly h: number;
+  readonly m: number;
+  readonly s: number;
+}
+
+/** Splits ms into whole hours, minutes and seconds, rounding up like format(). */
+export function toParts(ms: number): Parts {
+  const total = Math.ceil(Math.max(0, ms) / 1000);
+  return { h: Math.floor(total / 3600), m: Math.floor((total % 3600) / 60), s: total % 60 };
+}
+
+/** Typed hours/minutes/seconds to ms. Overflow carries (75 min = 1:15:00); capped at MAX_DURATION_MS. */
+export function fromParts({ h, m, s }: Parts): number {
+  return Math.min((h * 3600 + m * 60 + s) * 1000, MAX_DURATION_MS);
+}
