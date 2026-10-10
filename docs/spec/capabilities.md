@@ -19,12 +19,36 @@
 <!-- 생성물: `pnpm gen`(deck-core caps::REGISTRY). 손으로 고치지 마세요(GEN-006). -->
 | 캡 | 버전 | 메서드 | 설명 |
 |---|---|---|---|
+| `global-shortcut` | 1.0.0 | `status` | 등록 단축키 조회 |
+|  |  | `register` | register |
+|  |  | `replace` | replace |
+|  |  | `unregister` | unregister |
+| `overlay` | 1.0.0 | `status` | 영역 창 현재 상태 |
+|  |  | `create` | create |
+|  |  | `update` | update |
+|  |  | `show` | show |
+|  |  | `hide` | hide |
+|  |  | `close` | close |
+| `capture` | 1.0.0 | `displays` | displays |
+|  |  | `capture` (long) | capture |
+|  |  | `arm` | arm |
+|  |  | `status` | status |
+|  |  | `update` | update |
+|  |  | `trigger` (long) | 시작한 세션에 한 장 저장 |
+|  |  | `resetSequence` | resetSequence |
+|  |  | `stop` | stop |
+| `clipboard` | 1.0.0 | `writeText` | 일반 텍스트 복사(256KiB 이하) |
+|  |  | `writeRichText` | 구조화 서식과 일반 텍스트 복사(256KiB 이하) |
 | `system` | 1.0.0 | `info` | 앱 버전, OS 이름·버전·빌드, 로캘 |
 | `storage` | 1.0.0 | `get` | 키의 값, 없으면 null |
 |  |  | `set` | 키에 값 저장(256KB 이하) |
 |  |  | `delete` | 키 삭제 |
 |  |  | `keys` | 저장된 키 목록 |
-| `fs` | 1.1.0 | `pickFiles` (long) | 파일 선택 대화상자 → FileHandleInfo[] |
+| `fs` | 1.2.0 | `pickDestination` (long) | 명시적으로 기억할 새 파일 저장 폴더 선택 |
+|  |  | `destinationStatus` | 저장 폴더 권한 상태 |
+|  |  | `revealDestination` | 저장 폴더 열기 |
+|  |  | `revokeDestination` | 저장 폴더 권한 해제 |
+|  |  | `pickFiles` (long) | 파일 선택 대화상자 → FileHandleInfo[] |
 |  |  | `pickFolder` (long) | 폴더 선택 대화상자 → FolderHandleInfo \| null |
 |  |  | `stat` | 핸들의 최신 정보 |
 |  |  | `reveal` | 탐색기에서 파일 위치 열기 |
@@ -65,6 +89,14 @@
 ### 2.3 `window`
 
 - 모듈이 숨겨지거나 언로드되면 호스트가 창 상태를 원래대로 되돌린다.
+
+## 2.4 clipboard 1.0 — 출력 전용
+
+[ADR-0016](../adr/0016-clipboard-output.md), [승인 제안서](../proposals/clipboard-output.md)를 따른다. `writeText({text})`는 UTF-8 일반 텍스트를 기록한다. `writeRichText({plainText,blocks})`는 heading(level 1~3), paragraph, table의 rows/cells와 `{text,bold?}` run을 받아 호스트가 escape된 정적 HTML과 일반 텍스트 대체본을 기록한다. cell은 `{runs,header?}`다. 원시 HTML/CSS/URL/파일 경로, 클립보드 읽기·감시·지우기·이미지는 제공하지 않는다.
+
+입력 text 합산과 생성 HTML+plainText 합산은 각각 256KiB, JSON은 512KiB 이하이다. block/전체 표 행 4096, 행 열 32, 전체 cell 16384, 전체 run 32768, 컨테이너당 run 64 이하로 제한한다. 빈 표·서로 다른 열 수·unknown field·NUL 및 탭/개행 외 제어 문자를 거부한다. CRLF/CR은 LF로 정규화한다. 초과 입력은 자르지 않고 INVALID_ARGS를 반환한다.
+
+Windows에서 단일 OS 작업 스레드와 제한된 대기열을 사용한다. 시스템 clipboard cloud/history 제외는 고정 적용한다. 사용자 복사 동작에서만 호출하며 로그·오류에 텍스트를 남기지 않는다. arboard의 HTML Format 등록 실패는 일반 텍스트만 기록한 성공으로 나타날 수 있으므로 일반 완료 알림은 클립보드 쓰기 완료만 말하고, 한글/Word의 서식 유지는 실제 붙여넣기로 확인한다. 기존 CSP/ACL/브리지 포맷은 바꾸지 않는다.
 
 ## 3. 캡 추가·변경 절차
 
@@ -107,3 +139,27 @@
 - **CAP-008** [MUST] 모듈 권한 검사(설치·활성 여부, 선언 캡, 버전)는 Rust에서 매 호출마다 수행한다. 셸 검사는 보조일 뿐이다. — 강제: 권한 거부 테스트(`src-tauri/src/bridge.rs`)
 - **CAP-009** [MUST] 각 캡은 정상·권한 거부·잘못된 인자 테스트를 갖춘다. — 강제: `every_registry_method_has_a_route` 테스트, [manual] 리뷰(커버리지 보고는 미구현)
 - **CAP-010** [MUST] `capabilities.md`의 레지스트리 표와 `schema/capabilities.json`은 Rust 레지스트리에서 생성한다. — 강제: `check-gen`
+
+## 승인된 네이티브 캡처 계약 (ADR-0017)
+
+capture 1.0.0의 displays는 불투명 displayHandle과 물리 bounds/scale/primary를 반환한다. capture({rect,settings})는 한 장을 read-only FileHandleInfo로 반환하며 기존 fs.openRead 인증 스트림으로 읽는다. base64 프레임은 브리지에 싣지 않는다.
+
+arm({overlayHandle,shortcutHandle?,destinationGrant,settings})은 동일 소유자 핸들만 결합하고 CaptureSession을 반환한다. status({sessionHandle?})는 지정 세션 또는 현재 소유자 세션을 반환하며 없으면 null이다. update는 settings/destinationGrant/shortcutHandle을 변경한다. resetSequence와 stop은 sessionHandle을 받는다. CaptureSession은 settings,sequence,busy,lastResult?,lastError?를 제공하며 임의 callback이나 타이머 캡처는 허용하지 않는다. update의 shortcutHandle 생략은 기존 값을 유지한다.
+
+overlay create는 rect/style/alwaysOnTop을 받는다. style은 #RRGGBB 색과 1~12px borderWidth이다. update는 rect/style/alwaysOnTop의 선택 변경, show/hide/close는 overlayHandle을 받는다. region rect 전체가 실제 캡처 영역이며 별도 toolbar 창은 포함하지 않는다. 물리 x/y 음수, right/bottom exclusive를 유지한다.
+
+global-shortcut register는 modifiers(control/shift/alt/meta)와 정규화 key를 받고 ShortcutInfo를 반환한다. replace는 기존 shortcutHandle과 새 조합을 받아 충돌 시 기존 정상 조합을 유지한다. unregister는 핸들을 받는다. 전체 키 입력을 감시하지 않는다.
+
+fs 1.2 pickDestination({remember})은 사용자 선택·권한 확인 뒤 DestinationGrant 또는 null을 반환한다. destinationStatus/revealDestination/revokeDestination은 grantHandle을 받는다. grant는 모듈 소유 append-new-only 권한이고 label,persistent,available만 노출한다. 기억한 권한은 매 실행 directory guard/reparse/가용성을 재검사하며 사용자 파일은 삭제하거나 덮어쓰지 않는다. grant 해제와 세션 정지에 연결 리소스를 정리한다.
+
+물리 rect는 최소5px/최대 축16384/32Mi픽셀로 checked 검증한다. PNG 또는 JPEG 품질1~100, cursor=false만 지원한다. 이름 모드는 numbered/datetime/custom이며 custom 접두어는 80자 이하 단일 파일명이고 Windows 장치명·제어문자·경로 구분자·후행 점/공백을 거부한다. 실패는 연번을 소비하지 않는다. 저장·폴더 확인 등 host 작업은 UI 스레드를 막지 않는다.
+
+사용자 시작한 네이티브 세션은 모듈 iframe 숨김과 독립적이다. 매 native trigger에 소유자 설치·선언 캡·버전·grant·arm 상태를 확인한다. 앱 재시작에는 자동 arm하지 않는다. 기존 authorize는 설치·실행 가능한 모듈(runnable), 선언 캡·버전을 확인하며 keepAlive의 숨겨진 iframe RPC도 가능하다. 이번 변경은 이 권한을 확대하거나 축소하지 않는다. fs 드롭 전달은 현재 활성 모듈에만, 기존 window 캡의 숨김 복원은 그대로 유지한다. 일반 RPC의 활성 여부 강제는 별도 정책 검토 항목이다. [ADR-0017](../adr/0017-native-capture-sessions.md)에 lifecycle과 창 ACL을 규정한다.
+
+capture.trigger({sessionHandle})는 arm한 세션에 사용자 요청 한 장을 저장하고 CaptureResult를 반환한다. overlay.status({overlayHandle})는 재진입 시 rect/style/visible/alwaysOnTop을 복원한다.
+
+fs.destinationStatus는 DestinationStatusArgs의 선택 grantHandle을 받으며 생략 시 현재 소유자의 기억한 권한을 조회한다. 조회할 권한이 없으면 null이다.
+
+캡 이름은 최대32 ASCII 바이트이며 ^[a-z][a-z0-9]_(?:-[a-z0-9]+)_$를 따른다. 시작은 소문자이고 내부 단일 하이픈만 허용한다. leading/trailing/consecutive 하이픈은 거부한다(ADR-0017 승인 계약).
+
+global-shortcut.status({shortcutHandle})은 소유자 검증 뒤 실제 등록된 ShortcutInfo를 조회한다. 모듈 재연결에서 적용 전 편집값과 구별하여 단축키를 복원한다.

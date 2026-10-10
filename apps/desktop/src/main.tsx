@@ -4,12 +4,14 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
+import { CaptureOverlay } from "./CaptureOverlay.tsx";
+import { overlayControls } from "./host.ts";
 
 const root = document.getElementById("root");
 if (root !== null) {
   createRoot(root).render(
     <StrictMode>
-      <App />
+      {window.location.pathname === "/overlay" ? <CaptureOverlay controls={overlayControls} /> : <App />}
     </StrictMode>,
   );
 }

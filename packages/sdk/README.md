@@ -41,3 +41,5 @@ SDK는 정상 사용의 전송 청크를 제한하지만 악성 모듈이 보내
 ## 테스트
 
 `@deck/sdk/testing`의 createMockHost로 브리지 계약을 검증해요. 파일 읽기 테스트는 자신의 모듈 origin과 대체 fetch를 제공해 합성 바이트를 반환해요. SDK 테스트 통과는 실제 Windows WebView2의 파일·자산·Worker·커스텀 프로토콜 동작 검증을 대신하지 않아요.
+
+캡처 API는 `deck.capture`, `deck.overlay`, `deck.globalShortcut`과 fs 1.2 destination 메서드로 제공해요. 반환 핸들은 소유 모듈만 사용할 수 있고 경로는 노출하지 않아요. 이미지 데이터는 `fs.readChunks`로 읽어요.

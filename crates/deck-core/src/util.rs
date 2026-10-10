@@ -25,11 +25,13 @@ pub fn is_valid_module_id(id: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-')
 }
 
-/// Capability names: lowercase ASCII letters and digits, starting with a letter (e.g. `storage`).
+/// Capability names: up to 32 ASCII bytes; lowercase first, internal single hyphens (ADR-0017).
 pub fn is_valid_cap_name(name: &str) -> bool {
     let mut chars = name.chars();
     matches!(chars.next(), Some(c) if c.is_ascii_lowercase())
-        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        && !name.ends_with('-')
+        && !name.contains("--")
         && name.len() <= 32
 }
 
@@ -124,5 +126,28 @@ mod tests {
         );
         assert!(is_sha256_hex(&h));
         assert!(!is_sha256_hex(&h.to_uppercase()));
+    }
+}
+
+#[cfg(test)]
+mod cap_name_tests {
+    use super::*;
+    #[test]
+    fn approved_hyphen_names_preserve_strict_boundaries() {
+        assert!(is_valid_cap_name("global-shortcut"));
+        assert!(is_valid_cap_name("fs"));
+        for name in [
+            "-capture",
+            "capture-",
+            "global--shortcut",
+            "Global-shortcut",
+            "global_shortcut",
+            "1capture",
+            "",
+            "가상",
+        ] {
+            assert!(!is_valid_cap_name(name));
+        }
+        assert!(!is_valid_cap_name(&"a".repeat(33)));
     }
 }

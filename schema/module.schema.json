@@ -131,6 +131,10 @@
       "description": "Optional capabilities and semver ranges (MOD-007).",
       "propertyNames": {
         "enum": [
+          "global-shortcut",
+          "overlay",
+          "capture",
+          "clipboard",
           "system",
           "storage",
           "fs",
@@ -146,6 +150,10 @@
       "description": "Required capabilities and semver ranges.",
       "propertyNames": {
         "enum": [
+          "global-shortcut",
+          "overlay",
+          "capture",
+          "clipboard",
           "system",
           "storage",
           "fs",

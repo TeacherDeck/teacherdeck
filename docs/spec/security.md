@@ -6,7 +6,7 @@
 
 1. **네이티브 권한은 호스트에만.** 모듈은 웹 번들이며 Tauri IPC에 닿지 못한다. OS 접근은 Rust 캡을 거친다([ADR-0003](../adr/0003-module-isolation.md)).
 2. **origin 분리.** 셸과 각 모듈, 서로 다른 모듈은 모두 독립 origin이다. iframe `allow-same-origin`의 안전성은 이 분리에 기댄다([ADR-0013](../adr/0013-module-origin-isolation.md)).
-3. **최소 권한.** Tauri ACL은 셸 메인 창에만, 필요한 커맨드만 준다.
+3. **최소 권한.** Tauri ACL은 셸 main과 명시 승인된 로컬 보조 창에만, 필요한 커맨드만 준다.
 4. **서명된 업데이트.** 앱은 Tauri updater 서명 검증을 거쳐서만 업데이트된다. 업데이터 서명키가 신뢰 루트다.
 5. **보안 설정 변경은 정지 조건.** CSP, ACL, updater, 커스텀 프로토콜 변경은 GEN-005에 따라 사람 승인을 받는다.
 
@@ -27,11 +27,13 @@
 
 셸의 자체 제목 표시줄은 로컬 `main` 창의 최소 창 조작 권한 6개만 사용한다. 최소화·최대화 토글·최대화 상태 조회·닫기·드래그·드래그 영역 더블클릭이며, 원격 모듈 origin이나 전체 window 권한을 허용하지 않는다. 정확한 결정과 승인 범위는 [ADR-0015](../adr/0015-shell-window-controls.md)에 기록한다.
 
+승인된 캡처 보조 창 ACL은 identifier `capture-overlay`, local=true, windows `capture-overlay-*`와 `capture-toolbar-*` 두 prefix만 허용한다. 문서는 고정된 로컬 셸 `/overlay` route이며 모듈 origin·외부 URL은 허용하지 않는다. 정확히 `core:event:allow-listen`, `core:event:allow-unlisten`, `core:window:allow-start-dragging`, `core:window:allow-start-resize-dragging`, `allow-overlay-ui-state`, `allow-overlay-ui-action` 여섯 권한만 제공한다. Tauri enabled capability 목록은 `main`, `capture-overlay`이다. 일반 host_invoke 또는 frontend fs/shell/http/global-shortcut plugin 권한은 보조 창에 주지 않는다. 호출 label을 호스트 보유 overlay/toolbar 소유자 매핑과 대조한다. 결정과 사용자 승인은 [ADR-0017](../adr/0017-native-capture-sessions.md)에 기록한다.
+
 ## 3. 규칙
 
 - **SEC-001** [MUST] 셸 webview는 로컬 번들만 로드하며 CSP를 설정한다. 원격 URL을 로드하지 않는다. — 강제: tauri.conf 검사 `check-security`
 - **SEC-002** [MUST] 모듈은 셸 및 다른 모듈과 독립 origin에서만 서빙한다. Windows origin은 `http://deckmod.<id>.modules.localhost`다. 셸 origin에서 모듈 코드를 서빙하거나 셸 문서에 모듈 스크립트를 주입하지 않는다. iframe `allow-same-origin`이 안전하다는 전제가 이 규칙이다. — 강제: origin 생성·authority 검증(`origins.rs`, `protocol.rs`), 셸 브리지·CSP 테스트
-- **SEC-003** [MUST] Tauri ACL은 셸 메인 창에만, 최소 권한으로 준다. 프론트엔드에 fs/shell/http 플러그인 권한을 주지 않는다. OS 접근은 Rust 캡을 경유한다. — 강제: `check-security`
+- **SEC-003** [MUST] Tauri ACL은 셸 main과 ADR-0017의 로컬 캡처 보조 창에만 아래 정확한 최소 권한으로 준다. 프론트엔드에 fs/shell/http 플러그인 권한을 주지 않는다. OS 접근은 Rust 캡을 경유한다. — 강제: `check-security`
 - **SEC-004** [MUST] 모듈 origin에서 Tauri IPC에 접근할 수 없어야 하며, 이를 검증하는 테스트나 절차를 유지한다. — 강제: 검증 절차 [sec-004.md](../security/sec-004.md)
 - **SEC-005** [MUST] `deckmod` 프로토콜은 정확한 `<id>.modules.localhost` authority와 경로 id를 대조하고 정규화 후 해당 모듈 루트 하위만 서빙한다. userinfo·port·추가 label·후행 점, `..`, 퍼센트 인코딩 우회, 심볼릭 링크를 거부하고, 지정 CSP와 `nosniff` 헤더를 붙인다. 예약 파일 리소스도 해당 모듈 authority 아래에서 권한을 검사한다. bare `deckmod.localhost`는 명시 활성화한 디버그 프로브만 제공한다. — 강제: 프로토콜 테스트(`src-tauri/src/protocol.rs`)
 - **SEC-006** [MUST] 패키지 설치 시 zip-slip·크기·SHA256SUMS를 검증하고, 원격 카탈로그 도입 시 서명 검증을 추가한다. — 강제: deck-core `package.rs` 테스트

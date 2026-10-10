@@ -198,3 +198,43 @@ mod tests {
         assert!(serde_json::from_str::<PickFilesArgs>(r#"{"path":"C:/"}"#).is_err());
     }
 }
+
+/// DestinationGrant contract.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DestinationGrant {
+    /// grant handle; opaque handles never expose paths.
+    pub grant_handle: String,
+    /// label; opaque handles never expose paths.
+    pub label: String,
+    /// persistent; opaque handles never expose paths.
+    pub persistent: bool,
+    /// available; opaque handles never expose paths.
+    pub available: bool,
+}
+
+/// PickDestinationArgs contract.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PickDestinationArgs {
+    /// remember; opaque handles never expose paths.
+    pub remember: bool,
+}
+
+/// DestinationArgs contract.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DestinationArgs {
+    /// grant handle; opaque handles never expose paths.
+    pub grant_handle: String,
+}
+
+/// Retrieve one grant or the owner's remembered grant.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DestinationStatusArgs {
+    /// Opaque saved grant; omitted to retrieve the current remembered destination.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub grant_handle: Option<String>,
+}

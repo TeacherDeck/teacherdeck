@@ -139,7 +139,7 @@ Additional terms: see LICENSE-ADDITIONAL-TERMS
 | PRV-007 | MUST | 모듈 데이터는 모듈 id로 격리한다. | storage 캡 테스트 | [privacy.md](privacy.md) |
 | SEC-001 | MUST | 셸 webview는 로컬 번들만 로드하며 CSP를 설정한다. | tauri.conf 검사 `check-security` | [security.md](security.md) |
 | SEC-002 | MUST | 모듈은 셸 및 다른 모듈과 독립 origin에서만 서빙한다. | origin 생성·authority 검증(`origins.rs`, `protocol.rs`), 셸 브리지·CSP 테스트 | [security.md](security.md) |
-| SEC-003 | MUST | Tauri ACL은 셸 메인 창에만, 최소 권한으로 준다. | `check-security` | [security.md](security.md) |
+| SEC-003 | MUST | Tauri ACL은 셸 main과 ADR-0017의 로컬 캡처 보조 창에만 아래 정확한 최소 권한으로 준다. | `check-security` | [security.md](security.md) |
 | SEC-004 | MUST | 모듈 origin에서 Tauri IPC에 접근할 수 없어야 하며, 이를 검증하는 테스트나 절차를 유지한다. | 검증 절차 [sec-004.md](../security/sec-004.md) | [security.md](security.md) |
 | SEC-005 | MUST | `deckmod` 프로토콜은 정확한 `<id>.modules.localhost` authority와 경로 id를 대조하고 정규화 후 해당 모듈 루트 하위만 서빙한다. | 프로토콜 테스트(`src-tauri/src/protocol.rs`) | [security.md](security.md) |
 | SEC-006 | MUST | 패키지 설치 시 zip-slip·크기·SHA256SUMS를 검증하고, 원격 카탈로그 도입 시 서명 검증을 추가한다. | deck-core `package.rs` 테스트 | [security.md](security.md) |

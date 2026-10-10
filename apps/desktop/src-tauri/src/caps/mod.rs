@@ -14,6 +14,7 @@ use tauri::AppHandle;
 
 use crate::state::AppState;
 
+pub mod clipboard;
 mod fs;
 mod storage;
 mod system;
@@ -25,6 +26,14 @@ pub use fs::serve_file_resource;
 /// Handler selected for a `(cap, method)` pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Route {
+    /// `clipboard.*`
+    Clipboard(clipboard::Op),
+    /// Native capture sessions.
+    Capture,
+    /// Trusted overlay windows.
+    Overlay,
+    /// OS shortcut registration.
+    Shortcut,
     /// `system.info`
     SystemInfo,
     /// `storage.*`
@@ -37,7 +46,12 @@ pub enum Route {
 
 /// Finds the handler for a registry method.
 pub fn route(cap: &str, method: &str) -> Option<Route> {
+    deck_core::caps::method(cap, method)?;
     Some(match (cap, method) {
+        ("capture", _) => Route::Capture,
+        ("overlay", _) => Route::Overlay,
+        ("global-shortcut", _) => Route::Shortcut,
+        ("clipboard", m) => Route::Clipboard(clipboard::Op::parse(m)?),
         ("system", "info") => Route::SystemInfo,
         ("storage", m) => Route::Storage(storage::Op::parse(m)?),
         ("fs", m) => Route::Fs(fs::Op::parse(m)?),
@@ -77,6 +91,12 @@ pub async fn dispatch(
     args: Value,
 ) -> Result<Value, DeckError> {
     match route(cap, method) {
+        Some(Route::Capture) => {
+            crate::capture_host::capture_call(app, module_id, method, args).await
+        }
+        Some(Route::Overlay) => crate::capture_host::overlay_call(app, module_id, method, args),
+        Some(Route::Shortcut) => crate::capture_host::shortcut_call(app, module_id, method, args),
+        Some(Route::Clipboard(op)) => clipboard::call(app, op, args).await,
         Some(Route::SystemInfo) => system::info(state, args),
         Some(Route::Storage(op)) => storage::call(state, module_id, op, args),
         Some(Route::Fs(op)) => fs::call(app, state, module_id, op, args).await,

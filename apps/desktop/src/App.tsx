@@ -231,6 +231,30 @@ export function App() {
     [bridge, page, mounted],
   );
 
+  useEffect(() => {
+    const off = host.onModuleEvent((event) => {
+      const entry = modulesRef.current.find((m) => m.resolution.id === event.moduleId);
+      if (!entry?.resolution.picked || !entry.entryUrl) return;
+      const caps = {
+        "capture.completed": "capture",
+        "capture.failed": "capture",
+        "overlay.changed": "overlay",
+        "shortcut.triggered": "global-shortcut",
+      } as const;
+      if (!Object.hasOwn(caps, event.topic)) return;
+      const cap = caps[event.topic];
+      if (!entry.manifest || (!(cap in entry.manifest.requires) && !(cap in entry.manifest.optional))) return;
+      bridge.sendEvent(event.moduleId, event.topic, event.payload);
+    });
+    return () => void off.then((fn) => fn()).catch(() => undefined);
+  }, [bridge]);
+  useEffect(() => {
+    const off = host.onShowModule(({ moduleId }) => {
+      if (modulesRef.current.some((m) => m.resolution.id === moduleId && m.resolution.picked && m.entryUrl))
+        navigate({ kind: "module", id: moduleId });
+    });
+    return () => void off.then((fn) => fn()).catch(() => undefined);
+  }, [navigate]);
   const changeTheme = (p: ThemePreference) => {
     savePreference(p);
     setPref(p);

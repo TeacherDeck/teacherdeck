@@ -5,6 +5,134 @@
       "methods": [
         {
           "long": false,
+          "name": "status",
+          "summary": "등록 단축키 조회"
+        },
+        {
+          "long": false,
+          "name": "register",
+          "summary": "register"
+        },
+        {
+          "long": false,
+          "name": "replace",
+          "summary": "replace"
+        },
+        {
+          "long": false,
+          "name": "unregister",
+          "summary": "unregister"
+        }
+      ],
+      "name": "global-shortcut",
+      "summary": "승인된 네이티브 global-shortcut 기능",
+      "version": "1.0.0"
+    },
+    {
+      "methods": [
+        {
+          "long": false,
+          "name": "status",
+          "summary": "영역 창 현재 상태"
+        },
+        {
+          "long": false,
+          "name": "create",
+          "summary": "create"
+        },
+        {
+          "long": false,
+          "name": "update",
+          "summary": "update"
+        },
+        {
+          "long": false,
+          "name": "show",
+          "summary": "show"
+        },
+        {
+          "long": false,
+          "name": "hide",
+          "summary": "hide"
+        },
+        {
+          "long": false,
+          "name": "close",
+          "summary": "close"
+        }
+      ],
+      "name": "overlay",
+      "summary": "승인된 네이티브 overlay 기능",
+      "version": "1.0.0"
+    },
+    {
+      "methods": [
+        {
+          "long": false,
+          "name": "displays",
+          "summary": "displays"
+        },
+        {
+          "long": true,
+          "name": "capture",
+          "summary": "capture"
+        },
+        {
+          "long": false,
+          "name": "arm",
+          "summary": "arm"
+        },
+        {
+          "long": false,
+          "name": "status",
+          "summary": "status"
+        },
+        {
+          "long": false,
+          "name": "update",
+          "summary": "update"
+        },
+        {
+          "long": true,
+          "name": "trigger",
+          "summary": "시작한 세션에 한 장 저장"
+        },
+        {
+          "long": false,
+          "name": "resetSequence",
+          "summary": "resetSequence"
+        },
+        {
+          "long": false,
+          "name": "stop",
+          "summary": "stop"
+        }
+      ],
+      "name": "capture",
+      "summary": "승인된 네이티브 capture 기능",
+      "version": "1.0.0"
+    },
+    {
+      "methods": [
+        {
+          "long": false,
+          "name": "writeText",
+          "summary": "일반 텍스트 복사(256KiB 이하)"
+        },
+        {
+          "long": false,
+          "name": "writeRichText",
+          "summary": "구조화 서식과 일반 텍스트 복사(256KiB 이하)"
+        }
+      ],
+      "name": "clipboard",
+      "summary": "구조화 클립보드 출력(읽기 없음)",
+      "version": "1.0.0"
+    },
+    {
+      "methods": [
+        {
+          "long": false,
           "name": "info",
           "summary": "앱 버전, OS 이름·버전·빌드, 로캘"
         }
@@ -42,6 +170,26 @@
     },
     {
       "methods": [
+        {
+          "long": true,
+          "name": "pickDestination",
+          "summary": "명시적으로 기억할 새 파일 저장 폴더 선택"
+        },
+        {
+          "long": false,
+          "name": "destinationStatus",
+          "summary": "저장 폴더 권한 상태"
+        },
+        {
+          "long": false,
+          "name": "revealDestination",
+          "summary": "저장 폴더 열기"
+        },
+        {
+          "long": false,
+          "name": "revokeDestination",
+          "summary": "저장 폴더 권한 해제"
+        },
         {
           "long": true,
           "name": "pickFiles",
@@ -105,7 +253,7 @@
       ],
       "name": "fs",
       "summary": "파일 선택과 핸들(경로는 노출하지 않음)",
-      "version": "1.1.0"
+      "version": "1.2.0"
     },
     {
       "methods": [

@@ -29,6 +29,8 @@ pub struct AppState {
     pub handles: Mutex<HandleTable<FileHandleTarget, OsRng>>,
     /// File transfer grants, distinct from picked-file/folder handles.
     pub transfers: Mutex<FileTransfers>,
+    /// Append-new-only persistent destination permissions.
+    pub destinations: Mutex<crate::destination::DestinationService>,
     /// Module storage (PRV-007).
     pub storage: StorageService,
     /// Window state each module changed, restored when it hides.

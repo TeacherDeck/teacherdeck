@@ -16,7 +16,10 @@ use tauri::{DragDropEvent, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, W
 
 mod bridge;
 mod caps;
+pub mod capture_host;
+mod capture_native;
 mod commands;
+pub mod destination;
 pub mod file_output;
 pub mod file_read;
 pub mod file_transfer;
@@ -110,12 +113,22 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     }
     let store = ModuleStore::load_bundled(&paths.resource_dir()?, &host_caps);
 
+    app.manage(
+        caps::clipboard::ClipboardService::new()
+            .map_err(|_| std::io::Error::other("clipboard worker unavailable"))?,
+    );
+
+    app.manage(capture_host::CaptureService::default());
     app.manage(AppState {
         app_version,
         host_caps,
         modules: RwLock::new(store),
         handles: Mutex::new(HandleTable::new(OsRng)),
         transfers: Mutex::new(Default::default()),
+        destinations: Mutex::new(
+            destination::DestinationService::open(paths.app_data_dir()?.join("destination-grants"))
+                .map_err(|_| std::io::Error::other("destination grants unavailable"))?,
+        ),
         storage: StorageService::new(paths.app_data_dir()?.join("module-data")),
         overrides: Mutex::new(Default::default()),
         active: Mutex::new(None),
@@ -164,9 +177,21 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .mica
         .store(mica, std::sync::atomic::Ordering::Relaxed);
     window.show()?;
+    if capture_host::setup_tray(app.handle()).is_err() {
+        tracing::warn!("capture tray unavailable");
+    }
 
     let handle = app.handle().clone();
     window.on_window_event(move |event| {
+        if let WindowEvent::CloseRequested { api, .. } = event
+            && capture_host::background_active(&handle)
+        {
+            api.prevent_close();
+            if let Some(window) = handle.get_webview_window(MAIN_WINDOW) {
+                let _ = window.hide();
+            }
+        }
+
         if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {
             on_drop(&handle, paths);
         }
@@ -199,14 +224,16 @@ fn on_drop(app: &tauri::AppHandle, paths: &[std::path::PathBuf]) {
 
 /// Builds and runs the app.
 pub fn run() {
-    let result = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         // Must be first so a second launch focuses the existing window.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(w) = app.get_webview_window(MAIN_WINDOW) {
+                let _ = w.show();
                 let _ = w.unminimize();
                 let _ = w.set_focus();
             }
-        }))
+        }));
+    let result = capture_host::configure(builder)
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .register_asynchronous_uri_scheme_protocol(MODULE_SCHEME, |ctx, request, responder| {
@@ -224,6 +251,8 @@ pub fn run() {
             commands::install_update,
             commands::restart_app,
             commands::sec_probe_report,
+            capture_host::overlay_ui_state,
+            capture_host::overlay_ui_action,
         ])
         .setup(setup)
         .run(tauri::generate_context!());

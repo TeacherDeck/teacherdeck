@@ -65,6 +65,9 @@ impl Fixture {
             modules: RwLock::new(store_with(fs_declared)),
             handles: Mutex::new(HandleTable::new(OsRng)),
             transfers: Mutex::new(FileTransfers::default()),
+            destinations: Mutex::new(
+                crate::destination::DestinationService::open(guard.path().join("grants")).unwrap(),
+            ),
             storage: StorageService::new(guard.path().join("storage")),
             overrides: Mutex::new(HashMap::new()),
             active: Mutex::new(Some("sample-tool".to_owned())),

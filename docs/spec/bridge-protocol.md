@@ -101,3 +101,7 @@ module                     shell
 - **BRG-007** [MUST] 메시지는 JSON 직렬화 가능해야 하며 1MB를 넘지 않는다. 초과 시 `INVALID_ARGS`를 반환한다. — 강제: SDK·셸 검사와 테스트
 - **BRG-008** [MUST] 프로토콜 버전은 정수 필드 `deck`이다. 깨지는 변경 시 증가시키고, 셸은 N과 N-1을 지원한다. — 강제: [manual]
 - **BRG-009** [MUST] v1 이벤트는 `theme.changed`, `fs.dropped`(fs 캡이 있는 활성 모듈에만), `module.visibility`, `job.progress`다. 새 이벤트 추가는 스펙 변경이다. — 강제: TS 유니온 타입(`EVENT_TOPICS`, `EventPayloads`)
+
+### 승인된 캡처 이벤트 (ADR-0017)
+
+기존 deck:1 envelope를 유지하며 capture.completed({sessionHandle,result}), capture.failed({sessionHandle,error}), overlay.changed(OverlayInfo), shortcut.triggered({shortcutHandle})를 추가한다. Rust 캡 원천 타입을 pnpm gen으로 SDK에 생성한다. 이벤트는 살아 있는 소유 iframe에만 전달하며 inactive broadcast나 pixels는 포함하지 않는다. 다시 연 모듈은 capture.status({})로 상태를 복원한다. 별도 셸 창의 deck://overlay-state는 OverlayUiState이며 region/toolbar label 매핑으로 소유자를 판정한다. overlay_ui_state와 overlay_ui_action은 payload의 자기 신고 owner를 받지 않는다.

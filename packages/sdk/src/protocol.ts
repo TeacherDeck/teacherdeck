@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 // Bridge protocol v1 (docs/spec/bridge-protocol.md). Shared by the SDK and the shell.
+import type { CaptureCompletedEvent } from "./generated/CaptureCompletedEvent.ts";
+import type { CaptureFailedEvent } from "./generated/CaptureFailedEvent.ts";
+import type { OverlayInfo } from "./generated/OverlayInfo.ts";
+import type { ShortcutTriggeredEvent } from "./generated/ShortcutTriggeredEvent.ts";
 import type { DeckError } from "./generated/DeckError.ts";
 import type { DroppedFiles } from "./generated/DroppedFiles.ts";
 import type { ErrorCode } from "./generated/ErrorCode.ts";
@@ -8,7 +12,7 @@ import type { ErrorCode } from "./generated/ErrorCode.ts";
 /** Integer protocol version carried in every message (BRG-008). */
 export const PROTOCOL_VERSION = 1;
 /** SDK semver (VER-006). */
-export const SDK_VERSION = "0.2.0";
+export const SDK_VERSION = "0.4.0";
 /** Default request timeout; `long` registry methods are exempt (BRG-004). */
 export const DEFAULT_TIMEOUT_MS = 30_000;
 /** A module must say hello within this time after loading (BRG-003). */
@@ -21,7 +25,16 @@ export const SHELL_ORIGINS: readonly string[] = ["http://tauri.localhost", "http
 export const MODULE_ORIGIN = "http://deckmod.localhost";
 
 /** v1 events (BRG-009). Adding one is a spec change. */
-export const EVENT_TOPICS = ["theme.changed", "fs.dropped", "module.visibility", "job.progress"] as const;
+export const EVENT_TOPICS = [
+  "theme.changed",
+  "fs.dropped",
+  "module.visibility",
+  "job.progress",
+  "capture.completed",
+  "capture.failed",
+  "overlay.changed",
+  "shortcut.triggered",
+] as const;
 export type EventTopic = (typeof EVENT_TOPICS)[number];
 
 export interface ThemePayload {
@@ -32,6 +45,10 @@ export interface ThemePayload {
 }
 
 export interface EventPayloads {
+  "capture.completed": CaptureCompletedEvent;
+  "capture.failed": CaptureFailedEvent;
+  "overlay.changed": OverlayInfo;
+  "shortcut.triggered": ShortcutTriggeredEvent;
   "theme.changed": ThemePayload;
   "fs.dropped": DroppedFiles;
   "module.visibility": { visible: boolean };

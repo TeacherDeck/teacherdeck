@@ -1,0 +1,21 @@
+{
+  "identifier": "capture-overlay",
+  "remote": {
+    "urls": [
+      "https://example.invalid"
+    ]
+  },
+  "windows": [
+    "capture-overlay-*",
+    "capture-toolbar-*"
+  ],
+  "local": true,
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:window:allow-start-dragging",
+    "core:window:allow-start-resize-dragging",
+    "allow-overlay-ui-state",
+    "allow-overlay-ui-action"
+  ]
+}

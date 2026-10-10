@@ -32,6 +32,14 @@ pub enum Op {
     PickFiles,
     /// `pickFolder`
     PickFolder,
+    /// Persistent append-new destination selection.
+    PickDestination,
+    /// Restores an owned grant.
+    DestinationStatus,
+    /// Reveals an owned grant.
+    RevealDestination,
+    /// Revokes metadata only.
+    RevokeDestination,
     /// `stat`
     Stat,
     /// `reveal`
@@ -60,6 +68,10 @@ impl Op {
         Some(match method {
             "pickFiles" => Self::PickFiles,
             "pickFolder" => Self::PickFolder,
+            "pickDestination" => Self::PickDestination,
+            "destinationStatus" => Self::DestinationStatus,
+            "revealDestination" => Self::RevealDestination,
+            "revokeDestination" => Self::RevokeDestination,
             "stat" => Self::Stat,
             "reveal" => Self::Reveal,
             "openRead" => Self::OpenRead,
@@ -182,6 +194,75 @@ pub async fn call(
         .map_err(|_| internal())?
         .generation(module_id);
     match op {
+        Op::PickDestination => {
+            let a: deck_core::caps::fs::PickDestinationArgs = parse_args(args)?;
+            let dialog = app
+                .dialog()
+                .file()
+                .set_title("새 캡처 파일을 저장할 폴더 선택");
+            let picked =
+                tauri::async_runtime::spawn_blocking(move || dialog.blocking_pick_folder())
+                    .await
+                    .map_err(|_| internal())?;
+            let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
+                return Ok(Value::Null);
+            };
+            let message = if a.remember {
+                "이 폴더에 새 캡처 파일만 저장하고, 다음 실행에도 이 권한을 기억할까요? 기존 파일은 수정하지 않아요."
+            } else {
+                "이 폴더에 새 캡처 파일만 저장하도록 허용할까요? 기존 파일은 수정하지 않아요."
+            };
+            let confirm = app
+                .dialog()
+                .message(message)
+                .title("캡처 저장 권한")
+                .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancel);
+            if !tauri::async_runtime::spawn_blocking(move || confirm.blocking_show())
+                .await
+                .map_err(|_| internal())?
+            {
+                return Ok(Value::Null);
+            }
+            let store = state.modules.read().map_err(|_| internal())?;
+            crate::bridge::authorize(&store, &state.host_caps, module_id, "fs", "pickDestination")?;
+            drop(store);
+            if state
+                .transfers
+                .lock()
+                .map_err(|_| internal())?
+                .generation(module_id)
+                != generation
+            {
+                return Err(DeckError::new(
+                    ErrorCode::Cancelled,
+                    "폴더 선택을 취소했어요.",
+                ));
+            }
+            return to_value(&crate::destination::pick(
+                state, module_id, &path, a.remember,
+            )?);
+        }
+        Op::DestinationStatus => {
+            let a: deck_core::caps::fs::DestinationStatusArgs = parse_args(args)?;
+            return to_value(&crate::destination::status(
+                state,
+                module_id,
+                a.grant_handle.as_deref(),
+            )?);
+        }
+        Op::RevealDestination | Op::RevokeDestination => {
+            let a: deck_core::caps::fs::DestinationArgs = parse_args(args)?;
+            if op == Op::RevealDestination {
+                crate::destination::reveal(state, module_id, &a.grant_handle)?;
+            } else {
+                crate::destination::revoke(state, module_id, &a.grant_handle)?;
+                crate::capture_host::stop_owner(app, module_id);
+            }
+            return Ok(Value::Null);
+        }
+        _ => {}
+    }
+    match op {
         Op::PickFiles => {
             let a: PickFilesArgs = parse_args(args)?;
             let multiple = a.multiple.unwrap_or(false);
@@ -299,6 +380,10 @@ impl Op {
             Self::CloseOutputFolder => "closeOutputFolder",
             Self::PickFiles => "pickFiles",
             Self::PickFolder => "pickFolder",
+            Self::PickDestination => "pickDestination",
+            Self::DestinationStatus => "destinationStatus",
+            Self::RevealDestination => "revealDestination",
+            Self::RevokeDestination => "revokeDestination",
             Self::Stat => "stat",
             Self::Reveal => "reveal",
         }

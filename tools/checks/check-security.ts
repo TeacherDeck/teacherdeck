@@ -8,6 +8,17 @@ import type { Violation } from "./lib/report.ts";
 
 export const TAURI_DIR = "apps/desktop/src-tauri";
 export const MAIN_WINDOW = "main";
+const OVERLAY_LABELS = ["capture-overlay-*", "capture-toolbar-*"];
+const OVERLAY_PERMISSIONS = [
+  "core:event:allow-listen",
+  "core:event:allow-unlisten",
+  "core:window:allow-start-dragging",
+  "core:window:allow-start-resize-dragging",
+  "allow-overlay-ui-state",
+  "allow-overlay-ui-action",
+];
+const sameStrings = (value: unknown, expected: string[]): boolean =>
+  Array.isArray(value) && value.length === expected.length && expected.every((item) => value.includes(item));
 const FORBIDDEN_PLUGIN_PREFIXES = ["fs:", "shell:", "http:"];
 const SIGNING_SECRET_RE = /secrets\.TAURI_SIGNING_/;
 const SHA_PIN_RE = /^[\w.-]+\/[\w./-]+@[0-9a-f]{40}$/;
@@ -38,6 +49,19 @@ function checkTauri(root: string, v: Violation[]): void {
     const app = isRecord(conf) && isRecord(conf["app"]) ? conf["app"] : {};
     const build = isRecord(conf) && isRecord(conf["build"]) ? conf["build"] : {};
     const security = isRecord(app["security"]) ? app["security"] : {};
+    const enabledCaps = security["capabilities"];
+    if (
+      enabledCaps !== undefined &&
+      !sameStrings(enabledCaps, ["main"]) &&
+      !sameStrings(enabledCaps, ["main", "capture-overlay"])
+    ) {
+      v.push({
+        rule: "SEC-003",
+        file: confPath,
+        message:
+          "활성 ACL은 main과 승인된 capture-overlay 식별자만 허용해요. 인라인 권한이나 다른 창 ACL은 허용하지 않아요.",
+      });
+    }
     const csp = security["csp"];
     if (csp === undefined || csp === null || csp === "" || (isRecord(csp) && Object.keys(csp).length === 0)) {
       v.push({ rule: "SEC-001", file: confPath, message: "app.security.csp가 설정돼 있지 않아요." });
@@ -89,8 +113,30 @@ function checkTauri(root: string, v: Violation[]): void {
     const cap = readJson(root, f);
     if (!isRecord(cap)) continue;
     const windows = cap["windows"];
-    if (!Array.isArray(windows) || windows.length !== 1 || windows[0] !== MAIN_WINDOW) {
-      v.push({ rule: "SEC-003", file: f, message: `windows는 ["${MAIN_WINDOW}"]만 허용해요.` });
+    // ADR-0017: the one approved local overlay ACL is an exact contract, never a broad exception.
+    const overlay = f === `${TAURI_DIR}/capabilities/overlay.json` && cap["identifier"] === "capture-overlay";
+    if (overlay) {
+      if (
+        !sameStrings(windows, OVERLAY_LABELS) ||
+        cap["local"] !== true ||
+        !sameStrings(cap["permissions"], OVERLAY_PERMISSIONS)
+      ) {
+        v.push({
+          rule: "SEC-003",
+          file: f,
+          message: "캡처 보조 창은 승인된 두 label, local:true와 이벤트·드래그·오버레이 전용 명령 6개만 허용해요.",
+        });
+      }
+    } else if (
+      !sameStrings(windows, [MAIN_WINDOW]) ||
+      cap["identifier"] === "capture-overlay" ||
+      f.endsWith("/overlay.json")
+    ) {
+      v.push({
+        rule: "SEC-003",
+        file: f,
+        message: `일반 ACL의 windows는 ["${MAIN_WINDOW}"]만 허용해요. 캡처 예외는 승인된 overlay.json 계약에만 적용돼요.`,
+      });
     }
     if (cap["webviews"] !== undefined) {
       v.push({ rule: "SEC-003", file: f, message: "webviews 지정은 쓰지 않아요. 셸 메인 창에만 권한을 줘요." });

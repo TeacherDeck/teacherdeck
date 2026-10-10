@@ -1,6 +1,28 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
+import type { DisplayInfo } from "./generated/DisplayInfo.ts";
+import type { CaptureArgs } from "./generated/CaptureArgs.ts";
+import type { CaptureResult } from "./generated/CaptureResult.ts";
+import type { CaptureArmArgs } from "./generated/CaptureArmArgs.ts";
+import type { CaptureSession } from "./generated/CaptureSession.ts";
+import type { CaptureStatusArgs } from "./generated/CaptureStatusArgs.ts";
+import type { CaptureSessionArgs } from "./generated/CaptureSessionArgs.ts";
+import type { CaptureUpdateArgs } from "./generated/CaptureUpdateArgs.ts";
+import type { OverlayInfo } from "./generated/OverlayInfo.ts";
+import type { OverlayCreateArgs } from "./generated/OverlayCreateArgs.ts";
+import type { OverlayArgs } from "./generated/OverlayArgs.ts";
+import type { OverlayUpdateArgs } from "./generated/OverlayUpdateArgs.ts";
+import type { ShortcutRegisterArgs } from "./generated/ShortcutRegisterArgs.ts";
+import type { ShortcutInfo } from "./generated/ShortcutInfo.ts";
+import type { ShortcutArgs } from "./generated/ShortcutArgs.ts";
+import type { ShortcutReplaceArgs } from "./generated/ShortcutReplaceArgs.ts";
+import type { DestinationGrant } from "./generated/DestinationGrant.ts";
+import type { PickDestinationArgs } from "./generated/PickDestinationArgs.ts";
+import type { DestinationStatusArgs } from "./generated/DestinationStatusArgs.ts";
+import type { DestinationArgs } from "./generated/DestinationArgs.ts";
 // Bridge client used by every module (packages/sdk/AGENTS.md). Framework-agnostic.
+import type { ClipboardWriteTextArgs } from "./generated/ClipboardWriteTextArgs.ts";
+import type { ClipboardWriteRichTextArgs } from "./generated/ClipboardWriteRichTextArgs.ts";
 import type { DroppedFiles } from "./generated/DroppedFiles.ts";
 import type { FileHandleInfo } from "./generated/FileHandleInfo.ts";
 import type { FolderHandleInfo } from "./generated/FolderHandleInfo.ts";
@@ -91,6 +113,34 @@ export interface Deck {
   on<T extends EventTopic>(topic: T, listener: Listener<T>): () => void;
   /** Detaches from the bridge and rejects pending calls. */
   dispose(): void;
+  readonly capture: {
+    displays(): Promise<DisplayInfo[]>;
+    capture(args: CaptureArgs): Promise<CaptureResult>;
+    arm(args: CaptureArmArgs): Promise<CaptureSession>;
+    status(args: CaptureStatusArgs): Promise<CaptureSession | null>;
+    update(args: CaptureUpdateArgs): Promise<CaptureSession>;
+    trigger(args: CaptureSessionArgs): Promise<CaptureResult>;
+    resetSequence(args: CaptureSessionArgs): Promise<CaptureSession>;
+    stop(args: CaptureSessionArgs): Promise<void>;
+  };
+  readonly overlay: {
+    status(args: OverlayArgs): Promise<OverlayInfo>;
+    create(args: OverlayCreateArgs): Promise<OverlayInfo>;
+    update(args: OverlayUpdateArgs): Promise<OverlayInfo>;
+    show(args: OverlayArgs): Promise<OverlayInfo>;
+    hide(args: OverlayArgs): Promise<OverlayInfo>;
+    close(args: OverlayArgs): Promise<void>;
+  };
+  readonly globalShortcut: {
+    status(args: ShortcutArgs): Promise<ShortcutInfo>;
+    register(args: ShortcutRegisterArgs): Promise<ShortcutInfo>;
+    replace(args: ShortcutReplaceArgs): Promise<ShortcutInfo>;
+    unregister(args: ShortcutArgs): Promise<void>;
+  };
+  readonly clipboard: {
+    writeText(args: ClipboardWriteTextArgs): Promise<void>;
+    writeRichText(args: ClipboardWriteRichTextArgs): Promise<void>;
+  };
   readonly system: { info(): Promise<SystemInfo> };
   readonly storage: {
     get<T = unknown>(key: string): Promise<T | null>;
@@ -99,6 +149,10 @@ export interface Deck {
     keys(): Promise<string[]>;
   };
   readonly fs: {
+    pickDestination(args: PickDestinationArgs): Promise<DestinationGrant | null>;
+    destinationStatus(args: DestinationStatusArgs): Promise<DestinationGrant | null>;
+    revealDestination(args: DestinationArgs): Promise<void>;
+    revokeDestination(args: DestinationArgs): Promise<void>;
     pickFiles(args?: PickFilesArgs): Promise<FileHandleInfo[]>;
     pickFolder(): Promise<FolderHandleInfo | null>;
     stat(handle: string): Promise<FileHandleInfo>;
@@ -293,6 +347,34 @@ export function connect(options: ConnectOptions = {}): Promise<Deck> {
         }
         pending.clear();
       },
+      capture: {
+        displays: () => call<DisplayInfo[]>("capture", "displays", {}),
+        capture: (args) => call<CaptureResult>("capture", "capture", args),
+        arm: (args) => call<CaptureSession>("capture", "arm", args),
+        status: (args) => call<CaptureSession | null>("capture", "status", args),
+        update: (args) => call<CaptureSession>("capture", "update", args),
+        trigger: (args) => call<CaptureResult>("capture", "trigger", args),
+        resetSequence: (args) => call<CaptureSession>("capture", "resetSequence", args),
+        stop: (args) => call("capture", "stop", args).then(() => undefined),
+      },
+      overlay: {
+        status: (args) => call<OverlayInfo>("overlay", "status", args),
+        create: (args) => call<OverlayInfo>("overlay", "create", args),
+        update: (args) => call<OverlayInfo>("overlay", "update", args),
+        show: (args) => call<OverlayInfo>("overlay", "show", args),
+        hide: (args) => call<OverlayInfo>("overlay", "hide", args),
+        close: (args) => call("overlay", "close", args).then(() => undefined),
+      },
+      globalShortcut: {
+        status: (args) => call<ShortcutInfo>("global-shortcut", "status", args),
+        register: (args) => call<ShortcutInfo>("global-shortcut", "register", args),
+        replace: (args) => call<ShortcutInfo>("global-shortcut", "replace", args),
+        unregister: (args) => call("global-shortcut", "unregister", args).then(() => undefined),
+      },
+      clipboard: {
+        writeText: (args) => call("clipboard", "writeText", args).then(() => undefined),
+        writeRichText: (args) => call("clipboard", "writeRichText", args).then(() => undefined),
+      },
       system: { info: () => call<SystemInfo>("system", "info") },
       storage: {
         get: <T>(key: string) => call<T | null>("storage", "get", { key }),
@@ -301,6 +383,10 @@ export function connect(options: ConnectOptions = {}): Promise<Deck> {
         keys: () => call<string[]>("storage", "keys"),
       },
       fs: {
+        pickDestination: (args) => call<DestinationGrant | null>("fs", "pickDestination", args),
+        destinationStatus: (args) => call<DestinationGrant | null>("fs", "destinationStatus", args),
+        revealDestination: (args) => call("fs", "revealDestination", args).then(() => undefined),
+        revokeDestination: (args) => call("fs", "revokeDestination", args).then(() => undefined),
         pickFiles: (args = {}) => call<FileHandleInfo[]>("fs", "pickFiles", args),
         pickFolder: () => call<FolderHandleInfo | null>("fs", "pickFolder"),
         stat: (handle) => call<FileHandleInfo>("fs", "stat", { handle }),

@@ -45,6 +45,8 @@
 | `src/probe.rs` | 디버그 전용 SEC-004 프로브([sec-004.md](../../../docs/security/sec-004.md)) |
 | `capabilities/main.json`, `tauri.conf.json` | ACL·CSP·번들 설정(보호 파일, 정지 조건) |
 
+클립보드 출력은 [ADR-0016](../../../docs/adr/0016-clipboard-output.md)을 따라 구조화 입력만 받고 단일 OS 스레드에서 cloud/history 제외로 처리한다. 읽기와 직접 모듈 plugin 권한은 제공하지 않는다.
+
 ## 캡 추가 절차
 
 [capabilities.md 3절](../../../docs/spec/capabilities.md#3-캡-추가변경-절차)을 따른다. 요약:
@@ -62,3 +64,12 @@
 - [ ] 원본 파일을 덮어쓰거나 지우지 않는다(PRV-006). 필요하면 정지 조건으로 처리한다
 - [ ] 새 `unsafe`가 없다. 있다면 FFI 모듈 안에 있고 `// SAFETY:` 주석이 있다
 - [ ] 정상·권한 거부·잘못된 인자 테스트가 있다(CAP-009)
+
+네이티브 캡처는 [ADR-0017](../../../docs/adr/0017-native-capture-sessions.md)의 사용자 시작 세션과 최소 overlay ACL을 따른다. 설정 iframe이 숨거나 제거되어도 세션을 유지하지만 모듈 권한·저장 grant를 트리거마다 재검사한다. 설정 창 닫기는 정상 트레이가 있는 세션에서만 숨김으로 처리한다.
+
+| 위치 | 추가 책임 |
+|---|---|
+| `src/capture_host.rs` | 모듈 소유 세션·오버레이·전역 단축키, 트레이, 전용 셸 명령, 메타데이터 이벤트 |
+| `src/capture_native.rs` | safe xcap의 모니터별 물리 픽셀 영역 합성과 PNG/JPEG 제한 인코딩 |
+| `src/destination.rs` | 호스트 전용 영속 폴더 grant, revoke와 직렬화한 새 파일 게시 |
+| `capabilities/overlay.json` | 고정된 로컬 캡처 영역·툴바 label만 허용하는 최소 ACL |

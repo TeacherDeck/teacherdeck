@@ -1,5 +1,13 @@
 # 변경 기록
 
+## 0.4.0
+
+- capture·overlay·global-shortcut의 typed API와 소유자 이벤트, fs 1.2의 기억한 저장 폴더 권한 API를 추가했어요. 기존 API와 deck=1 브리지는 유지해요.
+
+## 0.3.0
+
+- 출력 전용 clipboard 1.0의 typed writeText/writeRichText와 구조화 문서 타입을 추가했어요. 기존 API와 브리지 deck=1은 유지해요.
+
 ## 0.2.0
 
 - fs 1.1의 핸들 기반 파일 읽기와 새 결과 폴더의 순차 쓰기 API를 추가했어요.

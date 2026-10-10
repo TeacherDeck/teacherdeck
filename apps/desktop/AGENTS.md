@@ -6,30 +6,31 @@
 
 ## 규칙
 
-| ID | 요약 | 정의 |
-|---|---|---|
-| 추가 | `@tauri-apps/api`는 셸(`apps/desktop/src`)에서만 쓴다. 모듈·패키지에서는 금지한다(MOD-005). | [modules.md](../../docs/spec/modules.md#4-규칙) |
-| BRG-001 | 알려진 모듈 iframe의 contentWindow와 모듈 origin에서 온 메시지만 처리하고, 모듈 id는 iframe 매핑으로 판정한다. | [bridge-protocol.md](../../docs/spec/bridge-protocol.md#5-규칙) |
-| BRG-003 | `hello` 10초 타임아웃 시 로드 오류 화면을 띄운다. | 같은 문서 |
-| BRG-006 | 알 수 없거나 잘못된 메시지는 무시하고 내용 없이 debug 로그만 남긴다. | 같은 문서 |
-| BRG-007 | 1MB 초과 메시지는 `INVALID_ARGS`로 거절한다. | 같은 문서 |
-| BRG-009 | `fs.dropped`는 fs 캡이 있는 활성 모듈에만 보낸다. | 같은 문서 |
-| CAP-008 | 셸의 권한 검사는 보조일 뿐이다. 최종 검사는 Rust가 한다. | [capabilities.md](../../docs/spec/capabilities.md#6-규칙) |
-| SEC-002 | 셸 문서에 모듈 스크립트를 주입하지 않는다. 모듈은 모듈 origin iframe으로만 띄운다. | [security.md](../../docs/spec/security.md#3-규칙) |
-| UI-001~008 | 셸 UI도 디자인 규칙을 모두 따른다. | [design-system.md](../../docs/spec/design-system.md#8-규칙) |
-| GEN-007 | About/크레딧 화면의 저자 표기를 지우거나 약화하지 않는다. | [process.md](../../docs/spec/process.md#5-규칙) |
+| ID         | 요약                                                                                                           | 정의                                                            |
+| ---------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| 추가       | `@tauri-apps/api`는 셸(`apps/desktop/src`)에서만 쓴다. 모듈·패키지에서는 금지한다(MOD-005).                    | [modules.md](../../docs/spec/modules.md#4-규칙)                 |
+| BRG-001    | 알려진 모듈 iframe의 contentWindow와 모듈 origin에서 온 메시지만 처리하고, 모듈 id는 iframe 매핑으로 판정한다. | [bridge-protocol.md](../../docs/spec/bridge-protocol.md#5-규칙) |
+| BRG-003    | `hello` 10초 타임아웃 시 로드 오류 화면을 띄운다.                                                              | 같은 문서                                                       |
+| BRG-006    | 알 수 없거나 잘못된 메시지는 무시하고 내용 없이 debug 로그만 남긴다.                                           | 같은 문서                                                       |
+| BRG-007    | 1MB 초과 메시지는 `INVALID_ARGS`로 거절한다.                                                                   | 같은 문서                                                       |
+| BRG-009    | `fs.dropped`는 fs 캡이 있는 활성 모듈에만 보낸다.                                                              | 같은 문서                                                       |
+| CAP-008    | 셸의 권한 검사는 보조일 뿐이다. 최종 검사는 Rust가 한다.                                                       | [capabilities.md](../../docs/spec/capabilities.md#6-규칙)       |
+| SEC-002    | 셸 문서에 모듈 스크립트를 주입하지 않는다. 모듈은 모듈 origin iframe으로만 띄운다.                             | [security.md](../../docs/spec/security.md#3-규칙)               |
+| UI-001~008 | 셸 UI도 디자인 규칙을 모두 따른다.                                                                             | [design-system.md](../../docs/spec/design-system.md#8-규칙)     |
+| GEN-007    | About/크레딧 화면의 저자 표기를 지우거나 약화하지 않는다.                                                      | [process.md](../../docs/spec/process.md#5-규칙)                 |
 
 ## 파일 지도
 
-| 위치 | 내용 |
-|---|---|
-| `src/host.ts` | Rust 명령 호출(`@tauri-apps/api`는 여기서만) |
-| `src/bridge/ModuleBridge.ts` | 브리지 셸 측 규칙(BRG-001·003·006·007). React와 분리돼 단위 테스트한다 |
-| `src/bridge/keepAlive.ts` | keepAlive LRU |
-| `src/App.tsx` | 상단바, 내비 레일, 페이지 전환, 테마 push, `fs.dropped` 전달 |
-| `src/TitleBar.tsx` | 테두리 없는 창의 상단바(드래그 영역, 캡션 버튼). 창 조작은 `host.ts`의 `windowControls`로만 한다 |
-| `src/pages/` | 덱(Home), 모듈 화면(ModuleHost), 설정, 정보(About, GEN-007 테스트), UI 갤러리(dev) |
-| `src/generated/` | Rust에서 생성한 타입과 서드파티 목록(GEN-006) |
+| 위치                         | 내용                                                                                                                                            |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/host.ts`                | Rust 명령 호출(`@tauri-apps/api`는 여기서만)                                                                                                    |
+| `src/bridge/ModuleBridge.ts` | 브리지 셸 측 규칙(BRG-001·003·006·007). React와 분리돼 단위 테스트한다                                                                          |
+| `src/bridge/keepAlive.ts`    | keepAlive LRU                                                                                                                                   |
+| `src/App.tsx`                | 상단바, 내비 레일, 페이지 전환, 테마 push, `fs.dropped` 전달                                                                                    |
+| `src/CaptureOverlay.tsx`     | 승인된 고정 `/overlay` 셸 화면. 영역·툴바 전용 명령만 사용하며 모듈을 로드하지 않음([ADR-0017](../../docs/adr/0017-native-capture-sessions.md)) |
+| `src/TitleBar.tsx`           | 테두리 없는 창의 상단바(드래그 영역, 캡션 버튼). 창 조작은 `host.ts`의 `windowControls`로만 한다                                                |
+| `src/pages/`                 | 덱(Home), 모듈 화면(ModuleHost), 설정, 정보(About, GEN-007 테스트), UI 갤러리(dev)                                                              |
+| `src/generated/`             | Rust에서 생성한 타입과 서드파티 목록(GEN-006)                                                                                                   |
 
 ## keepAlive 관리
 

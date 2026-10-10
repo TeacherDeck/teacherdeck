@@ -34,6 +34,7 @@ pub fn recover(temp: &TempArea) -> Result<(), DeckError> {
 struct BatchInner {
     folder: PathBuf,
     guard: DirectoryGuard,
+    first_duplicate: usize,
 }
 
 /// A newly created output folder; dropping it never removes the folder or user files.
@@ -42,6 +43,20 @@ pub struct OutputBatch {
 }
 
 impl OutputBatch {
+    /// Host-only append-new destination. The caller must hold the destination grant
+    /// lock until publication, and validate its persisted directory fingerprint.
+    pub(crate) fn append_destination(folder: &Path) -> Result<Self, DeckError> {
+        let guard = DirectoryGuard::open(folder)?;
+        guard.validate()?;
+        Ok(Self {
+            inner: Arc::new(BatchInner {
+                folder: folder.to_path_buf(),
+                guard,
+                first_duplicate: 0,
+            }),
+        })
+    }
+
     /// Creates a new uniquely numbered child folder below a selected ordinary parent.
     pub fn create(parent: &Path, suggested_name: &str) -> Result<Self, DeckError> {
         validate_name(suggested_name)?;
@@ -57,7 +72,11 @@ impl OutputBatch {
                 Ok(()) => {
                     let guard = DirectoryGuard::open(&folder)?;
                     return Ok(Self {
-                        inner: Arc::new(BatchInner { folder, guard }),
+                        inner: Arc::new(BatchInner {
+                            folder,
+                            guard,
+                            first_duplicate: 1,
+                        }),
                     });
                 }
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
@@ -269,7 +288,7 @@ impl FileWriteSession {
         for index in 0..NAME_ATTEMPTS {
             self.batch.guard.validate()?;
             staging.validate()?;
-            let name = numbered(&self.name, index, true);
+            let name = numbered_from(&self.name, index, true, self.batch.first_duplicate);
             if exists_case_insensitive(&self.batch.folder, &name)? {
                 continue;
             }
@@ -516,6 +535,9 @@ pub fn validate_name(name: &str) -> Result<(), DeckError> {
     Ok(())
 }
 fn numbered(name: &str, index: usize, extension: bool) -> String {
+    numbered_from(name, index, extension, 1)
+}
+fn numbered_from(name: &str, index: usize, extension: bool, first_duplicate: usize) -> String {
     if index == 0 {
         return name.into();
     }
@@ -525,10 +547,10 @@ fn numbered(name: &str, index: usize, extension: bool) -> String {
             path.file_stem().and_then(|v| v.to_str()),
             path.extension().and_then(|v| v.to_str()),
         ) {
-            return format!("{stem} ({}).{ext}", index + 1);
+            return format!("{stem} ({}).{ext}", index + first_duplicate);
         }
     }
-    format!("{name} ({})", index + 1)
+    format!("{name} ({})", index + first_duplicate)
 }
 fn exists_case_insensitive(parent: &Path, name: &str) -> Result<bool, DeckError> {
     let folded = name.to_lowercase();

@@ -67,7 +67,11 @@ describe("origin checks (BRG-002)", () => {
     await host.flush();
     const req = host.received.find((m) => m.kind === "req");
     if (req?.kind !== "req") throw new Error("no req");
-    host.deliverRaw({ deck: 1, kind: "res", id: req.id, ok: true, result: "forged" }, "http://deckmod.localhost", host.window.parent);
+    host.deliverRaw(
+      { deck: 1, kind: "res", id: req.id, ok: true, result: "forged" },
+      "http://deckmod.localhost",
+      host.window.parent,
+    );
     expect(await p).toBe(1);
     deck.dispose();
   });
@@ -94,11 +98,17 @@ describe("requests (BRG-004, BRG-005, BRG-007)", () => {
 
   it("times out regular methods but not long ones", async () => {
     const never = () => new Promise(() => undefined);
-    const host = createMockHost({ granted: ["storage", "fs"], handlers: { "storage.get": never, "fs.pickFiles": never } });
+    const host = createMockHost({
+      granted: ["storage", "fs"],
+      handlers: { "storage.get": never, "fs.pickFiles": never },
+    });
     const deck = await connect({ window: host.window, timeoutMs: 20, logger: quietLogger() });
     expect((await rejection(deck.storage.get("k"))).code).toBe("TIMEOUT");
     const long = deck.fs.pickFiles();
-    const outcome = await Promise.race([long.then(() => "settled"), new Promise((r) => setTimeout(() => r("pending"), 60))]);
+    const outcome = await Promise.race([
+      long.then(() => "settled"),
+      new Promise((r) => setTimeout(() => r("pending"), 60)),
+    ]);
     expect(outcome).toBe("pending");
     deck.dispose();
   });
@@ -190,6 +200,38 @@ describe("events (BRG-006, BRG-009)", () => {
     host.deliverRaw("not an object", "http://tauri.localhost", host.window.parent);
     host.deliverRaw({ deck: 2, kind: "evt", topic: "x", payload: 1 }, "http://tauri.localhost", host.window.parent);
     expect(logger.debug).toHaveBeenCalled();
+    deck.dispose();
+  });
+});
+
+describe("native capture contracts", () => {
+  it("maps opaque session/overlay/shortcut/destination helpers to approved wire names", async () => {
+    const handlers = Object.fromEntries(
+      ["capture.status", "capture.trigger", "overlay.status", "global-shortcut.register", "fs.pickDestination"].map(
+        (name) => [name, () => null],
+      ),
+    );
+    const host = createMockHost({ granted: ["capture", "overlay", "global-shortcut", "fs"], handlers });
+    const deck = await connect({ window: host.window, logger: quietLogger() });
+    await deck.capture.status({});
+    await deck.capture.trigger({ sessionHandle: "opaque-session" });
+    await deck.overlay.status({ overlayHandle: "opaque-overlay" });
+    await deck.globalShortcut.register({ modifiers: ["control", "shift"], key: "C" });
+    await deck.fs.pickDestination({ remember: true });
+    expect(host.requests.map(({ cap, method, args }) => ({ cap, method, args }))).toEqual([
+      { cap: "capture", method: "status", args: {} },
+      { cap: "capture", method: "trigger", args: { sessionHandle: "opaque-session" } },
+      { cap: "overlay", method: "status", args: { overlayHandle: "opaque-overlay" } },
+      { cap: "global-shortcut", method: "register", args: { modifiers: ["control", "shift"], key: "C" } },
+      { cap: "fs", method: "pickDestination", args: { remember: true } },
+    ]);
+    deck.dispose();
+  });
+  it("rejects undeclared native capability before posting an RPC", async () => {
+    const host = createMockHost({ granted: ["storage"] });
+    const deck = await connect({ window: host.window, logger: quietLogger() });
+    expect((await rejection(deck.capture.status({}))).code).toBe("PERMISSION_DENIED");
+    expect(host.requests).toEqual([]);
     deck.dispose();
   });
 });

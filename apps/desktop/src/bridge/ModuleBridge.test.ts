@@ -249,3 +249,35 @@ describe("keepAlive LRU", () => {
     expect(k.activate("a", keep).mounted).toEqual(["a", "b"]);
   });
 });
+
+// Native capture metadata follows the exact owner mapping even when another tool is foreground.
+it("delivers capture events only to the live owning frame and drops unloaded owners", async () => {
+  const { bridge, frame, tick } = setup();
+  const owner = frame(),
+    other = frame();
+  const captureOrigin = "http://deckmod.quick-capture.modules.localhost";
+  bridge.register(owner, "quick-capture", `${captureOrigin}/quick-capture/0.1.0/index.html`);
+  bridge.register(other, "timer", ENTRY);
+  bridge.handle({ data: hello, origin: captureOrigin, source: owner });
+  bridge.handle({ data: hello, origin: ORIGIN, source: other });
+  await tick();
+  const result = {
+    file: { handle: "result", name: "synthetic.png", ext: "png", size: 4, modifiedAt: 0 },
+    width: 10,
+    height: 10,
+    sequence: 1,
+  };
+  bridge.sendEvent("quick-capture", "capture.completed", { sessionHandle: "owned-session", result });
+  expect(owner.sent).toHaveLength(2);
+  expect(other.sent).toHaveLength(1);
+  expect(owner.sent[1]).toMatchObject({
+    kind: "evt",
+    topic: "capture.completed",
+    payload: { sessionHandle: "owned-session" },
+  });
+  bridge.unregister(owner);
+  bridge.sendEvent("quick-capture", "capture.completed", { sessionHandle: "owned-session", result });
+  expect(owner.sent).toHaveLength(2);
+  expect(other.sent).toHaveLength(1);
+  bridge.unregister(other);
+});

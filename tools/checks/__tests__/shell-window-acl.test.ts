@@ -33,10 +33,10 @@ describe("custom title bar least-privilege ACL", () => {
     expect(identifiers).not.toContain("core:default");
   });
 
-  it("loads only the main capability, preserving module iframe isolation", () => {
+  it("loads main and the separately restricted capture capability", () => {
     const configuration = readJson("tauri.conf.json") as {
       app: { security: { capabilities: unknown[] } };
     };
-    expect(configuration.app.security.capabilities).toEqual(["main"]);
+    expect(configuration.app.security.capabilities).toEqual(["main", "capture-overlay"]);
   });
 });

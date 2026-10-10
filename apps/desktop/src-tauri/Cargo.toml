@@ -36,6 +36,11 @@ tracing-appender.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-version.workspace = true
+arboard.workspace = true
+xcap.workspace = true
+chrono.workspace = true
+image.workspace = true
+tauri-plugin-global-shortcut.workspace = true
 
 [lints]
 workspace = true

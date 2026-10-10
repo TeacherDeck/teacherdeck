@@ -8,6 +8,8 @@ use std::io::Write as _;
 
 const COMMANDS: &[&str] = &[
     "host_invoke",
+    "overlay_ui_state",
+    "overlay_ui_action",
     "shell_info",
     "list_modules",
     "module_activated",
