@@ -152,6 +152,62 @@ describe("archive and output safety", () => {
 });
 
 describe("roster identity confidence", () => {
+  it("never binds another sheet's drawing to an unrelated first-sheet roster", async () => {
+    const parts = unzipLimited(fixture([{ row: 1, col: 0, text: "1학년 1반 1번 가상가" }], [{ row: 0, col: 0 }]));
+    parts["xl/workbook.xml"] = strToU8(
+      '<workbook xmlns:r="urn:relations"><sheets><sheet name="합성명단" r:id="sheet1"/><sheet name="별도이미지" r:id="sheet2"/></sheets></workbook>',
+    );
+    parts["xl/_rels/workbook.xml.rels"] = strToU8(
+      '<Relationships><Relationship Id="sheet1" Target="worksheets/sheet1.xml"/><Relationship Id="sheet2" Target="worksheets/sheet2.xml"/></Relationships>',
+    );
+    parts["xl/worksheets/sheet1.xml"] = strToU8(
+      new TextDecoder().decode(parts["xl/worksheets/sheet1.xml"]).replace('<drawing r:id="drawing1"/>', ""),
+    );
+    delete parts["xl/worksheets/_rels/sheet1.xml.rels"];
+    parts["xl/worksheets/sheet2.xml"] = strToU8(
+      '<worksheet xmlns:r="urn:relations"><sheetData/><drawing r:id="drawing1"/></worksheet>',
+    );
+    parts["xl/worksheets/_rels/sheet2.xml.rels"] = strToU8(
+      '<Relationships><Relationship Id="drawing1" Target="../drawings/drawing1.xml"/></Relationships>',
+    );
+    const parsed = await parseParts(parts);
+    expect(parsed.sheets[0]?.anchors).toEqual([]);
+    expect(parsed.sheets[1]?.anchors[0]?.key).toBe("xl/media/image0.jpeg");
+    const plans = planPhotos([
+      {
+        file,
+        photos: parsed.photos,
+        students: parsed.sheets.flatMap((sheet) => matchPhotos(sheet.students, sheet.anchors)),
+        warnings: parsed.warnings,
+      },
+    ]);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]?.confirmed).toBe(false);
+    expect(plans[0]?.filename).toMatch(/^미확인_/);
+    expect(plans[0]?.bytes).toEqual(fakeJpeg(0));
+  });
+  it("keeps legacy unreferenced drawings as unnamed original photos", async () => {
+    const parts = unzipLimited(fixture([{ row: 1, col: 0, text: "1학년 1반 1번 가상가" }], [{ row: 0, col: 0 }]));
+    delete parts["xl/workbook.xml"];
+    delete parts["xl/_rels/workbook.xml.rels"];
+    delete parts["xl/worksheets/_rels/sheet1.xml.rels"];
+    parts["xl/worksheets/sheet1.xml"] = strToU8(
+      new TextDecoder().decode(parts["xl/worksheets/sheet1.xml"]).replace('<drawing r:id="drawing1"/>', ""),
+    );
+    const parsed = await parseParts(parts);
+    expect(parsed.sheets[0]?.anchors).toEqual([]);
+    expect(parsed.photos[0]?.bytes).toEqual(fakeJpeg(0));
+    const plans = planPhotos([
+      {
+        file,
+        photos: parsed.photos,
+        students: parsed.sheets.flatMap((sheet) => matchPhotos(sheet.students, sheet.anchors)),
+        warnings: parsed.warnings,
+      },
+    ]);
+    expect(plans[0]?.confirmed).toBe(false);
+    expect(plans[0]?.filename).toMatch(/^미확인_/);
+  });
   const photos = [{ key: "synthetic.png", bytes: new Uint8Array([1]), extension: "png", mime: "image/png" }];
   it("keeps each staggered class header inside its own column block", () => {
     const students = matchPhotos(

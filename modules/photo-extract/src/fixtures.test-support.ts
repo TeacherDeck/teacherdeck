@@ -20,11 +20,20 @@ export function fixture(
   extras: Record<string, Uint8Array> = {},
 ): Uint8Array<ArrayBuffer> {
   const strings = cells.map((cell) => `<si><r><t>${escape(cell.text)}</t></r></si>`).join("");
-  const sheet = `<worksheet xmlns="urn:sheet"><sheetData>${cells.map((cell, i) => `<row r="${cell.row + 1}"><c r="${letters(Math.max(0, cell.col - 1))}${cell.row + 1}" s="11"/><c r="${letters(cell.col)}${cell.row + 1}" t="${shared ? "s" : "inlineStr"}">${shared ? `<v>${i}</v>` : `<is><t>${escape(cell.text)}</t></is>`}</c></row>`).join("")}</sheetData></worksheet>`;
+  const sheet = `<worksheet xmlns="urn:sheet" xmlns:r="urn:relations"><sheetData>${cells.map((cell, i) => `<row r="${cell.row + 1}"><c r="${letters(Math.max(0, cell.col - 1))}${cell.row + 1}" s="11"/><c r="${letters(cell.col)}${cell.row + 1}" t="${shared ? "s" : "inlineStr"}">${shared ? `<v>${i}</v>` : `<is><t>${escape(cell.text)}</t></is>`}</c></row>`).join("")}</sheetData><drawing r:id="drawing1"/></worksheet>`;
   const drawing = `<d:wsDr xmlns:d="urn:drawing" xmlns:a="urn:image" xmlns:r="urn:relations">${anchors.map((anchor, i) => `<d:twoCellAnchor><d:from><d:col>${anchor.col}</d:col><d:row>${anchor.row}</d:row></d:from><a:blip r:embed="picture${i}"/></d:twoCellAnchor>`).join("")}</d:wsDr>`;
   const rels = `<Relationships xmlns="urn:rels">${anchors.map((_, i) => `<Relationship Id="picture${i}" Target="../media/image${i}.jpeg"/>`).join("")}</Relationships>`;
   return zipSync({
+    "xl/workbook.xml": strToU8(
+      '<workbook xmlns:r="urn:relations"><sheets><sheet name="시트 1" r:id="sheet1"/></sheets></workbook>',
+    ),
+    "xl/_rels/workbook.xml.rels": strToU8(
+      '<Relationships><Relationship Id="sheet1" Target="worksheets/sheet1.xml"/></Relationships>',
+    ),
     "xl/worksheets/sheet1.xml": strToU8(sheet),
+    "xl/worksheets/_rels/sheet1.xml.rels": strToU8(
+      '<Relationships><Relationship Id="drawing1" Target="../drawings/drawing1.xml"/></Relationships>',
+    ),
     "xl/sharedStrings.xml": strToU8(`<sst xmlns="urn:sheet">${strings}</sst>`),
     "xl/drawings/drawing1.xml": strToU8(drawing),
     "xl/drawings/_rels/drawing1.xml.rels": strToU8(rels),
