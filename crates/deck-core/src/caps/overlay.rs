@@ -67,10 +67,25 @@ pub struct OverlayUpdateArgs {
     #[ts(optional)]
     pub always_on_top: Option<bool>,
 }
+/// Host-calculated physical layout for the trusted overlay shell only.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OverlayUiLayout {
+    /// Local physical rectangle including the capture border.
+    pub region: PhysicalRect,
+    /// Local physical toolbar band, kept inside its monitor.
+    pub toolbar: PhysicalRect,
+    /// Native scale used to convert local physical coordinates to CSS pixels.
+    pub scale: f64,
+}
 /// OverlayUiState contract.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OverlayUiState {
+    /// Internal shell layout; never changes OverlayInfo or module capture coordinates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub layout: Option<OverlayUiLayout>,
     /// Whether this window displays the separate toolbar.
     pub toolbar: bool,
     /// overlay; opaque handles never expose paths.

@@ -24,6 +24,8 @@ struct Owned<T> {
 struct Overlay {
     info: OverlayInfo,
     label: String,
+    window_rect: PhysicalRect,
+    layout: OverlayUiLayout,
 }
 struct Session {
     info: CaptureSession,
@@ -98,6 +100,7 @@ fn check_rect(rect: &PhysicalRect) -> Result<(), DeckError> {
 }
 fn ui_for(inner: &Inner, overlay: &Overlay) -> OverlayUiState {
     OverlayUiState {
+        layout: Some(overlay.layout.clone()),
         toolbar: false,
         overlay: overlay.info.clone(),
         session: inner
@@ -130,22 +133,57 @@ fn set_visibility(app: &AppHandle, overlay: &Overlay) -> Result<(), DeckError> {
     }
     Ok(())
 }
+fn set_window_geometry(
+    window: &tauri::WebviewWindow,
+    rect: &PhysicalRect,
+) -> Result<(), DeckError> {
+    let position = PhysicalPosition::new(rect.x, rect.y);
+    if window.inner_position().map_err(|_| internal())? != position {
+        window.set_position(position).map_err(|_| internal())?;
+    }
+    let size = PhysicalSize::new(rect.width, rect.height);
+    if window.inner_size().map_err(|_| internal())? != size {
+        window.set_size(size).map_err(|_| internal())?;
+    }
+    Ok(())
+}
 fn apply_geometry(
     window: &tauri::WebviewWindow,
     rect: &PhysicalRect,
     border: u8,
-) -> Result<(), DeckError> {
+) -> Result<(PhysicalRect, OverlayUiLayout), DeckError> {
+    let monitors = window.available_monitors().map_err(|_| internal())?;
+    let display = monitors
+        .iter()
+        .find(|m| {
+            let p = m.position();
+            let size = m.size();
+            i64::from(rect.x) >= i64::from(p.x)
+                && i64::from(rect.x) < i64::from(p.x) + i64::from(size.width)
+                && i64::from(rect.y) >= i64::from(p.y)
+                && i64::from(rect.y) < i64::from(p.y) + i64::from(size.height)
+        })
+        .or_else(|| monitors.first())
+        .ok_or_else(internal)?;
+    let bounds = PhysicalRect {
+        x: display.position().x,
+        y: display.position().y,
+        width: display.size().width,
+        height: display.size().height,
+    };
+    let mut geometry =
+        deck_core::overlay_geometry::layout(rect, border, display.scale_factor(), &bounds)?;
     for _ in 0..2 {
-        let scale = window.scale_factor().map_err(|_| internal())?;
-        let outer = deck_core::overlay_geometry::to_window(rect, border, scale)?;
-        window
-            .set_position(PhysicalPosition::new(outer.x, outer.y))
-            .map_err(|_| internal())?;
-        window
-            .set_size(PhysicalSize::new(outer.width, outer.height))
-            .map_err(|_| internal())?;
+        set_window_geometry(window, &geometry.0)?;
+        geometry = deck_core::overlay_geometry::layout(
+            rect,
+            border,
+            window.scale_factor().map_err(|_| internal())?,
+            &bounds,
+        )?;
     }
-    Ok(())
+    set_window_geometry(window, &geometry.0)?;
+    Ok(geometry)
 }
 /// Shell commands identify owner from the trusted native label, never payload fields.
 #[tauri::command]
@@ -186,11 +224,30 @@ pub fn window_changed(app: &AppHandle, label: &str) {
     let Ok(scale) = window.scale_factor() else {
         return;
     };
-    let Ok(rect) =
-        deck_core::overlay_geometry::from_window(&rect, slot.value.info.style.border_width, scale)
+    if rect == slot.value.window_rect && scale == slot.value.layout.scale {
+        return;
+    }
+    let Ok(rect) = deck_core::overlay_geometry::changed(
+        &slot.value.window_rect,
+        &slot.value.layout,
+        &rect,
+        slot.value.info.style.border_width,
+        scale,
+    ) else {
+        let _ = apply_geometry(
+            &window,
+            &slot.value.info.rect,
+            slot.value.info.style.border_width,
+        );
+        return;
+    };
+    let Ok((window_rect, layout)) =
+        apply_geometry(&window, &rect, slot.value.info.style.border_width)
     else {
         return;
     };
+    slot.value.window_rect = window_rect;
+    slot.value.layout = layout;
     slot.value.info.rect = rect;
     let key = slot.value.info.overlay_handle.clone();
     if let Some(slot) = inner.overlays.get(&key) {
@@ -240,8 +297,13 @@ pub fn overlay_call(
             windows: vec![region.clone()],
             committed: false,
         };
-        apply_geometry(&region, &a.rect, info.style.border_width)?;
-        let overlay = Overlay { info, label };
+        let (window_rect, layout) = apply_geometry(&region, &a.rect, info.style.border_width)?;
+        let overlay = Overlay {
+            info,
+            label,
+            window_rect,
+            layout,
+        };
         let callback_app = app.clone();
         let callback_label = overlay.label.clone();
         region.on_window_event(move |event| {
@@ -296,7 +358,9 @@ pub fn overlay_call(
         let window = app
             .get_webview_window(&overlay.label)
             .ok_or_else(internal)?;
-        apply_geometry(&window, &rect, style.border_width)?;
+        let (window_rect, layout) = apply_geometry(&window, &rect, style.border_width)?;
+        overlay.window_rect = window_rect;
+        overlay.layout = layout;
         overlay.info.rect = rect;
         overlay.info.style = style;
         if let Some(top) = a.always_on_top {
@@ -1070,12 +1134,19 @@ pub async fn overlay_ui_action(
     }
     Ok(())
 }
-fn show_settings(app: &AppHandle, owner: &str) {
+fn show_main(app: &AppHandle) -> bool {
     if let Some(window) = app.get_webview_window(crate::origins::MAIN_WINDOW) {
-        let _ = window.show();
+        if window.show().is_err() {
+            return false;
+        }
         let _ = window.unminimize();
         let _ = window.set_focus();
+        return true;
     }
+    false
+}
+fn show_settings(app: &AppHandle, owner: &str) {
+    show_main(app);
     let _ = app.emit_to(
         crate::origins::MAIN_WINDOW,
         "deck://show-module",
@@ -1178,6 +1249,9 @@ fn tray_action(app: &AppHandle, id: &str) {
         return;
     }
     let Some((owner, session, overlay)) = tray_target(app) else {
+        if id == "capture-settings" {
+            show_main(app);
+        }
         return;
     };
     match id {
@@ -1301,9 +1375,18 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), DeckError> {
     });
     Ok(())
 }
+fn should_restore_main(active: bool, main_visible: bool) -> bool {
+    !active && !main_visible
+}
 fn update_tray(app: &AppHandle) {
+    let active = background_active(app);
+    let visible = app
+        .get_webview_window(crate::origins::MAIN_WINDOW)
+        .is_some_and(|w| w.is_visible().unwrap_or(false));
+    // Restore access before hiding the last tray icon. If restoration fails, keep its settings action.
+    let restored = !should_restore_main(active, visible) || show_main(app);
     if let Some(tray) = app.tray_by_id("capture") {
-        let _ = tray.set_visible(background_active(app));
+        let _ = tray.set_visible(active || !restored);
     }
 }
 /// All user triggers report actionable errors even before encoding starts.
@@ -1349,6 +1432,12 @@ fn report_failure(app: &AppHandle, owner: &str, key: &str, error: &DeckError) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn last_session_end_restores_hidden_main_before_tray_is_removed() {
+        assert!(should_restore_main(false, false));
+        assert!(!should_restore_main(true, false));
+        assert!(!should_restore_main(false, true));
+    }
     #[test]
     fn a_frame_lease_bounds_all_modules_and_releases_on_error() {
         let flag = Arc::new(AtomicBool::new(false));

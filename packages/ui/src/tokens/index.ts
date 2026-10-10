@@ -71,6 +71,8 @@ export const deckTokens = {
   captureToolbarHeight: "36px",
   captureToolbarSurfaceHeight: "30px",
   captureToolbarButtonSize: "28px",
+  /** Keep native capture actions usable even for a tiny captured pixel rectangle. */
+  captureToolbarMinWidth: "300px",
   /** A nonzero alpha keeps the otherwise transparent Windows region draggable. */
   captureHitTestFill: "rgba(0, 0, 0, 0.004)",
 } as const;

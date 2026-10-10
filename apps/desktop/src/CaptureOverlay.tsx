@@ -2,7 +2,14 @@
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import type { OverlayUiAction, OverlayUiState } from "@deck/sdk";
 import { Button, DeckProvider, InfoBar, Tooltip, deckTokens, makeStyles, mergeClasses, tokens } from "@deck/ui";
-import { CameraRegular, DismissRegular, FolderOpenRegular, PinRegular, SettingsRegular } from "@fluentui/react-icons";
+import {
+  ArrowMoveRegular,
+  CameraRegular,
+  DismissRegular,
+  FolderOpenRegular,
+  PinRegular,
+  SettingsRegular,
+} from "@fluentui/react-icons";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { OverlayControls, ResizeDirection } from "./host.ts";
 import { useColorMode } from "./theme.ts";
@@ -44,6 +51,7 @@ const useStyles = makeStyles({
   southWest: { left: 0, bottom: 0, cursor: "nesw-resize" },
   southEast: { right: 0, bottom: 0, cursor: "nwse-resize" },
   toolbar: {
+    zIndex: 1,
     position: "fixed",
     top: tokens.spacingVerticalXXS,
     right: 0,
@@ -51,7 +59,7 @@ const useStyles = makeStyles({
     alignItems: "center",
     height: deckTokens.captureToolbarSurfaceHeight,
     maxWidth: "100%",
-    overflowX: "auto",
+    overflowX: "hidden",
     overflowY: "hidden",
     whiteSpace: "nowrap",
     backgroundColor: tokens.colorNeutralBackground1,
@@ -64,7 +72,7 @@ const useStyles = makeStyles({
     padding: 0,
     flexShrink: 0,
   },
-  status: { overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" },
+  status: { minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" },
 });
 export function CaptureOverlay({ controls }: { controls: OverlayControls }) {
   const s = useStyles();
@@ -136,6 +144,9 @@ export function CaptureOverlay({ controls }: { controls: OverlayControls }) {
     { direction: "SouthWest", label: "왼쪽 아래 크기 조절", className: mergeClasses(s.corner, s.southWest) },
     { direction: "SouthEast", label: "오른쪽 아래 크기 조절", className: mergeClasses(s.corner, s.southEast) },
   ];
+  const scale = state?.layout?.scale ?? (window.devicePixelRatio || 1);
+  const region = state?.layout?.region;
+  const toolbar = state?.layout?.toolbar;
   const actions = [
     {
       action: "toggle-on-top",
@@ -151,7 +162,36 @@ export function CaptureOverlay({ controls }: { controls: OverlayControls }) {
     <DeckProvider mica theme={createDeckTheme(mode)}>
       {state ? (
         <>
-          <div className={s.toolbar} aria-label="캡처 도구 모음">
+          <div
+            className={s.toolbar}
+            aria-label="캡처 도구 모음"
+            style={
+              toolbar
+                ? {
+                    top: `calc(${toolbar.y / scale}px + ${tokens.spacingVerticalXXS})`,
+                    left: `${toolbar.x / scale}px`,
+                    right: "auto",
+                    width: `${toolbar.width / scale}px`,
+                  }
+                : undefined
+            }
+          >
+            <Tooltip content="영역 이동. 키보드에서는 설정에서 좌표를 바꿔 주세요." relationship="label">
+              <Button
+                className={s.miniButton}
+                aria-label="영역 이동"
+                icon={<ArrowMoveRegular />}
+                appearance="subtle"
+                onPointerDown={(e) => {
+                  if (e.button !== 0) return;
+                  e.preventDefault();
+                  void controls.drag().catch(() => setError("영역을 이동하지 못했어요. 설정에서 좌표를 바꿔 주세요."));
+                }}
+                onClick={(e) => {
+                  if (e.detail === 0) act("show-settings");
+                }}
+              />
+            </Tooltip>
             {actions.map(({ action, label, icon }) => (
               <Tooltip key={action} content={label} relationship="label">
                 <Button
@@ -181,16 +221,21 @@ export function CaptureOverlay({ controls }: { controls: OverlayControls }) {
             className={mergeClasses(s.region, flash && s.flash)}
             style={
               {
-                top: `${Math.ceil(Number.parseFloat(deckTokens.captureToolbarHeight) * (window.devicePixelRatio || 1)) / (window.devicePixelRatio || 1)}px`,
+                top: `${region ? region.y / scale : Math.ceil(Number.parseFloat(deckTokens.captureToolbarHeight) * scale) / scale}px`,
+                left: `${region ? region.x / scale : 0}px`,
+                right: "auto",
+                bottom: "auto",
+                width: `${region ? region.width / scale : (state.overlay.rect.width + state.overlay.style.borderWidth * 2) / scale}px`,
+                height: `${region ? region.height / scale : (state.overlay.rect.height + state.overlay.style.borderWidth * 2) / scale}px`,
                 borderColor: state.overlay.style.borderColor,
-                borderWidth: `${state.overlay.style.borderWidth / (window.devicePixelRatio || 1)}px`,
+                borderWidth: `${state.overlay.style.borderWidth / scale}px`,
               } as CSSProperties
             }
             onDoubleClick={(e) => {
               if (e.target === e.currentTarget) act("capture");
             }}
             onKeyDown={(e) => {
-              if (e.target !== e.currentTarget) return;
+              if (e.target !== e.currentTarget || e.repeat) return;
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
                 act("capture");

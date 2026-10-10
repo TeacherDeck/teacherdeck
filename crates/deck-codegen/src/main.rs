@@ -236,6 +236,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         ts::<OverlayCreateArgs>(SDK_DIR, &cfg)?,
         ts::<OverlayArgs>(SDK_DIR, &cfg)?,
         ts::<OverlayUpdateArgs>(SDK_DIR, &cfg)?,
+        ts::<OverlayUiLayout>(SDK_DIR, &cfg)?,
         ts::<OverlayUiState>(SDK_DIR, &cfg)?,
         ts::<OverlayUiActionArgs>(SDK_DIR, &cfg)?,
         ts::<OverlayUiAction>(SDK_DIR, &cfg)?,

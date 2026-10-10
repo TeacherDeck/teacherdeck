@@ -59,7 +59,7 @@ describe("capture overlay shell", () => {
     const { controls, emit } = setup(true);
     render(<CaptureOverlay controls={controls} />);
     const capture = await screen.findByRole("button", { name: "지금 캡처" });
-    expect(screen.getAllByRole("button")).toHaveLength(6);
+    expect(screen.getAllByRole("button")).toHaveLength(7);
     expect(screen.getByRole("button", { name: /캡처 영역/ })).toBeTruthy();
     expect(document.documentElement.style.background).toBe("transparent");
     expect(document.body.style.background).toBe("transparent");
@@ -81,6 +81,34 @@ describe("capture overlay shell", () => {
     } finally {
       Object.defineProperty(window, "devicePixelRatio", { value: previous, configurable: true });
     }
+  });
+  it("keeps exact tiny pixels while exposing host-positioned toolbar movement and capture", async () => {
+    const { controls, emit } = setup();
+    render(<CaptureOverlay controls={controls} />);
+    const region = await screen.findByRole("button", { name: /캡처 영역/ });
+    emit({
+      ...state,
+      overlay: { ...state.overlay, rect: { x: 0, y: 0, width: 5, height: 5 } },
+      layout: {
+        region: { x: 4, y: 0, width: 13, height: 13 },
+        toolbar: { x: 0, y: 13, width: 600, height: 72 },
+        scale: 2,
+      },
+    });
+    expect((region as HTMLElement).style.width).toBe("6.5px");
+    expect((region as HTMLElement).style.top).toBe("0px");
+    expect((region as HTMLElement).style.left).toBe("2px");
+    expect(screen.getByText(/5 × 5px/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "지금 캡처" }));
+    expect(controls.action).toHaveBeenCalledWith("capture");
+    fireEvent(
+      screen.getByRole("button", { name: "영역 이동" }),
+      new MouseEvent("pointerdown", { button: 0, bubbles: true }),
+    );
+    expect(controls.drag).toHaveBeenCalledOnce();
+    // Native drag requires a pointer press; keyboard activation offers exact coordinate editing.
+    fireEvent.click(screen.getByRole("button", { name: "영역 이동" }), { detail: 0 });
+    expect(controls.action).toHaveBeenCalledWith("show-settings");
   });
   it("unsubscribes state changes when window content unmounts", async () => {
     const { controls, off } = setup();

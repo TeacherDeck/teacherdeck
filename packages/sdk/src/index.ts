@@ -65,6 +65,7 @@ export type { OverlayInfo } from "./generated/OverlayInfo.ts";
 export type { OverlayCreateArgs } from "./generated/OverlayCreateArgs.ts";
 export type { OverlayArgs } from "./generated/OverlayArgs.ts";
 export type { OverlayUpdateArgs } from "./generated/OverlayUpdateArgs.ts";
+export type { OverlayUiLayout } from "./generated/OverlayUiLayout.ts";
 export type { OverlayUiState } from "./generated/OverlayUiState.ts";
 export type { OverlayUiActionArgs } from "./generated/OverlayUiActionArgs.ts";
 export type { OverlayUiAction } from "./generated/OverlayUiAction.ts";
