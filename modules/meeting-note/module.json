@@ -1,0 +1,21 @@
+{
+  "$schema": "../../schema/module.schema.json",
+  "manifestVersion": 1,
+  "id": "meeting-note",
+  "name": "회의록",
+  "description": "화자를 전환하며 회의를 기록하고 비공개 메모를 뺀 텍스트를 확인해요.",
+  "version": "0.1.0",
+  "category": "document",
+  "icon": "icon.svg",
+  "entry": "index.html",
+  "authors": [
+    {
+      "name": "rochelobeJYJ"
+    }
+  ],
+  "requires": {
+    "storage": "^1.0"
+  },
+  "optional": {},
+  "ui": { "keepAlive": true }
+}
