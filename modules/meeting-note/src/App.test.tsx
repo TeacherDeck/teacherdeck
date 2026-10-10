@@ -4,62 +4,62 @@
 import { connect } from "@deck/sdk";
 import { createMockHost } from "@deck/sdk/testing";
 import { DeckProvider } from "@deck/ui";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "./App.tsx";
-import { emptyMeeting } from "./meeting.ts";
+import { type Meeting, emptyMeeting } from "./meeting.ts";
+import { MEETING_KEY } from "./storage.ts";
 afterEach(cleanup);
-describe("meeting keyboard input", () => {
-  it("flushes a pending draft on component unmount and offers a private backup", async () => {
-    const stored: unknown[] = [];
-    const host = createMockHost({
-      module: { id: "meeting-note", version: "0.1.0" },
-      granted: ["storage"],
-      handlers: {
-        "storage.get": () => emptyMeeting(),
-        "storage.set": (args) => {
-          stored.push((args as { value: unknown }).value);
-          return null;
-        },
+async function setup(state: Meeting = emptyMeeting(), intercept?: (key: string, value: unknown) => Promise<void>) {
+  const store = new Map<string, unknown>([[MEETING_KEY, state]]);
+  const host = createMockHost({
+    module: { id: "meeting-note", version: "0.2.0" },
+    granted: ["storage", "fs"],
+    handlers: {
+      "storage.get": (args) => store.get((args as { key: string }).key) ?? null,
+      "storage.set": async (args) => {
+        const { key, value } = args as { key: string; value: unknown };
+        if (intercept) await intercept(key, value);
+        store.set(key, value);
+        return null;
       },
-    });
-    const deck = await connect({ window: host.window });
-    const view = render(
-      <DeckProvider>
-        <App deck={deck} />
-      </DeckProvider>,
-    );
-    const input = await screen.findByRole("textbox", { name: "발언 입력" });
-    fireEvent.change(input, { target: { value: "// 개인 메모" } });
+    },
+  });
+  const deck = await connect({ window: host.window });
+  const view = render(
+    <DeckProvider>
+      <App deck={deck} />
+    </DeckProvider>,
+  );
+  return { deck, host, view, store };
+}
+const seeded = () => ({ ...emptyMeeting(), speakers: ["가상 화자 A", "가상 화자 B"], selected: "가상 화자 A" });
+describe("original meeting interaction flow", () => {
+  it("shows registration immediately, starts a meeting, and selects visible persistent speaker chips", async () => {
+    const { deck } = await setup();
+    const people = await screen.findByRole("textbox", { name: "참석자" });
+    expect(screen.queryByRole("textbox", { name: "발언 입력" })).toBeNull();
+    fireEvent.change(people, { target: { value: "가상 화자 A\n가상 화자 B" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "결석자 (선택)" }), { target: { value: "가상 결석자" } });
+    fireEvent.keyDown(people, { code: "Enter", key: "Enter", ctrlKey: true });
+    const input = screen.getByRole("textbox", { name: "발언 입력" });
+    fireEvent.click(screen.getByRole("button", { name: "가상 화자 B · Alt+2" }));
+    fireEvent.change(input, { target: { value: "첫 발언" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    fireEvent.change(input, { target: { value: "작성 중 초안" } });
-    fireEvent.click(screen.getByRole("button", { name: "전체 보관용 텍스트 보기" }));
-    const backup = screen.getByRole("textbox", { name: "전체 보관용 텍스트" }) as HTMLTextAreaElement;
-    expect(backup.value).toContain("개인 메모");
-    expect(backup.value).toContain("작성 중 초안");
-    view.unmount();
-    await waitFor(() =>
-      expect(stored.at(-1)).toMatchObject({ draft: "작성 중 초안", entries: [{ private: true, text: "개인 메모" }] }),
-    );
+    fireEvent.change(input, { target: { value: "두 번째 발언" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getAllByText("발언 · 가상 화자 B")).toHaveLength(2);
+    const log = screen.getByRole("list", { name: "회의 기록" });
+    expect(
+      within(log)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual([expect.stringContaining("첫 발언"), expect.stringContaining("두 번째 발언")]);
     deck.dispose();
   });
-  it("records complete Korean composition once, keeps speaker, and accepts consecutive Enter", async () => {
-    const host = createMockHost({
-      module: { id: "meeting-note", version: "0.1.0" },
-      granted: ["storage"],
-      handlers: {
-        "storage.get": () => ({ ...emptyMeeting(), speakers: ["가상 화자 A", "가상 화자 B"], selected: "가상 화자 A" }),
-        "storage.set": () => null,
-      },
-    });
-    const deck = await connect({ window: host.window });
-    render(
-      <DeckProvider>
-        <App deck={deck} />
-      </DeckProvider>,
-    );
+  it("records complete Korean composition once and supports speaker stepping, retagging, edit/delete and undo", async () => {
+    const { deck } = await setup(seeded());
     const input = await screen.findByRole("textbox", { name: "발언 입력" });
-    fireEvent.focus(input);
     fireEvent.keyDown(input, { code: "Digit2", key: "2", altKey: true });
     fireEvent.compositionStart(input);
     fireEvent.change(input, { target: { value: "한글 조합" } });
@@ -71,23 +71,94 @@ describe("meeting keyboard input", () => {
       await Promise.resolve();
     });
     expect(screen.getAllByText("한글 조합 완료")).toHaveLength(1);
+    fireEvent.keyDown(input, { code: "Digit1", key: "1", ctrlKey: true, altKey: true });
+    expect(screen.getByText("발언 · 가상 화자 A")).toBeTruthy();
+    fireEvent.keyDown(input, { code: "ArrowDown", key: "ArrowDown", altKey: true });
     fireEvent.change(input, { target: { value: "두 번째 발언" } });
-    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
-    expect(screen.getByText("두 번째 발언")).toBeTruthy();
-    expect(screen.getAllByText("발언 · 가상 화자 B")).toHaveLength(2);
-    fireEvent.change(input, { target: { value: "줄바꿈 유지" } });
-    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
-    expect(screen.getByText(/전체 2건/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "기록 되돌리기" }));
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getByText("발언 · 가상 화자 B")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "두 번째 발언 수정" }));
+    fireEvent.change(input, { target: { value: "수정한 발언" } });
+    fireEvent.keyDown(input, { key: "Enter" });
     expect(screen.queryByText("두 번째 발언")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "다시 적용" }));
-    expect(screen.getByText("두 번째 발언")).toBeTruthy();
-    await waitFor(() => expect(host.requests.some((r) => r.method === "set")).toBe(true));
+    expect(screen.getByText("수정한 발언")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "수정한 발언 삭제" }));
+    expect(screen.queryByText("수정한 발언")).toBeNull();
+    fireEvent.keyDown(input, { code: "KeyZ", key: "z", ctrlKey: true });
+    expect(screen.getByText("수정한 발언")).toBeTruthy();
+    deck.dispose();
+  });
+  it("offers kind/private controls, F4/F8/F9 dialogs and excludes private records from readable export", async () => {
+    const { deck, view, store } = await setup(seeded());
+    const input = await screen.findByRole("textbox", { name: "발언 입력" });
+    fireEvent.click(screen.getByRole("button", { name: "결정" }));
+    fireEvent.change(input, { target: { value: "공개 가결" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.click(screen.getByRole("checkbox", { name: "비공개 메모" }));
+    fireEvent.change(input, { target: { value: "개인 메모" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.change(input, { target: { value: "작성 중 초안" } });
+    fireEvent.keyDown(input, { code: "F8" });
+    const output = screen.getByRole("textbox", { name: "내보낼 회의록 본문" }) as HTMLTextAreaElement;
+    expect(output.value).toContain("공개 가결");
+    expect(output.value).not.toContain("개인 메모");
+    expect(screen.queryByRole("textbox", { name: "전체 보관용 텍스트" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "닫기" }));
+    fireEvent.keyDown(input, { code: "F9" });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "취소" }));
+    fireEvent.keyDown(input, { code: "F4" });
+    expect(screen.getByText(/Ctrl\+Alt\+숫자:/)).toBeTruthy();
+    view.unmount();
+    await waitFor(() =>
+      expect(store.get(MEETING_KEY)).toMatchObject({
+        draft: "작성 중 초안",
+        entries: [
+          { kind: "결정", private: false },
+          { private: true, text: "개인 메모" },
+        ],
+      }),
+    );
+    deck.dispose();
+  });
+  it("archives the current meeting before returning to setup and can reopen it", async () => {
+    const { deck } = await setup(seeded());
+    const input = await screen.findByRole("textbox", { name: "발언 입력" });
+    fireEvent.change(input, { target: { value: "보관할 기록" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: "새 회의" }));
+    fireEvent.click(screen.getByRole("button", { name: "새 회의 시작" }));
+    await screen.findByRole("textbox", { name: "참석자" });
+    fireEvent.click(screen.getByRole("button", { name: "회의 열기" }));
+    await screen.findByText("보관할 기록");
+    deck.dispose();
+  });
+  it("freezes recording and speaker changes until archive transition completes", async () => {
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { deck, store } = await setup(seeded(), async (key) => {
+      if (key === "library.v1") await gate;
+    });
+    const input = await screen.findByRole("textbox", { name: "발언 입력" });
+    fireEvent.change(input, { target: { value: "전환 전 기록" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: "새 회의" }));
+    fireEvent.click(screen.getByRole("button", { name: "새 회의 시작" }));
+    await waitFor(() => expect((input as HTMLTextAreaElement).disabled).toBe(true));
+    fireEvent.change(input, { target: { value: "차단할 입력" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.keyDown(input, { code: "Digit2", key: "2", altKey: true });
+    expect(screen.getByText(/전체 1건/)).toBeTruthy();
+    release?.();
+    await screen.findByRole("textbox", { name: "참석자" });
+    const archive = [...store.entries()].find(([key]) => key.startsWith("archive."))?.[1];
+    expect(archive).toMatchObject({ selected: "가상 화자 A", draft: "", entries: [{ text: "전환 전 기록" }] });
     deck.dispose();
   });
   it("never writes empty state after a load failure", async () => {
     const host = createMockHost({
-      module: { id: "meeting-note", version: "0.1.0" },
       granted: ["storage"],
       handlers: {
         "storage.get": () => {

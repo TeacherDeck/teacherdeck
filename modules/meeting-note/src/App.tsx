@@ -6,44 +6,134 @@ import {
   BodyStrong,
   Button,
   Caption,
+  CheckBox,
   ComboBox,
+  ContentDialog,
   InfoBar,
   ListView,
   PageHeader,
   ProgressRing,
   SettingsExpander,
   TextBox,
+  ToggleButton,
   deckTokens,
   makeStyles,
+  tokens,
 } from "@deck/ui";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type Entry, type Meeting, emptyMeeting, parseEntry, publicText, speakerIndex } from "./meeting.ts";
+import {
+  type Entry,
+  type EntryKind,
+  type Meeting,
+  emptyMeeting,
+  entryInput,
+  parseEntry,
+  speakerIndex,
+} from "./meeting.ts";
 import { createWriter, loadMeeting } from "./storage.ts";
+import { type ExportFormat, exportText, pickMeeting, saveFile } from "./files.ts";
+import {
+  type Library,
+  EMPTY_LIBRARY,
+  LIBRARY_KEY,
+  archiveMeeting,
+  archivedMeeting,
+  loadLibrary,
+  removeArchive,
+} from "./library.ts";
+const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "="];
+const KINDS: EntryKind[] = ["발언", "결정", "조치", "질의", "안건"];
+const lines = (value: string) => [
+  ...new Set(
+    value
+      .split("\n")
+      .map((name) => name.trim())
+      .filter(Boolean),
+  ),
+];
 const useStyles = makeStyles({
-  page: { display: "flex", flexDirection: "column", gap: deckTokens.sectionGap, padding: deckTokens.pagePadding },
-  row: { display: "flex", flexWrap: "wrap", gap: deckTokens.inlineGap, alignItems: "end" },
+  page: { display: "flex", flexDirection: "column", gap: deckTokens.inlineGap, padding: deckTokens.pagePadding },
+  row: { display: "flex", flexWrap: "wrap", gap: deckTokens.inlineGap, alignItems: "center" },
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 3fr) minmax(0, 1fr)",
+    gap: deckTokens.sectionGap,
+    "@media (max-width: 720px)": { gridTemplateColumns: "minmax(0, 1fr)" },
+  },
+  workspace: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 3fr) minmax(0, 1fr)",
+    gridTemplateAreas: '"editor speakers"',
+    gap: deckTokens.sectionGap,
+    alignItems: "start",
+    "@media (max-width: 720px)": { gridTemplateColumns: "minmax(0, 1fr)", gridTemplateAreas: '"speakers" "editor"' },
+  },
+  editor: { gridArea: "editor", display: "flex", flexDirection: "column", gap: deckTokens.inlineGap, minWidth: 0 },
+  speakers: {
+    gridArea: "speakers",
+    display: "flex",
+    flexDirection: "column",
+    gap: deckTokens.inlineGap,
+    minWidth: 0,
+    "@media (max-width: 720px)": { flexDirection: "row", flexWrap: "wrap" },
+  },
+  speakerHeading: { "@media (max-width: 720px)": { flexBasis: "100%" } },
+  stack: { display: "flex", flexDirection: "column", gap: deckTokens.inlineGap, minWidth: 0 },
+  log: {
+    overflowY: "auto",
+    maxHeight: "40vh",
+    minHeight: "10vh",
+    "@media (max-width: 720px)": { maxHeight: "20vh" },
+    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: deckTokens.cardRadius,
+  },
   text: { whiteSpace: "pre-wrap", overflowWrap: "anywhere" },
 });
-const Records = memo(function Records({ entries }: { entries: Entry[] }) {
+const Records = memo(function Records({
+  entries,
+  edit,
+  remove,
+  busy,
+}: {
+  entries: Entry[];
+  edit: (entry: Entry) => void;
+  remove: (id: string) => void;
+  busy: boolean;
+}) {
   const s = useStyles();
   return (
     <ListView
-      header="최근 기록"
-      items={entries.slice(-100).reverse()}
+      header="회의 기록"
+      items={entries}
       getKey={(entry) => entry.id}
-      emptyText="화자를 고르고 내용을 입력한 뒤 Enter를 눌러 주세요."
+      emptyText="화자를 고르고 발언을 입력한 뒤 Enter를 눌러 주세요."
       renderItem={(entry) => (
-        <div className={s.text}>
-          <BodyStrong>
-            {entry.private ? "비공개 · " : ""}
-            {entry.kind}
-            {entry.speaker ? ` · ${entry.speaker}` : ""}
-          </BodyStrong>
-          <Body>{entry.text}</Body>
-          <Caption secondary>
-            {entry.owner ? `담당: ${entry.owner} ` : ""}
-            {entry.due ? `기한: ${entry.due}` : ""}
-          </Caption>
+        <div className={s.stack}>
+          <div className={s.row}>
+            <BodyStrong>
+              {entry.private ? "비공개 · " : ""}
+              {entry.kind}
+              {entry.speaker ? ` · ${entry.speaker}` : ""}
+            </BodyStrong>
+            {entry.timestamp && (
+              <Caption secondary>
+                {new Date(entry.timestamp).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
+              </Caption>
+            )}
+            <Button disabled={busy} size="small" onClick={() => edit(entry)} aria-label={`${entry.text} 수정`}>
+              수정
+            </Button>
+            <Button disabled={busy} size="small" onClick={() => remove(entry.id)} aria-label={`${entry.text} 삭제`}>
+              삭제
+            </Button>
+          </div>
+          <Body className={s.text}>{entry.text}</Body>
+          {(entry.owner || entry.due) && (
+            <Caption secondary>
+              {entry.owner ? `담당: ${entry.owner} ` : ""}
+              {entry.due ? `기한: ${entry.due}` : ""}
+            </Caption>
+          )}
         </div>
       )}
     />
@@ -53,37 +143,70 @@ export function App({ deck }: { deck: Deck }) {
   const s = useStyles();
   const [meeting, setMeeting] = useState<Meeting>(emptyMeeting);
   const latest = useRef(meeting);
+  const [library, setLibrary] = useState<Library>(EMPTY_LIBRARY);
   const [status, setStatus] = useState("불러오는 중이에요.");
   const [ready, setReady] = useState(false);
   const [failedLoad, setFailedLoad] = useState(false);
-  const [preview, setPreview] = useState(false);
-  const [backup, setBackup] = useState(false);
-  const saveFailed = useRef(false);
+  const [running, setRunning] = useState(false);
+  const [dialog, setDialog] = useState<"people" | "export" | "help" | "new" | "archive" | "remove" | "">("");
+  const [removeKey, setRemoveKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const [names, setNames] = useState("");
+  const [absent, setAbsent] = useState("");
+  const [rosterName, setRosterName] = useState("");
   const [draft, setDraft] = useState("");
+  const [kind, setKind] = useState<EntryKind>("발언");
+  const kindChosen = useRef(false);
+  const [privateNote, setPrivateNote] = useState(false);
+  const privateChosen = useRef(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const editingId = useRef<string | null>(null);
+  const previousDraft = useRef("");
   const input = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  const log = useRef<HTMLDivElement>(null);
   const composing = useRef(false);
   const queued = useRef(false);
   const revision = useRef(0);
-  const undo = useRef<Entry[]>([]);
+  const saveFailed = useRef(false);
+  const undo = useRef<Meeting[]>([]);
+  const redo = useRef<Meeting[]>([]);
   const write = useMemo(() => createWriter(deck), [deck]);
-  const update = useCallback((next: Meeting) => {
+  const update = useCallback((next: Meeting, force = false) => {
+    if (busyRef.current && !force) return;
     latest.current = next;
     revision.current++;
     setMeeting(next);
     if (!saveFailed.current) setStatus("자동 저장을 기다리는 중이에요.");
   }, []);
+  const snapshot = useCallback(() => {
+    undo.current.push(latest.current);
+    if (undo.current.length > 50) undo.current.shift();
+    redo.current = [];
+  }, []);
+  const focusInput = () => queueMicrotask(() => input.current?.focus());
+  const setInput = useCallback(
+    (value: string) => {
+      if (busyRef.current) return;
+      setDraft(value);
+      if (input.current) input.current.value = value;
+      update({ ...latest.current, draft: value });
+    },
+    [update],
+  );
   useEffect(() => {
     let active = true;
-    loadMeeting(deck)
-      .then((data) => {
+    Promise.all([loadMeeting(deck), loadLibrary(deck)])
+      .then(([data, savedLibrary]) => {
         if (!active) return;
         latest.current = data;
         setMeeting(data);
+        setLibrary(savedLibrary);
         setNames(data.speakers.join("\n"));
+        setAbsent(data.absentees?.join("\n") ?? "");
         setDraft(data.draft);
+        setRunning(data.speakers.length > 0 || data.entries.length > 0);
         setReady(true);
-        setFailedLoad(false);
         setStatus("회의록을 불러왔어요.");
       })
       .catch(() => {
@@ -98,7 +221,7 @@ export function App({ deck }: { deck: Deck }) {
   }, [deck]);
   useEffect(() => {
     const flush = () => {
-      if (revision.current > 0) void write(latest.current).catch(() => undefined);
+      if (!busyRef.current && revision.current > 0) void write(latest.current).catch(() => undefined);
     };
     const off = deck.on("module.visibility", ({ visible }) => {
       if (!visible) flush();
@@ -111,68 +234,389 @@ export function App({ deck }: { deck: Deck }) {
     };
   }, [deck, write]);
   useEffect(() => {
-    if (!ready || revision.current === 0) return;
-    const currentRevision = revision.current;
+    if (!ready || busy || revision.current === 0) return;
+    const current = revision.current;
     const timer = setTimeout(() => {
+      if (busyRef.current) return;
       void write(latest.current)
         .then(() => {
-          if (currentRevision === revision.current) {
+          if (current === revision.current) {
             saveFailed.current = false;
             setStatus("저장했어요.");
           }
         })
         .catch(() => {
           saveFailed.current = true;
-          setStatus("자동 저장하지 못했어요. 전체 보관용 텍스트를 선택해 따로 보관하고 다시 시도해 주세요.");
+          setStatus("자동 저장하지 못했어요. 내보내기에서 .json 백업을 저장하고 다시 시도해 주세요.");
         });
     }, 350);
     return () => clearTimeout(timer);
-  }, [meeting, ready, write]);
+  }, [meeting, ready, busy, write]);
+  useEffect(() => {
+    if (log.current) log.current.scrollTop = log.current.scrollHeight;
+  }, [meeting.entries]);
+  const cancelEdit = useCallback(() => {
+    if (busyRef.current) return;
+    editingId.current = null;
+    setEditing(null);
+    setKind("발언");
+    kindChosen.current = false;
+    privateChosen.current = false;
+    setPrivateNote(false);
+    setInput(previousDraft.current);
+    focusInput();
+  }, [setInput]);
   const commit = useCallback(() => {
-    if (!ready) return;
+    if (!ready || busyRef.current) return;
     const raw = input.current?.value ?? latest.current.draft;
-    const entry = parseEntry(raw, latest.current.speakers, latest.current.selected, crypto.randomUUID());
-    if (!entry) return;
-    undo.current = [];
+    const id = editingId.current;
+    const original = id ? latest.current.entries.find((entry) => entry.id === id) : undefined;
+    const entry = parseEntry(
+      raw,
+      latest.current.speakers,
+      original?.speaker ?? latest.current.selected,
+      id ?? crypto.randomUUID(),
+    );
+    if (!entry) {
+      if (id) cancelEdit();
+      return;
+    }
+    if (kindChosen.current || (entry.kind === "발언" && kind !== "발언")) entry.kind = kind;
+    if (entry.kind === "안건") entry.speaker = "";
+    if (privateChosen.current) entry.private = privateNote;
+    else entry.private ||= privateNote;
+    if (entry.private && entry.kind === "안건") entry.kind = "발언";
+    entry.timestamp = original?.timestamp ?? new Date().toISOString();
+    snapshot();
+    editingId.current = null;
+    setEditing(null);
+    setKind("발언");
+    kindChosen.current = false;
+    privateChosen.current = false;
+    setPrivateNote(false);
     if (input.current) input.current.value = "";
     setDraft("");
-    update({ ...latest.current, draft: "", entries: [...latest.current.entries, entry] });
-  }, [ready, update]);
+    update({
+      ...latest.current,
+      draft: "",
+      entries: id
+        ? latest.current.entries.map((item) => (item.id === id ? entry : item))
+        : [...latest.current.entries, entry],
+    });
+    focusInput();
+  }, [ready, kind, privateNote, snapshot, update, cancelEdit]);
+  const selectSpeaker = useCallback(
+    (selected: string, retag = false) => {
+      if (busyRef.current) return;
+      const id = editingId.current;
+      if (id || retag) {
+        const target = id ?? latest.current.entries.at(-1)?.id;
+        if (target) {
+          snapshot();
+          update({
+            ...latest.current,
+            selected: id ? latest.current.selected : selected,
+            entries: latest.current.entries.map((entry) =>
+              entry.id === target ? { ...entry, speaker: selected } : entry,
+            ),
+          });
+        }
+      } else update({ ...latest.current, selected });
+      focusInput();
+    },
+    [snapshot, update],
+  );
+  const applyNames = useCallback(() => {
+    if (busyRef.current) return false;
+    const speakers = lines(names);
+    if (!speakers.length || speakers.length > 12) {
+      setStatus("참석자를 한 명 이상, 최대 12명까지 입력해 주세요.");
+      return false;
+    }
+    update({
+      ...latest.current,
+      speakers,
+      absentees: lines(absent),
+      selected: speakers.includes(latest.current.selected) ? latest.current.selected : (speakers[0] ?? ""),
+      startedAt: latest.current.startedAt || new Date().toISOString(),
+    });
+    setNames(speakers.join("\n"));
+    setRunning(true);
+    setDialog("");
+    focusInput();
+    return true;
+  }, [names, absent, update]);
+  const restoreUndo = useCallback(
+    (forward = false) => {
+      if (busyRef.current) return;
+      const source = forward ? redo.current : undo.current;
+      const target = forward ? undo.current : redo.current;
+      const next = source.pop();
+      if (next) {
+        target.push(latest.current);
+        update({ ...next, draft: latest.current.draft });
+        editingId.current = null;
+        setEditing(null);
+        setKind("발언");
+        kindChosen.current = false;
+        privateChosen.current = false;
+        setPrivateNote(false);
+      }
+      focusInput();
+    },
+    [update],
+  );
   useEffect(() => {
     const handle = (event: KeyboardEvent) => {
-      if (!ready || preview || backup) return;
-      if (
-        event.ctrlKey &&
-        !event.altKey &&
-        event.code === "KeyZ" &&
-        document.activeElement === input.current &&
-        !input.current?.value
-      ) {
-        const entries = latest.current.entries;
-        const last = entries.at(-1);
-        if (last) {
+      if (!ready || busy) return;
+      if (event.code === "Escape" && !event.isComposing && event.keyCode !== 229) {
+        if (dialog) {
+          setDialog("");
+          focusInput();
+        } else if (editingId.current) cancelEdit();
+        return;
+      }
+      if (!running || dialog === "people") {
+        if (event.ctrlKey && event.code === "Enter") {
           event.preventDefault();
-          undo.current.push(last);
-          update({ ...latest.current, entries: entries.slice(0, -1) });
+          applyNames();
         }
         return;
       }
-      if (!event.altKey || event.ctrlKey || event.getModifierState("AltGraph")) return;
-      const index = speakerIndex(event.code);
+      if (dialog) return;
+      if (["F4", "F8", "F9"].includes(event.code)) {
+        event.preventDefault();
+        if (event.code === "F9") {
+          setNames(latest.current.speakers.join("\n"));
+          setAbsent(latest.current.absentees?.join("\n") ?? "");
+        }
+        setDialog(event.code === "F4" ? "help" : event.code === "F8" ? "export" : "people");
+        return;
+      }
+      if (event.ctrlKey && !event.altKey && event.code === "KeyZ" && !input.current?.value.trim()) {
+        event.preventDefault();
+        restoreUndo();
+        return;
+      }
+      if (!event.altKey || event.getModifierState("AltGraph")) return;
       const speakers = latest.current.speakers;
+      const index = speakerIndex(event.code);
       if (index !== null && speakers[index]) {
         event.preventDefault();
-        update({ ...latest.current, selected: speakers[index] ?? "" });
-        input.current?.focus();
+        selectSpeaker(speakers[index] ?? "", event.ctrlKey);
       } else if (event.code === "Backquote") {
         event.preventDefault();
-        update({ ...latest.current, selected: "" });
-        input.current?.focus();
+        selectSpeaker("");
+      } else if (event.code === "ArrowUp" || event.code === "ArrowDown") {
+        event.preventDefault();
+        const current = editingId.current
+          ? (latest.current.entries.find((entry) => entry.id === editingId.current)?.speaker ?? "")
+          : latest.current.selected;
+        const at = speakers.indexOf(current);
+        const step = event.code === "ArrowDown" ? 1 : -1;
+        selectSpeaker(
+          speakers[at < 0 ? (step > 0 ? 0 : speakers.length - 1) : (at + step + speakers.length) % speakers.length] ??
+            "",
+        );
       }
     };
     window.addEventListener("keydown", handle);
     return () => window.removeEventListener("keydown", handle);
-  }, [ready, preview, backup, update]);
+  }, [ready, busy, running, dialog, applyNames, selectSpeaker, restoreUndo, cancelEdit]);
+  const edit = useCallback(
+    (entry: Entry) => {
+      if (busyRef.current) return;
+      previousDraft.current = editingId.current ? previousDraft.current : latest.current.draft;
+      editingId.current = entry.id;
+      setEditing(entry.id);
+      setKind(entry.kind);
+      kindChosen.current = false;
+      privateChosen.current = false;
+      setPrivateNote(entry.private);
+      setInput(entryInput(entry));
+      focusInput();
+    },
+    [setInput],
+  );
+  const remove = useCallback(
+    (id: string) => {
+      if (busyRef.current) return;
+      snapshot();
+      update({ ...latest.current, entries: latest.current.entries.filter((entry) => entry.id !== id) });
+      if (editingId.current === id) cancelEdit();
+      focusInput();
+    },
+    [snapshot, update, cancelEdit],
+  );
+  const task = async (action: () => Promise<void>) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      await action();
+    } catch (error) {
+      if (error instanceof Error && error.message === "ARCHIVE_FULL")
+        setStatus("지난 회의가 20개로 가득 찼어요. 지난 회의에서 불필요한 보관을 제거한 뒤 다시 시도해 주세요.");
+      else setStatus("처리하지 못했어요. 현재 회의는 그대로 두었어요. 저장 공간과 파일을 확인해 주세요.");
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  };
+  const switchTo = async (data: Meeting) => {
+    const next = await archiveMeeting(deck, latest.current, library);
+    setLibrary(next);
+    await write(data);
+    update(data, true);
+    setNames(data.speakers.join("\n"));
+    setAbsent(data.absentees?.join("\n") ?? "");
+    setDraft(data.draft);
+    setRunning(data.speakers.length > 0 || data.entries.length > 0);
+    editingId.current = null;
+    setEditing(null);
+    undo.current = [];
+    redo.current = [];
+    setKind("발언");
+    kindChosen.current = false;
+    privateChosen.current = false;
+    setPrivateNote(false);
+    setDialog("");
+    focusInput();
+  };
+  const loadFile = () =>
+    void task(async () => {
+      const data = await pickMeeting(deck);
+      if (data) await switchTo(data);
+    });
+  const saveRoster = () =>
+    void task(async () => {
+      const people = lines(names);
+      const name = rosterName.trim();
+      if (!name || !people.length || people.length > 12) {
+        setStatus("위원회 이름과 참석자 명단을 입력해 주세요.");
+        return;
+      }
+      if (library.rosters.some((r) => r.name === name) || library.rosters.length >= 40) {
+        setStatus("위원회는 새 이름으로 최대 40개까지 저장해요.");
+        return;
+      }
+      const next = {
+        ...library,
+        rosters: [...library.rosters, { name, people, title: latest.current.title, place: latest.current.place ?? "" }],
+      };
+      await deck.storage.set(LIBRARY_KEY, next);
+      setLibrary(next);
+      setStatus("위원회 명단을 저장했어요.");
+    });
+  const [format, setFormat] = useState<ExportFormat>("md");
+  const saveExport = (backup: boolean) =>
+    void task(async () => {
+      if (await saveFile(deck, latest.current, backup, format))
+        setStatus(
+          backup ? "비공개 메모와 초안을 포함한 백업 파일을 저장했어요." : "비공개 메모를 뺀 회의록 파일을 저장했어요.",
+        );
+    });
+  const saveNow = () =>
+    void task(async () => {
+      await write(latest.current);
+      saveFailed.current = false;
+      setStatus("저장했어요.");
+    });
+  const peopleFields = (
+    <div className={s.grid}>
+      <TextBox
+        header="참석자"
+        multiline
+        rows={6}
+        value={names}
+        disabled={busy}
+        onChange={(value) => {
+          if (!busyRef.current) setNames(value);
+        }}
+        description="한 줄에 한 명, 최대 12명. 순서대로 Alt+1~9, 0, -, =를 써요."
+      />
+      <TextBox
+        header="결석자 (선택)"
+        multiline
+        rows={6}
+        value={absent}
+        disabled={busy}
+        onChange={(value) => {
+          if (!busyRef.current) setAbsent(value);
+        }}
+      />
+    </div>
+  );
+  const rosterFields = (
+    <SettingsExpander header="위원회 · 저장된 명단" description="자주 쓰는 참석자 명단을 저장하고 불러와요.">
+      <div className={s.row}>
+        <TextBox
+          header="위원회 이름"
+          value={rosterName}
+          disabled={busy}
+          onChange={(value) => {
+            if (!busyRef.current) setRosterName(value);
+          }}
+        />
+        <Button onClick={saveRoster} disabled={busy}>
+          명단 저장
+        </Button>
+      </div>
+      {library.rosters.length > 0 && (
+        <ComboBox
+          disabled={busy}
+          header="저장된 위원회"
+          value=""
+          options={[
+            { value: "", label: "위원회 명단 불러오기" },
+            ...library.rosters.map((r) => ({ value: r.name, label: r.name })),
+          ]}
+          onChange={(name) => {
+            if (busyRef.current) return;
+            const roster = library.rosters.find((r) => r.name === name);
+            if (roster) {
+              setNames(roster.people.join("\n"));
+              if (!running) update({ ...latest.current, title: roster.title, place: roster.place });
+            }
+          }}
+        />
+      )}
+    </SettingsExpander>
+  );
+  const archiveList = (
+    <ListView
+      header="지난 회의"
+      items={library.archive}
+      getKey={(item) => item.key}
+      emptyText="보관된 회의가 없어요."
+      renderItem={(item) => (
+        <div className={s.row}>
+          <Body>
+            {item.title} · {item.count}건
+          </Body>
+          <Button
+            disabled={busy}
+            onClick={() =>
+              void task(async () => {
+                await switchTo(await archivedMeeting(deck, item.key));
+              })
+            }
+          >
+            회의 열기
+          </Button>
+          <Button
+            disabled={busy}
+            onClick={() => {
+              setRemoveKey(item.key);
+              setDialog("remove");
+            }}
+          >
+            보관 제거
+          </Button>
+        </div>
+      )}
+    />
+  );
   if (!ready)
     return (
       <div className={s.page}>
@@ -181,153 +625,320 @@ export function App({ deck }: { deck: Deck }) {
     );
   return (
     <div className={s.page}>
-      <PageHeader title="회의록" description="화자를 고르고 발언을 직접 입력해요. 한 번 고른 화자는 계속 유지돼요." />
-      <InfoBar message={status} />
-      <SettingsExpander header="회의 설정과 화자 등록" description="제목과 화자 명단을 설정해요.">
-        <TextBox header="회의 제목" value={meeting.title} onChange={(title) => update({ ...latest.current, title })} />
-        <TextBox
-          header="화자 명단"
-          multiline
-          value={names}
-          onChange={setNames}
-          description="한 줄에 한 명씩, 최대 12명까지 등록해요. 기존 기록의 이름은 그대로 남아요."
-        />
-        <Button
-          onClick={() => {
-            const speakers = [
-              ...new Set(
-                names
-                  .split("\n")
-                  .map((name) => name.trim())
-                  .filter(Boolean),
-              ),
-            ].slice(0, 12);
-            update({
-              ...latest.current,
-              speakers,
-              selected: speakers.includes(latest.current.selected) ? latest.current.selected : (speakers[0] ?? ""),
-            });
-            setNames(speakers.join("\n"));
-          }}
-        >
-          화자 등록
-        </Button>
-      </SettingsExpander>
-      <ComboBox
-        header="현재 화자"
-        value={meeting.selected}
-        options={[
-          { value: "", label: "화자 미지정" },
-          ...meeting.speakers.map((name, index) => ({
-            value: name,
-            label: `${index + 1}. ${name} (Alt+${index < 9 ? index + 1 : ["0", "-", "="][index - 9]})`,
-          })),
-        ]}
-        onChange={(selected) => update({ ...latest.current, selected })}
-      />
-      <TextBox
-        header="발언 입력"
-        multiline
-        value={draft}
-        inputRef={input}
-        onChange={(value) => {
-          setDraft(value);
-          update({ ...latest.current, draft: value });
-        }}
-        description="Enter 기록 · Shift+Enter 줄바꿈 · ! 결정 · * 조치 @담당자 ~기한 · ? 질의 · # 안건 · // 비공개"
-        onCompositionStart={() => {
-          composing.current = true;
-        }}
-        onCompositionEnd={() => {
-          composing.current = false;
-          if (queued.current) {
-            queued.current = false;
-            queueMicrotask(commit);
-          }
-        }}
-        onKeyDown={(event) => {
-          if (
-            (event.key !== "Enter" && event.code !== "Enter" && event.code !== "NumpadEnter") ||
-            event.shiftKey ||
-            event.repeat
-          )
-            return;
-          event.preventDefault();
-          if (event.ctrlKey) {
-            composing.current = false;
-            queued.current = false;
-            commit();
-            return;
-          }
-          if (composing.current || event.nativeEvent.isComposing || event.keyCode === 229) queued.current = true;
-          else commit();
-        }}
-      />
-      <div className={s.row}>
-        <Button appearance="primary" onClick={commit}>
-          기록
-        </Button>
-        <Button
-          disabled={!meeting.entries.length}
-          onClick={() => {
-            const entries = latest.current.entries;
-            const last = entries.at(-1);
-            if (last) undo.current.push(last);
-            update({ ...latest.current, entries: entries.slice(0, -1) });
-          }}
-        >
-          기록 되돌리기
-        </Button>
-        <Button
-          disabled={!undo.current.length}
-          onClick={() => {
-            const entry = undo.current.pop();
-            if (entry) update({ ...latest.current, entries: [...latest.current.entries, entry] });
-          }}
-        >
-          다시 적용
-        </Button>
-        <Button onClick={() => setPreview(!preview)}>{preview ? "미리보기 닫기" : "공개용 텍스트 보기"}</Button>
-        <Button
-          onClick={() => {
-            void write(latest.current)
-              .then(() => {
-                saveFailed.current = false;
-                setStatus("저장했어요.");
-              })
-              .catch(() => {
-                saveFailed.current = true;
-                setStatus("저장하지 못했어요. 전체 보관용 텍스트를 따로 보관해 주세요.");
-              });
-          }}
-        >
-          지금 저장
-        </Button>
-      </div>
-      <Button onClick={() => setBackup(!backup)}>{backup ? "보관용 텍스트 닫기" : "전체 보관용 텍스트 보기"}</Button>
-      {backup && (
+      {!running ? (
         <>
-          <InfoBar
-            severity="warning"
-            message="비공개 메모와 입력 중 초안까지 포함해요. 다른 사람에게 전달하지 말고 개인 보관용으로 선택해 복사해 주세요."
+          <PageHeader
+            title="회의록 시작"
+            description="참석자를 입력하면 바로 시작해요. 회의 중에도 F9로 명단을 바꿀 수 있어요."
           />
+          <div className={s.grid}>
+            <TextBox
+              disabled={busy}
+              header="회의 제목"
+              value={meeting.title}
+              onChange={(title) => update({ ...latest.current, title })}
+            />
+            <TextBox
+              disabled={busy}
+              header="장소 (선택)"
+              value={meeting.place ?? ""}
+              onChange={(place) => update({ ...latest.current, place })}
+            />
+          </div>
+          {peopleFields}
+          <div className={s.row}>
+            <Button disabled={busy} appearance="primary" onClick={applyNames}>
+              회의 시작 (Ctrl+Enter)
+            </Button>
+            <Button onClick={loadFile} disabled={busy}>
+              파일(.json) 불러오기
+            </Button>
+          </div>
+          {rosterFields}
+          {library.archive.length > 0 && archiveList}
+        </>
+      ) : (
+        <>
+          <div className={s.row}>
+            <BodyStrong>{meeting.title}</BodyStrong>
+            <Caption secondary>
+              {meeting.place}
+              {meeting.place ? " · " : ""}참석 {meeting.speakers.length}명
+              {meeting.absentees?.length ? ` · 결석 ${meeting.absentees.length}명` : ""}
+            </Caption>
+            <Button onClick={() => setDialog("export")}>내보내기 (F8)</Button>
+            <Button
+              onClick={() => {
+                setNames(latest.current.speakers.join("\n"));
+                setAbsent(latest.current.absentees?.join("\n") ?? "");
+                setDialog("people");
+              }}
+            >
+              참석자 (F9)
+            </Button>
+            <Button onClick={() => setDialog("help")}>도움말 (F4)</Button>
+            <Button disabled={busy} onClick={() => setDialog("archive")}>
+              지난 회의
+            </Button>
+            <Button disabled={busy} onClick={() => setDialog("new")}>
+              새 회의
+            </Button>
+          </div>
+          <div className={s.workspace}>
+            <div className={s.editor}>
+              <div ref={log} className={s.log}>
+                <Records entries={meeting.entries} edit={edit} remove={remove} busy={busy} />
+              </div>
+              <div className={s.row}>
+                <BodyStrong>
+                  {editing ? "수정 중" : "현재 화자"}:{" "}
+                  {editing
+                    ? meeting.entries.find((entry) => entry.id === editing)?.speaker || "미지정"
+                    : meeting.selected || "미지정"}
+                </BodyStrong>
+                {editing && (
+                  <Button disabled={busy} onClick={cancelEdit}>
+                    수정 취소 (Esc)
+                  </Button>
+                )}
+                <Caption secondary>Enter 기록 · Shift+Enter 줄바꿈 · Alt+↑↓ 화자 이동</Caption>
+              </div>
+              <div className={s.row}>
+                {KINDS.map((item) => (
+                  <ToggleButton
+                    disabled={busy}
+                    key={item}
+                    checked={kind === item}
+                    onClick={() => {
+                      kindChosen.current = true;
+                      setKind(item);
+                      focusInput();
+                    }}
+                  >
+                    {item}
+                  </ToggleButton>
+                ))}
+                <CheckBox
+                  disabled={busy}
+                  content="비공개 메모"
+                  checked={privateNote}
+                  onChange={(checked) => {
+                    if (busyRef.current) return;
+                    privateChosen.current = true;
+                    setPrivateNote(checked);
+                  }}
+                />
+              </div>
+              <TextBox
+                disabled={busy}
+                header="발언 입력"
+                multiline
+                rows={2}
+                value={draft}
+                inputRef={input}
+                onChange={setInput}
+                placeholder="발언 내용을 입력하고 Enter"
+                onCompositionStart={() => {
+                  composing.current = true;
+                }}
+                onCompositionEnd={() => {
+                  composing.current = false;
+                  if (queued.current) {
+                    queued.current = false;
+                    queueMicrotask(commit);
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    (event.key !== "Enter" && event.code !== "Enter" && event.code !== "NumpadEnter") ||
+                    event.shiftKey ||
+                    event.repeat
+                  )
+                    return;
+                  event.preventDefault();
+                  if (event.ctrlKey) {
+                    composing.current = false;
+                    queued.current = false;
+                    commit();
+                  } else if (composing.current || event.nativeEvent.isComposing || event.keyCode === 229)
+                    queued.current = true;
+                  else commit();
+                }}
+              />
+              <div className={s.row}>
+                <Button disabled={busy} appearance="primary" onClick={commit}>
+                  {editing ? "수정 저장" : "기록"}
+                </Button>
+                <Button disabled={busy || !undo.current.length} onClick={() => restoreUndo()}>
+                  기록 되돌리기
+                </Button>
+                <Button disabled={busy || !redo.current.length} onClick={() => restoreUndo(true)}>
+                  다시 적용
+                </Button>
+                <Button onClick={saveNow} disabled={busy}>
+                  지금 저장
+                </Button>
+                <Caption secondary>전체 {meeting.entries.length}건</Caption>
+              </div>
+            </div>
+            <div className={s.speakers}>
+              <BodyStrong className={s.speakerHeading}>참석자 · 화자 선택</BodyStrong>
+              {meeting.speakers.map((name, index) => (
+                <ToggleButton
+                  disabled={busy}
+                  key={name}
+                  checked={
+                    (editing ? meeting.entries.find((entry) => entry.id === editing)?.speaker : meeting.selected) ===
+                    name
+                  }
+                  onClick={() => selectSpeaker(name)}
+                >
+                  {name} · Alt+{KEYS[index]}
+                </ToggleButton>
+              ))}
+              <ToggleButton disabled={busy} checked={!meeting.selected} onClick={() => selectSpeaker("")}>
+                화자 미지정 · Alt+`
+              </ToggleButton>
+            </div>
+          </div>
+        </>
+      )}
+      <Caption secondary>{status}</Caption>
+      {busy && <ProgressRing label="파일과 회의록을 처리하는 중" />}
+      {saveFailed.current && <InfoBar severity="error" message={status} />}
+      <ContentDialog
+        open={dialog === "people"}
+        title="참석자 편집"
+        primaryButtonText="저장"
+        closeButtonText="취소"
+        onClose={(result) => {
+          if (busyRef.current) return;
+          if (result === "primary") applyNames();
+          else {
+            setDialog("");
+            focusInput();
+          }
+        }}
+      >
+        <div className={s.stack}>
+          {peopleFields}
+          {rosterFields}
+          <Caption secondary>기존 기록의 화자 이름은 그대로 보존해요.</Caption>
+        </div>
+      </ContentDialog>
+      <ContentDialog
+        open={dialog === "export"}
+        title="내보내기"
+        closeButtonText="닫기"
+        onClose={() => {
+          if (busyRef.current) return;
+          setDialog("");
+          focusInput();
+        }}
+      >
+        <div className={s.stack}>
+          <div className={s.row}>
+            {(["md", "txt", "summary"] as const).map((item) => (
+              <ToggleButton disabled={busy} key={item} checked={format === item} onClick={() => setFormat(item)}>
+                {item === "md" ? "마크다운" : item === "txt" ? "일반 텍스트" : "요약"}
+              </ToggleButton>
+            ))}
+          </div>
           <TextBox
-            header="전체 보관용 텍스트"
+            header="내보낼 회의록 본문"
             multiline
+            rows={12}
             readOnly
-            value={JSON.stringify(meeting, null, 2)}
+            value={exportText(meeting, format)}
             onChange={() => undefined}
           />
-        </>
-      )}
-      {preview && (
-        <>
-          <InfoBar message="비공개 메모를 뺀 텍스트예요. 내용을 선택하고 Ctrl+C로 복사해 주세요." />
-          <TextBox header="공개용 텍스트" multiline readOnly value={publicText(meeting)} onChange={() => undefined} />
-        </>
-      )}
-      <Caption secondary>전체 {meeting.entries.length}건 중 최근 100건을 보여 줘요.</Caption>
-      <Records entries={meeting.entries} />
+          <Caption secondary>비공개 메모는 제외해요. 본문을 선택해 Ctrl+C로 복사하거나 파일로 저장해 주세요.</Caption>
+          <div className={s.row}>
+            <Button onClick={() => saveExport(false)} disabled={busy}>
+              공개용 파일 저장
+            </Button>
+            <Button onClick={() => saveExport(true)} disabled={busy}>
+              .json 백업 저장
+            </Button>
+            <Button onClick={loadFile} disabled={busy}>
+              파일(.json) 불러오기
+            </Button>
+          </div>
+          <InfoBar
+            severity="warning"
+            message=".json 백업에는 비공개 메모와 초안도 포함해요. 개인 보관용으로만 사용해 주세요. 선택한 폴더 안에 새 결과 폴더를 만들어요."
+          />
+        </div>
+      </ContentDialog>
+      <ContentDialog
+        open={dialog === "help"}
+        title="회의록 도움말"
+        closeButtonText="닫기"
+        onClose={() => {
+          if (busyRef.current) return;
+          setDialog("");
+          focusInput();
+        }}
+      >
+        <div className={s.stack}>
+          <Body>Alt+1~9, 0, -, =: 화자 선택 · Alt+↑↓: 이전/다음 화자 · Alt+`: 미지정</Body>
+          <Body>Enter: 기록 · Ctrl+Enter: 강제 기록 · Shift+Enter: 줄바꿈</Body>
+          <Body>Ctrl+Alt+숫자: 방금 기록한 화자 정정 · Ctrl+Z: 빈 입력창에서 기록 되돌리기</Body>
+          <Body>F4: 도움말 · F8: 내보내기 · F9: 참석자 · Esc: 창 닫기/수정 취소</Body>
+          <Body>
+            ! 결정 · * 조치 @담당자 ~기한 · ? 질의 · # 안건 · // 비공개 · 숫자+공백: 해당 줄 화자 · 역슬래시: 기호를
+            본문으로 남기기
+          </Body>
+          <Body>버튼으로 기록 종류와 비공개 여부를 고를 수도 있어요. 자동 저장 완료 안내를 확인한 뒤 닫아 주세요.</Body>
+        </div>
+      </ContentDialog>
+      <ContentDialog
+        open={dialog === "archive"}
+        title="지난 회의"
+        closeButtonText="닫기"
+        onClose={() => {
+          if (!busyRef.current) setDialog("");
+        }}
+      >
+        {archiveList}
+      </ContentDialog>
+      <ContentDialog
+        open={dialog === "remove"}
+        title="지난 회의 보관 제거"
+        primaryButtonText="보관 제거"
+        closeButtonText="취소"
+        defaultButton="close"
+        onClose={(result) => {
+          if (busyRef.current) return;
+          if (result === "primary")
+            void task(async () => {
+              const next = await removeArchive(deck, removeKey, library);
+              setLibrary(next);
+              setDialog("archive");
+              setStatus("선택한 지난 회의의 앱 내 보관을 제거했어요.");
+            });
+          else setDialog("archive");
+        }}
+      >
+        <Body>선택한 지난 회의의 앱 내 보관을 제거해요. 외부 백업 파일과 현재 작성 중인 회의는 그대로 유지해요.</Body>
+        <BodyStrong>{library.archive.find((item) => item.key === removeKey)?.title}</BodyStrong>
+      </ContentDialog>
+      <ContentDialog
+        open={dialog === "new"}
+        title="새 회의"
+        primaryButtonText="새 회의 시작"
+        closeButtonText="취소"
+        onClose={(result) => {
+          if (busyRef.current) return;
+          if (result === "primary")
+            void task(async () => {
+              await switchTo(emptyMeeting());
+            });
+          else setDialog("");
+        }}
+      >
+        <Body>현재 회의를 지난 회의에 보관하고 시작 화면으로 이동해요. 보관하지 못하면 현재 회의를 계속 유지해요.</Body>
+      </ContentDialog>
     </div>
   );
 }
