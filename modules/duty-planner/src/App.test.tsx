@@ -221,3 +221,101 @@ it("shows holiday names and semantic weekdays without hiding selected fixed mark
   expect(screen.getByRole("combobox", { name: "1번째 교사" })).toBeTruthy();
   deck.dispose();
 });
+
+it("releases one manual constraint without changing any date assignments", async () => {
+  const state = initialState(new Date(2026, 9, 1));
+  state.input.teachers = [{ id: "A", name: "교사A", past: 0, fixed: [], excluded: [], weekdays: [] }];
+  state.assignments = { "6": ["A"], "7": ["A"] };
+  state.input.manual = { "6": ["A"] };
+  const { deck, values } = await open(state);
+  fireEvent.click(screen.getByRole("button", { name: "6일 배정 편집" }));
+  fireEvent.click(screen.getByRole("button", { name: "직접 배정 해제" }));
+  expect(within(screen.getByRole("button", { name: "7일 배정 편집" })).getByText("교사A")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  await screen.findByText("이 PC에 명단·조건·배정표를 저장했어요.");
+  expect((values.get(STATE_KEY) as PlannerState).assignments).toEqual(state.assignments);
+  expect((values.get(STATE_KEY) as PlannerState).input.manual).toEqual({});
+  deck.dispose();
+});
+
+it("clamps the selected day when changing to a shorter month and stores only a real date memo", async () => {
+  const { deck, values } = await open(initialState(new Date(2026, 9, 1)));
+  fireEvent.click(screen.getByRole("button", { name: "31일 배정 편집" }));
+  fireEvent.change(screen.getByRole("spinbutton", { name: "월" }), { target: { value: "11" } });
+  fireEvent.blur(screen.getByRole("spinbutton", { name: "월" }));
+  expect(screen.queryByRole("button", { name: "31일 배정 편집" })).toBeNull();
+  expect(within(screen.getByRole("region", { name: "날짜별 직접 배정" })).getByText("30일 월요일")).toBeTruthy();
+  fireEvent.change(screen.getByRole("textbox", { name: "날짜 메모" }), { target: { value: "합성 날짜 메모" } });
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  await screen.findByText("이 PC에 명단·조건·배정표를 저장했어요.");
+  expect((values.get(STATE_KEY) as PlannerState).memo).toEqual({ "30": "합성 날짜 메모" });
+  deck.dispose();
+});
+
+it("opens narrow-window date editing in a dialog at the selected calendar date and returns focus", async () => {
+  vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+  const { deck } = await open(initialState(new Date(2026, 9, 1)));
+  expect(screen.queryByRole("region", { name: "날짜별 직접 배정" })).toBeNull();
+  const date = screen.getByRole("button", { name: "6일 배정 편집" });
+  date.focus();
+  fireEvent.click(date);
+  const dialog = await screen.findByRole("dialog", { name: "10월 6일 배정 편집" });
+  expect(within(dialog).getByRole("textbox", { name: "날짜 메모" })).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "닫기" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(date));
+  deck.dispose();
+});
+
+it("keeps unaffected results through condition changes and a conflicting regeneration", async () => {
+  const state = initialState(new Date(2026, 9, 1));
+  state.input.teachers = [{ id: "A", name: "교사A", past: 0, fixed: [], excluded: [], weekdays: [] }];
+  state.assignments = { "6": ["A"], "7": ["A"] };
+  state.input.manual = { "6": ["A"] };
+  const { deck, values } = await open(state);
+  fireEvent.click(screen.getByRole("button", { name: "6일 배정 편집" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "이 날짜는 지도하지 않아요" }));
+  expect(screen.getByText("6일 직접 배정과 조건이 겹쳐요. 직접 배정이나 조건을 조정해 주세요.")).toBeTruthy();
+  expect(within(screen.getByRole("button", { name: "7일 배정 편집" })).getByText("교사A")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "배정" }));
+  await screen.findByText("6일 제외와 고정·직접 배정이 겹쳐요. 조건을 직접 조정해 주세요.");
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  await screen.findByText("이 PC에 명단·조건·배정표를 저장했어요.");
+  expect((values.get(STATE_KEY) as PlannerState).assignments).toEqual({ "7": ["A"] });
+  expect((values.get(STATE_KEY) as PlannerState).input.manual).toEqual({ "6": ["A"] });
+  deck.dispose();
+});
+
+it("closes date editing on a month transition and reopens at a valid month-end date", async () => {
+  vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+  const { deck } = await open(initialState(new Date(2026, 9, 1)));
+  const month = screen.getByRole("spinbutton", { name: "월" });
+  fireEvent.click(screen.getByRole("button", { name: "31일 배정 편집" }));
+  expect(screen.getByRole("dialog", { name: "10월 31일 배정 편집" })).toBeTruthy();
+  fireEvent.change(month, { target: { value: "11" } });
+  fireEvent.blur(month);
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  fireEvent.click(screen.getByRole("button", { name: "30일 배정 편집" }));
+  expect(screen.getByRole("dialog", { name: "11월 30일 배정 편집" })).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "날짜 메모" })).toBeTruthy();
+  deck.dispose();
+});
+
+it("shows condition conflicts inside the narrow date dialog and removes invalid teacher labels from its calendar cell", async () => {
+  vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+  const state = initialState(new Date(2026, 9, 1));
+  state.input.teachers = [{ id: "A", name: "교사A", past: 0, fixed: [], excluded: [], weekdays: [] }];
+  state.input.manual = { "6": ["A"] };
+  state.assignments = { "6": ["A"], "7": ["A"] };
+  const { deck } = await open(state);
+  fireEvent.click(screen.getByRole("button", { name: "6일 배정 편집" }));
+  const dialog = screen.getByRole("dialog", { name: "10월 6일 배정 편집" });
+  fireEvent.click(within(dialog).getByRole("checkbox", { name: "이 날짜는 지도하지 않아요" }));
+  expect(within(dialog).getByText("6일 직접 배정과 조건이 겹쳐요. 직접 배정이나 조건을 조정해 주세요.")).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "닫기" }));
+  const day = screen.getByRole("button", { name: "6일 배정 편집" });
+  expect(within(day).queryByText("교사A")).toBeNull();
+  expect(within(day).getByText("직접 배정 조건 충돌")).toBeTruthy();
+  expect(within(screen.getByRole("button", { name: "7일 배정 편집" })).getByText("교사A")).toBeTruthy();
+  deck.dispose();
+});
