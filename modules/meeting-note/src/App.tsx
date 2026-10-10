@@ -76,6 +76,7 @@ const useStyles = makeStyles({
     height: "100vh",
     minHeight: 0,
     boxSizing: "border-box",
+    overflowY: "auto",
   },
   setup: {
     width: "100%",
@@ -87,6 +88,9 @@ const useStyles = makeStyles({
   },
   toolbar: { display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalS, alignItems: "center", flexShrink: 0 },
   saved: { marginInlineStart: "auto" },
+  helpText: { "@media (max-height: 640px)": { display: "none" } },
+  inlineKinds: { "@media (max-height: 640px)": { display: "none" } },
+  compactKinds: { display: "none", "@media (max-height: 640px)": { display: "block" } },
   composer: {
     gridArea: "composer",
     display: "flex",
@@ -186,12 +190,12 @@ const useStyles = makeStyles({
     flex: "1",
     minHeight: 0,
     gridTemplateColumns: "minmax(0, 1fr) minmax(12rem, 15rem)",
-    gridTemplateRows: "minmax(0, 1fr) auto",
+    gridTemplateRows: `minmax(calc(${tokens.lineHeightBase300} * 5), 1fr) auto`,
     gridTemplateAreas: '"records speakers" "composer composer"',
     gap: tokens.spacingHorizontalM,
     "@media (max-width: 720px)": {
       gridTemplateColumns: "minmax(0, 1fr)",
-      gridTemplateRows: "auto minmax(0, 1fr) auto",
+      gridTemplateRows: `auto minmax(calc(${tokens.lineHeightBase300} * 5), 1fr) auto`,
       gridTemplateAreas: '"speakers" "records" "composer"',
     },
   },
@@ -211,9 +215,19 @@ const useStyles = makeStyles({
       maxHeight: "20vh",
       borderLeft: "none",
       paddingLeft: 0,
+      "& button": { width: "auto" },
+      "@media (max-height: 640px)": {
+        maxHeight: `calc(${tokens.lineHeightBase300} * 2)`,
+        "& > div": { display: "none" },
+      },
     },
   },
-  speakerHeading: { "@media (max-width: 720px)": { flexBasis: "100%" } },
+  speakerHeading: {
+    "@media (max-width: 720px)": {
+      flexBasis: "100%",
+      "@media (max-height: 640px)": { display: "none" },
+    },
+  },
   stack: { display: "flex", flexDirection: "column", gap: deckTokens.inlineGap, minWidth: 0 },
   log: {
     gridArea: "records",
@@ -349,7 +363,7 @@ export function App({ deck }: { deck: Deck }) {
   const [failedLoad, setFailedLoad] = useState(false);
   const [running, setRunning] = useState(false);
   const [dialog, setDialog] = useState<
-    "people" | "export" | "help" | "new" | "archive" | "remove" | "delete-entry" | "delete-roster" | ""
+    "people" | "export" | "help" | "kinds" | "new" | "archive" | "remove" | "delete-entry" | "delete-roster" | ""
   >("");
   const [entryToRemove, setEntryToRemove] = useState("");
   const [rosterToRemove, setRosterToRemove] = useState("");
@@ -367,9 +381,16 @@ export function App({ deck }: { deck: Deck }) {
   const [editing, setEditing] = useState<string | null>(null);
   const editingId = useRef<string | null>(null);
   const previousDraft = useRef("");
+  const previousComposer = useRef({
+    kind: "발언" as EntryKind,
+    kindChosen: false,
+    privateNote: false,
+    privateChosen: false,
+  });
   const input = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const attendeeInput = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const log = useRef<HTMLDivElement>(null);
+  const scrollToNewEntry = useRef(true);
   const composing = useRef(false);
   const queued = useRef(false);
   const revision = useRef(0);
@@ -396,7 +417,8 @@ export function App({ deck }: { deck: Deck }) {
       if (busyRef.current) return;
       setDraft(value);
       if (input.current) input.current.value = value;
-      update({ ...latest.current, draft: value });
+      // Editing has its own input; keep the new-statement draft in autosave and backups.
+      if (!editingId.current) update({ ...latest.current, draft: value });
     },
     [update],
   );
@@ -463,16 +485,17 @@ export function App({ deck }: { deck: Deck }) {
     return () => clearTimeout(timer);
   }, [meeting, ready, busy, write]);
   useEffect(() => {
-    if (log.current) log.current.scrollTop = log.current.scrollHeight;
+    if (log.current && scrollToNewEntry.current) log.current.scrollTop = log.current.scrollHeight;
+    scrollToNewEntry.current = false;
   }, [meeting.entries]);
   const cancelEdit = useCallback(() => {
     if (busyRef.current) return;
     editingId.current = null;
     setEditing(null);
-    setKind("발언");
-    kindChosen.current = false;
-    privateChosen.current = false;
-    setPrivateNote(false);
+    setKind(previousComposer.current.kind);
+    kindChosen.current = previousComposer.current.kindChosen;
+    privateChosen.current = previousComposer.current.privateChosen;
+    setPrivateNote(previousComposer.current.privateNote);
     setInput(previousDraft.current);
     focusInput();
   }, [setInput]);
@@ -506,15 +529,17 @@ export function App({ deck }: { deck: Deck }) {
     snapshot();
     editingId.current = null;
     setEditing(null);
-    setKind("발언");
-    kindChosen.current = false;
-    privateChosen.current = false;
-    setPrivateNote(false);
-    if (input.current) input.current.value = "";
-    setDraft("");
+    setKind(id ? previousComposer.current.kind : "발언");
+    kindChosen.current = id ? previousComposer.current.kindChosen : false;
+    privateChosen.current = id ? previousComposer.current.privateChosen : false;
+    setPrivateNote(id ? previousComposer.current.privateNote : false);
+    const restoredDraft = id ? previousDraft.current : "";
+    if (input.current) input.current.value = restoredDraft;
+    setDraft(restoredDraft);
+    scrollToNewEntry.current = !id;
     update({
       ...latest.current,
-      draft: "",
+      draft: restoredDraft,
       entries: id
         ? latest.current.entries.map((item) => (item.id === id ? entry : item))
         : [...latest.current.entries, entry],
@@ -573,7 +598,10 @@ export function App({ deck }: { deck: Deck }) {
       const next = source.pop();
       if (next) {
         target.push(latest.current);
-        update({ ...next, draft: latest.current.draft });
+        const retainedDraft = latest.current.draft;
+        update({ ...next, draft: retainedDraft });
+        setDraft(retainedDraft);
+        if (input.current) input.current.value = retainedDraft;
         editingId.current = null;
         setEditing(null);
         setKind("발언");
@@ -624,7 +652,9 @@ export function App({ deck }: { deck: Deck }) {
           !event.metaKey &&
           event.key.length === 1 &&
           target instanceof HTMLElement &&
-          !target.closest("input, textarea, select, [contenteditable], [role=combobox]")
+          !target.closest(
+            "input, textarea, select, button, a, [contenteditable], [role=combobox], [role=button], [role=checkbox], [role=switch]",
+          )
         )
           input.current?.focus();
         return;
@@ -658,7 +688,15 @@ export function App({ deck }: { deck: Deck }) {
   const edit = useCallback(
     (entry: Entry) => {
       if (busyRef.current) return;
-      previousDraft.current = editingId.current ? previousDraft.current : latest.current.draft;
+      if (!editingId.current) {
+        previousDraft.current = latest.current.draft;
+        previousComposer.current = {
+          kind,
+          kindChosen: kindChosen.current,
+          privateNote,
+          privateChosen: privateChosen.current,
+        };
+      }
       editingId.current = entry.id;
       setEditing(entry.id);
       setKind(entry.kind);
@@ -668,7 +706,7 @@ export function App({ deck }: { deck: Deck }) {
       setInput(entryInput(entry));
       focusInput();
     },
-    [setInput],
+    [setInput, kind, privateNote],
   );
   const remove = useCallback((id: string) => {
     if (busyRef.current) return;
@@ -727,6 +765,7 @@ export function App({ deck }: { deck: Deck }) {
     const next = await archiveMeeting(deck, latest.current, library);
     setLibrary(next);
     await write(data);
+    scrollToNewEntry.current = true;
     update(data, true);
     setNames(activeSpeakers(data).join("\n"));
     setAbsent(data.absentees?.join("\n") ?? "");
@@ -1066,38 +1105,45 @@ export function App({ deck }: { deck: Deck }) {
                       수정 취소 (Esc)
                     </Button>
                   )}
-                  <Caption secondary>
+                  <Caption secondary className={s.helpText}>
                     Alt+숫자 화자 · ! 결정 · * 조치 · # 안건 · ? 질의 · // 비공개 · Enter 기록
                   </Caption>
                 </div>
-                <SettingsExpander header="종류 · 비공개 선택" description="접두어로 바로 입력하거나 여기서 선택해요.">
-                  <div className={s.row}>
-                    {KINDS.map((item) => (
-                      <ToggleButton
+                <div className={s.inlineKinds}>
+                  <SettingsExpander header="종류 · 비공개 선택" description="접두어로 바로 입력하거나 여기서 선택해요.">
+                    <div className={s.row}>
+                      {KINDS.map((item) => (
+                        <ToggleButton
+                          disabled={busy}
+                          key={item}
+                          checked={kind === item}
+                          onClick={() => {
+                            kindChosen.current = true;
+                            setKind(item);
+                            if (dialog !== "kinds") focusInput();
+                          }}
+                        >
+                          {item}
+                        </ToggleButton>
+                      ))}
+                      <CheckBox
                         disabled={busy}
-                        key={item}
-                        checked={kind === item}
-                        onClick={() => {
-                          kindChosen.current = true;
-                          setKind(item);
-                          focusInput();
+                        content="비공개 메모"
+                        checked={privateNote}
+                        onChange={(checked) => {
+                          if (busyRef.current) return;
+                          privateChosen.current = true;
+                          setPrivateNote(checked);
                         }}
-                      >
-                        {item}
-                      </ToggleButton>
-                    ))}
-                    <CheckBox
-                      disabled={busy}
-                      content="비공개 메모"
-                      checked={privateNote}
-                      onChange={(checked) => {
-                        if (busyRef.current) return;
-                        privateChosen.current = true;
-                        setPrivateNote(checked);
-                      }}
-                    />
-                  </div>
-                </SettingsExpander>
+                      />
+                    </div>
+                  </SettingsExpander>
+                </div>
+                <div className={s.compactKinds}>
+                  <Button disabled={busy} onClick={() => setDialog("kinds")}>
+                    종류 · 비공개 선택
+                  </Button>
+                </div>
                 <TextBox
                   disabled={busy}
                   header="발언 입력"
@@ -1148,7 +1194,9 @@ export function App({ deck }: { deck: Deck }) {
                   <Button onClick={saveNow} disabled={busy}>
                     지금 저장
                   </Button>
-                  <Caption secondary>전체 {meeting.entries.length}건 · Shift+Enter 줄바꿈 · Alt+↑↓ 화자 이동</Caption>
+                  <Caption secondary className={s.helpText}>
+                    전체 {meeting.entries.length}건 · Shift+Enter 줄바꿈 · Alt+↑↓ 화자 이동
+                  </Caption>
                 </div>
               </div>
             </div>
@@ -1203,6 +1251,42 @@ export function App({ deck }: { deck: Deck }) {
       {!running && <Caption secondary>{status}</Caption>}
       {busy && <ProgressRing label="파일과 회의록을 처리하는 중" />}
       {saveFailed.current && <InfoBar severity="error" message={status} />}
+      <ContentDialog
+        open={dialog === "kinds"}
+        title="종류 · 비공개 선택"
+        closeButtonText="닫기"
+        onClose={() => {
+          setDialog("");
+          focusInput();
+        }}
+      >
+        <div className={s.row}>
+          {KINDS.map((item) => (
+            <ToggleButton
+              disabled={busy}
+              key={item}
+              checked={kind === item}
+              onClick={() => {
+                kindChosen.current = true;
+                setKind(item);
+                if (dialog !== "kinds") focusInput();
+              }}
+            >
+              {item}
+            </ToggleButton>
+          ))}
+          <CheckBox
+            disabled={busy}
+            content="비공개 메모"
+            checked={privateNote}
+            onChange={(checked) => {
+              if (busyRef.current) return;
+              privateChosen.current = true;
+              setPrivateNote(checked);
+            }}
+          />
+        </div>
+      </ContentDialog>
       <ContentDialog
         open={dialog === "delete-entry"}
         title="기록 삭제"

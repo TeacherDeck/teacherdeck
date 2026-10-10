@@ -302,3 +302,106 @@ it("keeps current agenda, colored shortcut chips and compact records visible dur
   expect(screen.getByRole("combobox", { name: "이 기록의 화자" })).toBeTruthy();
   deck.dispose();
 });
+
+describe("record review preserves work in progress", () => {
+  const reviewMeeting = (): Meeting => ({
+    ...seeded(),
+    draft: "아직 기록하지 않은 발언",
+    entries: [
+      {
+        id: "old",
+        kind: "발언",
+        text: "과거 기록",
+        speaker: "가상 화자 A",
+        private: false,
+        owner: "",
+        due: "",
+      },
+    ],
+  });
+  it("keeps the new-statement draft during editing, autosave and edit commit", async () => {
+    const state = reviewMeeting();
+    const { deck, view, store } = await setup(state);
+    const input = await screen.findByRole("textbox", { name: "발언 입력" });
+    fireEvent.click(screen.getByRole("button", { name: "과거 기록 수정" }));
+    fireEvent.change(input, { target: { value: "수정한 과거 기록" } });
+    fireEvent.click(screen.getByRole("button", { name: "지금 저장" }));
+    await screen.findByText("저장했어요.");
+    expect((store.get(MEETING_KEY) as Meeting).draft).toBe(state.draft);
+    fireEvent.click(screen.getByRole("button", { name: "수정 저장" }));
+    expect((input as HTMLTextAreaElement).value).toBe(state.draft);
+    expect(screen.getByRole("button", { name: "수정한 과거 기록 수정" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "지금 저장" }));
+    await waitFor(() => expect((store.get(MEETING_KEY) as Meeting).entries[0]?.text).toBe("수정한 과거 기록"));
+    expect((store.get(MEETING_KEY) as Meeting).draft).toBe(state.draft);
+    view.unmount();
+    deck.dispose();
+  });
+  it("retains scroll position for edit and retag, and follows only new entries", async () => {
+    const { deck, view } = await setup(reviewMeeting());
+    const input = await screen.findByRole("textbox", { name: "발언 입력" });
+    const log = screen.getByRole("list", { name: "회의 기록" }).parentElement as HTMLDivElement;
+    Object.defineProperty(log, "scrollHeight", { value: 2000, configurable: true });
+    log.scrollTop = 200;
+    fireEvent.click(screen.getByRole("button", { name: "과거 기록 수정" }));
+    fireEvent.click(screen.getByRole("button", { name: "가상 화자 B · Alt+2" }));
+    expect(log.scrollTop).toBe(200);
+    fireEvent.click(screen.getByRole("button", { name: "수정 저장" }));
+    expect(log.scrollTop).toBe(200);
+    fireEvent.change(input, { target: { value: "새 발언" } });
+    fireEvent.click(screen.getByRole("button", { name: "기록" }));
+    expect(log.scrollTop).toBe(2000);
+    view.unmount();
+    deck.dispose();
+  });
+  it("restores the pending draft when changing edited records and cancelling", async () => {
+    const state = reviewMeeting();
+    const original = state.entries[0];
+    if (!original) throw new Error("MISSING_SYNTHETIC_ENTRY");
+    state.entries.push({ ...original, id: "second", text: "다른 과거 기록" });
+    const { deck, view } = await setup(state);
+    const input = await screen.findByRole("textbox", { name: "발언 입력" });
+    fireEvent.click(screen.getByRole("button", { name: "과거 기록 수정" }));
+    fireEvent.change(input, { target: { value: "임시 수정 내용" } });
+    fireEvent.click(screen.getByRole("button", { name: "다른 과거 기록 수정" }));
+    fireEvent.click(screen.getByRole("button", { name: "수정 취소 (Esc)" }));
+    expect((input as HTMLTextAreaElement).value).toBe(state.draft);
+    view.unmount();
+    deck.dispose();
+  });
+});
+
+it("restores pending kind and privacy choices after reviewing an existing record", async () => {
+  const { deck, view } = await setup({
+    ...seeded(),
+    entries: [
+      { id: "old", kind: "발언", text: "과거 기록", speaker: "가상 화자 A", private: false, owner: "", due: "" },
+    ],
+  });
+  const input = await screen.findByRole("textbox", { name: "발언 입력" });
+  fireEvent.click(screen.getByRole("button", { name: "종류 · 비공개 선택" }));
+  fireEvent.click(screen.getByRole("button", { name: "결정" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "비공개 메모" }));
+  fireEvent.change(input, { target: { value: "보존할 비공개 결정" } });
+  fireEvent.click(screen.getByRole("button", { name: "과거 기록 수정" }));
+  fireEvent.click(screen.getByRole("button", { name: "수정 저장" }));
+  fireEvent.click(screen.getByRole("button", { name: "기록" }));
+  const entry = within(screen.getByRole("list", { name: "회의 기록" }))
+    .getByText("보존할 비공개 결정")
+    .closest("[role=listitem]") as HTMLElement;
+  expect(within(entry).getByText("결정")).toBeTruthy();
+  expect(within(entry).getByText("비공개")).toBeTruthy();
+  view.unmount();
+  deck.dispose();
+});
+
+it("respects Space on a focused action button instead of moving focus into the composer", async () => {
+  const { deck, view } = await setup(seeded());
+  await screen.findByRole("textbox", { name: "발언 입력" });
+  const button = screen.getByRole("button", { name: "내보내기 (F8)" });
+  button.focus();
+  fireEvent.keyDown(button, { key: " ", code: "Space" });
+  expect(document.activeElement).toBe(button);
+  view.unmount();
+  deck.dispose();
+});
