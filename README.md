@@ -2,7 +2,7 @@
 
 선생님들이 자주 쓰는 작은 Windows 도구를 하나의 앱("덱")에 모아 두는 무료 오픈소스 프로젝트예요. 한 번 설치하면 업데이트로 새 도구가 계속 추가돼요.
 
-> **개발 초기 단계예요.** 앱 골격과 첫 도구(타이머)가 있어요. 아직 정식 릴리스는 없어요.
+> **개발 초기 단계예요.** 타이머와 회의록·지도일배정기의 초기 버전이 있어요. 아직 정식 릴리스는 없어요.
 
 ## 무엇을 하나요
 
@@ -24,14 +24,14 @@
 
 Windows 10/11에서 개발해요.
 
-| 도구 | 버전 |
-|---|---|
-| Node.js | LTS |
-| pnpm | corepack으로 활성화(`corepack enable`) |
-| Rust | stable, `x86_64-pc-windows-msvc` |
-| Visual Studio C++ Build Tools | 2022 |
-| WebView2 Runtime | Windows 11 기본 포함 |
-| git | 최신 |
+| 도구                          | 버전                                   |
+| ----------------------------- | -------------------------------------- |
+| Node.js                       | LTS                                    |
+| pnpm                          | corepack으로 활성화(`corepack enable`) |
+| Rust                          | stable, `x86_64-pc-windows-msvc`       |
+| Visual Studio C++ Build Tools | 2022                                   |
+| WebView2 Runtime              | Windows 11 기본 포함                   |
+| git                           | 최신                                   |
 
 처음 한 번 준비해요.
 
@@ -57,6 +57,14 @@ pnpm tauri build     # NSIS 설치본: target/release/bundle/nsis/
 ```
 
 새 도구를 만들 때는 `pnpm new:module <id>`로 시작해요. 자세한 절차는 [modules/AGENTS.md](modules/AGENTS.md)에 있어요.
+
+로컬 명령 실행과 준비물은 [로컬 개발 준비](docs/LOCAL_SETUP.md), 기존 프로그램을 모듈로 옮기는 절차는 [모듈 이식 안내](docs/MODULE_MIGRATION.md)를 보세요.
+
+기존 도구를 재구성하는 사용자 요구와 개발 순서 권고는 [제품 개발 계획 초안](docs/PRODUCT_PLAN.md)에 정리했어요.
+
+현재 추가한 도구의 사용법과 지원 범위는 [회의록](modules/meeting-note/README.md), [지도일배정기](modules/duty-planner/README.md)를 보세요. 파일 처리·공통 명부 연결의 다음 구현 범위는 [공통 기반 제안서](docs/proposals/module-foundations.md)에서 검토해요.
+
+최근 구현과 검증 결과, 남은 작업은 [개발 현황](docs/DEVELOPMENT_STATUS.md)에 정리했어요.
 
 비밀값 검사를 위해 [gitleaks](https://github.com/gitleaks/gitleaks) 설치를 권장해요(`winget install Gitleaks.Gitleaks`).
 
