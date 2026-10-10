@@ -38,6 +38,9 @@ use crate::protocol::{content_type, method_allowed, module_request_path, respond
 use crate::state::AppState;
 use crate::storage::StorageService;
 
+/// Page zoom for the main window (1.0 = 100%).
+const UI_ZOOM: f64 = 1.2;
+
 /// Shell event carrying dropped files for the active module.
 pub const FS_DROPPED_EVENT: &str = "deck://fs-dropped";
 
@@ -172,6 +175,11 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     let window = builder.build()?;
+    // The WinUI type ramp reads small on classroom screens; render the whole shell and every
+    // module a size up, like browser zoom, instead of changing the ramp (design-system.md §4).
+    if window.set_zoom(UI_ZOOM).is_err() {
+        tracing::warn!("ui zoom unavailable");
+    }
     let mica = apply_mica(&window);
     app.state::<AppState>()
         .mica
