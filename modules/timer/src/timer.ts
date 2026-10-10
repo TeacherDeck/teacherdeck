@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 // Pure timer state machine (MOD-015: unit-tested without the host). Time is derived from
-// timestamps, not from counting ticks, so the timer stays correct while the iframe is hidden
-// (ui.keepAlive) or the main thread is busy.
+// monotonic performance.now() timestamps, never wall-clock time. A delayed tick includes
+// all elapsed monotonic time. On supported Windows WebView2, sleep counts toward the duration.
+// The timer is not resumed after application restart.
 
 export type Status = "idle" | "running" | "paused" | "finished";
 
