@@ -48,7 +48,8 @@ describe("timer keyboard and monotonic time", () => {
   });
   it("does not reset or enter presentation when typing or using modified shortcuts", async () => {
     const { fullscreen } = await open();
-    const input = screen.getByRole("spinbutton");
+    fireEvent.click(screen.getByRole("button", { name: /눌러서 시간 입력/ }));
+    const input = screen.getByRole("textbox", { name: "분" });
     fireEvent.keyDown(input, { key: "f" });
     fireEvent.keyDown(window, { key: "f", ctrlKey: true });
     fireEvent.keyDown(window, { key: "f", repeat: true });

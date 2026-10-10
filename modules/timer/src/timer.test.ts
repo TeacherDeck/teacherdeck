@@ -1,7 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import { describe, expect, it } from "vitest";
-import { MAX_DURATION_MS, create, format, pause, remaining, reset, start, tick, toggle } from "./timer.ts";
+import {
+  MAX_DURATION_MS,
+  create,
+  format,
+  fromParts,
+  pause,
+  remaining,
+  reset,
+  start,
+  tick,
+  toParts,
+  toggle,
+} from "./timer.ts";
 
 describe("timer state machine", () => {
   it("counts down from timestamps", () => {
@@ -44,5 +56,18 @@ describe("timer state machine", () => {
     expect(format(59_001)).toBe("1:00");
     expect(format(3_600_000)).toBe("1:00:00");
     expect(format(3_661_000)).toBe("1:01:01");
+  });
+});
+
+describe("parts", () => {
+  it("splits and joins hours, minutes and seconds", () => {
+    expect(toParts(3_661_000)).toEqual({ h: 1, m: 1, s: 1 });
+    expect(toParts(299_001)).toEqual({ h: 0, m: 5, s: 0 });
+    for (const ms of [0, 59_000, 300_000, 3_661_000]) expect(fromParts(toParts(ms))).toBe(ms);
+  });
+
+  it("carries overflow and caps the duration", () => {
+    expect(fromParts({ h: 0, m: 75, s: 90 })).toBe(4_590_000);
+    expect(fromParts({ h: 99, m: 0, s: 0 })).toBe(MAX_DURATION_MS);
   });
 });
