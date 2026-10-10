@@ -1,0 +1,14 @@
+{
+  "$schema": "../../schema/module.schema.json",
+  "manifestVersion": 1,
+  "id": "group-planner",
+  "name": "모둠 만들기",
+  "description": "학생·모둠 고정과 제외·분리 조건을 지키며 편성하고 직접 이동해요.",
+  "version": "0.1.0",
+  "category": "classroom",
+  "icon": "icon.svg",
+  "entry": "index.html",
+  "authors": [{ "name": "rochelobeJYJ" }],
+  "requires": { "storage": "^1.0", "fs": "^1.1", "window": "^1.0" },
+  "optional": {}
+}
