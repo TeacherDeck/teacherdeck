@@ -1,6 +1,6 @@
 {
   "name": "teacherdeck",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "교사용 Windows 도구 덱",
   "license": "GPL-3.0-only",
