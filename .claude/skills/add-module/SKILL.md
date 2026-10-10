@@ -34,7 +34,7 @@ pnpm install
 - `module.json`: description(80자 이하), `requires`/`optional`(MOD-004, MOD-006)
 - 호스트 호출은 `deck.*`만(MOD-006). optional 캡은 `deck.has()` + `CapabilityGate`(MOD-007)
 - 저장은 `deck.storage`만(MOD-009). 외부 네트워크 금지(MOD-008)
-- UI는 `@deck/ui` + Fluent, 스타일은 토큰만(MOD-010, UI-002). 일괄 처리 도구는 `ToolLayout`(MOD-011)
+- UI는 `@deck/ui`에서만(WinUI 컨트롤: InfoBar, TextBox, NumberBox, ComboBox, ListView, ContentDialog 등), 아이콘은 `@fluentui/react-icons`, 스타일은 토큰만(MOD-010, UI-002). 없는 컨트롤은 모듈에서 만들지 말고 `@deck/ui`에 추가(UI-006). 일괄 처리 도구는 `ToolLayout`(MOD-011)
 - 원본 파일 덮어쓰기·삭제 금지(PRV-006). 로그에 파일명·경로 금지(PRV-003)
 - 문구는 UI-007
 

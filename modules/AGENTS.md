@@ -9,7 +9,7 @@
 | `src/main.tsx` | `connect()` 후 `DeckProvider`로 렌더(BRG-003, UI-004) |
 | `src/timer.ts` + `timer.test.ts` | 호스트 없이 테스트하는 순수 로직(MOD-015) |
 | `src/presets.ts` + `presets.test.ts` | storage 캡 사용과 `createMockHost` 테스트(MOD-009, MOD-015) |
-| `src/App.tsx` | `@deck/ui`·토큰만 쓰는 UI, 키보드 조작, window 캡(MOD-010, UI-005) |
+| `src/App.tsx` | `@deck/ui`만 쓰는 UI(InfoBar, NumberBox, ToggleSwitch, SettingsCard, Display), 키보드 조작, window 캡(MOD-010, UI-005) |
 
 ## 모듈 추가 절차
 
@@ -23,7 +23,7 @@
 5. **구현한다.**
    - 호스트 호출은 `@deck/sdk`로만 하고, 호출하는 캡은 모두 선언한다(MOD-006).
    - optional 캡은 `deck.has()`로 확인하고 없으면 `CapabilityGate`를 보여 준다(MOD-007).
-   - UI는 `@deck/ui`와 Fluent v9만 쓴다(MOD-010). 파일 일괄 처리 도구는 `ToolLayout`을 쓴다(MOD-011).
+   - UI는 `@deck/ui`에서만 가져오고 아이콘만 `@fluentui/react-icons`에서 가져온다(MOD-010). 컨트롤 목록은 [design-system.md 6절](../docs/spec/design-system.md#6-deckui-컴포넌트)을 본다. 파일 일괄 처리 도구는 `ToolLayout`을 쓴다(MOD-011).
    - 무거운 연산은 Web Worker나 WASM으로 옮긴다(MOD-014).
 6. **테스트를 쓴다**: 순수 로직은 vitest, 호스트 연동은 SDK mock host(MOD-015). 테스트 데이터는 합성 데이터만 쓴다(PRV-004).
 7. **검증한다**: `pnpm verify`(GEN-003).
@@ -44,7 +44,7 @@
 | MOD-007 | MUST | optional 캡은 `deck.has()` 확인 후 쓰고, 없으면 `CapabilityGate`를 보여 준다. |
 | MOD-008 | MUST NOT | 외부 네트워크 요청을 하지 않는다. |
 | MOD-009 | MUST NOT | `localStorage`, `indexedDB`, `document.cookie`, `caches`를 쓰지 않는다. storage 캡만 쓴다. |
-| MOD-010 | MUST | UI는 `@deck/ui`와 Fluent v9 컴포넌트·토큰만 쓴다. |
+| MOD-010 | MUST | UI는 `@deck/ui`에서만, 아이콘은 `@fluentui/react-icons`에서만 가져온다. Fluent 직접 import 금지. |
 | MOD-011 | MUST | 파일 일괄 처리 도구는 `ToolLayout` 골격을 따른다. |
 | MOD-012 | MUST | `authors`에 실제 기여자를 적고 기존 저자를 지우지 않는다. |
 | MOD-013 | MUST | 사용자에게 보이는 변경은 버전 bump와 CHANGELOG를 동반한다. |

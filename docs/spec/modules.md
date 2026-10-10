@@ -81,7 +81,7 @@ modules/<id>/
 - **MOD-007** [MUST] optional 캡은 `deck.has(cap)`로 확인한 뒤 사용하고, 없으면 `CapabilityGate`로 "앱 업데이트 후 사용 가능"을 표시한다. — 강제: SDK 미확인 호출 경고 로그, [manual]
 - **MOD-008** [MUST NOT] 외부 네트워크 요청을 하지 않는다. — 강제: 모듈 CSP `connect-src 'self'`
 - **MOD-009** [MUST NOT] 영속 데이터에 `localStorage`, `indexedDB`, `document.cookie`, `caches`를 쓰지 않는다. storage 캡만 쓴다. — 강제: eslint `deck/no-web-storage`
-- **MOD-010** [MUST] UI는 `@deck/ui`와 Fluent UI v9 컴포넌트·토큰만 쓴다(UI-001~003). — 강제: eslint
+- **MOD-010** [MUST] UI 컴포넌트·타입 램프·토큰·스타일 도구는 `@deck/ui`에서만 가져오고, 아이콘은 `@fluentui/react-icons`에서만 가져온다. `@fluentui/react-components` 등 Fluent 패키지를 직접 import하지 않는다(UI-001~003, [ADR-0011](../adr/0011-winui-aligned-deck-ui.md)). — 강제: eslint `no-restricted-imports`
 - **MOD-011** [MUST] 파일을 일괄 처리하는 도구는 `ToolLayout` 골격을 따른다(UI-008). — 강제: [manual]
 - **MOD-012** [MUST] `authors`에 실제 기여자를 기록하고 기존 저자를 제거하지 않는다. — 강제: 스키마 `minItems: 1`, [manual]
 - **MOD-013** [MUST] 사용자에게 보이는 변경은 버전 bump와 모듈 CHANGELOG를 동반한다(VER-004). — 강제: `check-modules`(현재 버전의 CHANGELOG 항목), CI의 base 브랜치 대비 버전 비교(`check-module-bumps`)

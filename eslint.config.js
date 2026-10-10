@@ -35,6 +35,11 @@ const UI_003 = {
   ]),
   message: `[UI-003] 아이콘은 @fluentui/react-icons만 써요. ${UI_SPEC}`,
 };
+/** MOD-010: modules take UI only from @deck/ui (WinUI controls, ADR-0011); icons stay on @fluentui/react-icons. */
+const MOD_010 = {
+  regex: "^@fluentui/(?!react-icons$)",
+  message: `[MOD-010] 모듈은 Fluent를 직접 import하지 않아요. 컴포넌트·토큰·makeStyles는 @deck/ui에서 가져와요. ${MODULES_SPEC}`,
+};
 /** MOD-005: modules import only @deck/sdk, @deck/ui, their own files and licensed packages. */
 const MOD_005 = [
   { regex: "^@tauri-apps/", message: `[MOD-005] 모듈은 Tauri API를 직접 쓰지 않아요. 호스트 기능은 @deck/sdk로 호출해요. ${MODULES_SPEC}` },
@@ -83,7 +88,7 @@ export default defineConfig([
     files: ["modules/**/*.{ts,tsx,js,jsx}"],
     plugins: { deck },
     rules: {
-      "no-restricted-imports": ["error", { patterns: [...MOD_005, UI_001, UI_003] }],
+      "no-restricted-imports": ["error", { patterns: [...MOD_005, MOD_010, UI_001, UI_003] }],
       "deck/no-web-storage": "error",
     },
   },
