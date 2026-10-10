@@ -21,7 +21,7 @@ import { KeepAliveSet } from "./bridge/keepAlive.ts";
 import type { Category } from "./generated/Category.ts";
 import type { ModuleEntry } from "./generated/ModuleEntry.ts";
 import type { ShellInfo } from "./generated/ShellInfo.ts";
-import { host } from "./host.ts";
+import { host, windowControls } from "./host.ts";
 import { CATEGORY_LABELS } from "./labels.ts";
 import { About } from "./pages/About.tsx";
 import { Gallery } from "./pages/Gallery.tsx";
@@ -29,6 +29,7 @@ import { Home } from "./pages/Home.tsx";
 import { ModuleHost } from "./pages/ModuleHost.tsx";
 import { Settings } from "./pages/Settings.tsx";
 import { type ThemePreference, loadPreference, savePreference, useColorMode } from "./theme.ts";
+import { TitleBar } from "./TitleBar.tsx";
 
 type Page =
   | { kind: "home" }
@@ -48,7 +49,8 @@ const CATEGORY_ICONS: Record<Category, ReactElement> = {
 
 const useStyles = makeStyles({
   // The shell never scrolls as a whole; only the content pane scrolls, and only vertically.
-  shell: { display: "flex", height: "100vh", overflow: "hidden" },
+  shell: { display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" },
+  body: { display: "flex", flexGrow: 1, minHeight: 0 },
   rail: {
     display: "flex",
     flexDirection: "column",
@@ -234,7 +236,14 @@ export function App() {
   if (error !== null || info === null) {
     return (
       <DeckProvider theme={themePayload} mica={false}>
-        {error === null ? <Spinner label="불러오는 중" /> : <EmptyState title="문제가 생겼어요" description={error} />}
+        <div className={s.shell}>
+          <TitleBar title="TeacherDeck" controls={windowControls} />
+          {error === null ? (
+            <Spinner label="불러오는 중" />
+          ) : (
+            <EmptyState title="문제가 생겼어요" description={error} />
+          )}
+        </div>
       </DeckProvider>
     );
   }
@@ -257,60 +266,63 @@ export function App() {
   return (
     <DeckProvider theme={themePayload} mica={mica}>
       <div className={s.shell}>
-        <nav className={s.rail} aria-label="메뉴">
-          {railItem("덱", <HomeRegular />, { kind: "home" }, page.kind === "home")}
-          {usedCategories.map((c) =>
-            railItem(
-              CATEGORY_LABELS[c],
-              CATEGORY_ICONS[c],
-              { kind: "category", category: c },
-              page.kind === "category" && page.category === c,
-            ),
-          )}
-          <div className={s.spacer} />
-          {info.dev && railItem("UI 갤러리", <PaintBrushRegular />, { kind: "gallery" }, page.kind === "gallery")}
-          {railItem("설정", <SettingsRegular />, { kind: "settings" }, page.kind === "settings")}
-          {railItem("정보", <InfoRegular />, { kind: "about" }, page.kind === "about")}
-        </nav>
-        <main className={s.content}>
-          <div className={activeModule === null ? s.hidden : s.moduleLayer}>
-            <ModuleHost
-              bridge={bridge}
-              modules={modules}
-              mounted={mounted}
-              active={activeModule}
-              loadErrors={loadErrors}
-            />
-          </div>
-          {page.kind === "home" && (
-            <Home
-              modules={modules}
-              dev={info.dev}
-              onOpen={(id) => navigate({ kind: "module", id })}
-              onNeedsUpdate={() => navigate({ kind: "settings" })}
-            />
-          )}
-          {page.kind === "category" && (
-            <Home
-              modules={modules}
-              category={page.category}
-              dev={info.dev}
-              onOpen={(id) => navigate({ kind: "module", id })}
-              onNeedsUpdate={() => navigate({ kind: "settings" })}
-            />
-          )}
-          {page.kind === "settings" && (
-            <Settings
-              theme={pref}
-              onTheme={changeTheme}
-              checkUpdate={host.checkUpdate}
-              installUpdate={host.installUpdate}
-              restart={host.restartApp}
-            />
-          )}
-          {page.kind === "about" && <About appVersion={info.appVersion} modules={modules} />}
-          {page.kind === "gallery" && info.dev && <Gallery />}
-        </main>
+        <TitleBar title="TeacherDeck" controls={windowControls} />
+        <div className={s.body}>
+          <nav className={s.rail} aria-label="메뉴">
+            {railItem("덱", <HomeRegular />, { kind: "home" }, page.kind === "home")}
+            {usedCategories.map((c) =>
+              railItem(
+                CATEGORY_LABELS[c],
+                CATEGORY_ICONS[c],
+                { kind: "category", category: c },
+                page.kind === "category" && page.category === c,
+              ),
+            )}
+            <div className={s.spacer} />
+            {info.dev && railItem("UI 갤러리", <PaintBrushRegular />, { kind: "gallery" }, page.kind === "gallery")}
+            {railItem("설정", <SettingsRegular />, { kind: "settings" }, page.kind === "settings")}
+            {railItem("정보", <InfoRegular />, { kind: "about" }, page.kind === "about")}
+          </nav>
+          <main className={s.content}>
+            <div className={activeModule === null ? s.hidden : s.moduleLayer}>
+              <ModuleHost
+                bridge={bridge}
+                modules={modules}
+                mounted={mounted}
+                active={activeModule}
+                loadErrors={loadErrors}
+              />
+            </div>
+            {page.kind === "home" && (
+              <Home
+                modules={modules}
+                dev={info.dev}
+                onOpen={(id) => navigate({ kind: "module", id })}
+                onNeedsUpdate={() => navigate({ kind: "settings" })}
+              />
+            )}
+            {page.kind === "category" && (
+              <Home
+                modules={modules}
+                category={page.category}
+                dev={info.dev}
+                onOpen={(id) => navigate({ kind: "module", id })}
+                onNeedsUpdate={() => navigate({ kind: "settings" })}
+              />
+            )}
+            {page.kind === "settings" && (
+              <Settings
+                theme={pref}
+                onTheme={changeTheme}
+                checkUpdate={host.checkUpdate}
+                installUpdate={host.installUpdate}
+                restart={host.restartApp}
+              />
+            )}
+            {page.kind === "about" && <About appVersion={info.appVersion} modules={modules} />}
+            {page.kind === "gallery" && info.dev && <Gallery />}
+          </main>
+        </div>
       </div>
       {info.secProbe && <SecProbe origin={info.moduleOrigin} modules={modules} />}
     </DeckProvider>

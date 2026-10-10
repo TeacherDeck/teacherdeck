@@ -145,6 +145,10 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .title("TeacherDeck")
         .inner_size(1200.0, 800.0)
         .min_inner_size(800.0, 560.0)
+        // The shell draws its own title bar (apps/desktop/src/TitleBar.tsx); the OS keeps
+        // the shadow, rounded corners, resize borders and snapping.
+        .decorations(false)
+        .shadow(true)
         .transparent(supports_mica())
         .visible(false);
     // Debug-only diagnostics (docs/security/sec-004.md): DevTools protocol on a local port.

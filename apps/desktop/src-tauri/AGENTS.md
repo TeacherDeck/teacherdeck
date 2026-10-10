@@ -28,6 +28,8 @@
 
 `capabilities/`(ACL), `tauri.conf.json`, `src/protocol.rs`의 CSP를 바꾸는 것은 보안 설정 변경이므로 **정지 조건**이다(GEN-005).
 
+셸 제목 표시줄의 로컬 `main` 창 권한 범위는 [ADR-0015](../../../docs/adr/0015-shell-window-controls.md)를 따른다(SEC-003). 모듈의 창 조작은 기존 캡을 거친다.
+
 ## 파일 지도
 
 | 위치 | 내용 |

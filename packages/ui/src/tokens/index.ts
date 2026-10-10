@@ -61,6 +61,12 @@ export const deckTokens = {
   layer: cssVar("deckCardFill"),
   layerSubtle: tokens.colorSubtleBackground,
   stroke: tokens.colorNeutralStroke2,
+  /** Shell window chrome (custom title bar, WinUI caption buttons). */
+  titleBarHeight: "40px",
+  captionButtonWidth: "46px",
+  /** Caption glyphs: Segoe Fluent Icons on Windows 11, Segoe MDL2 Assets on Windows 10 (same code points). */
+  captionIconFont: '"Segoe Fluent Icons", "Segoe MDL2 Assets"',
+  captionIconSize: "10px",
 } as const;
 
 /** Fluent theme for a color mode with the deck fonts and WinUI extras. */
