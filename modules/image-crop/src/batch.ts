@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import type { Deck, FileHandleInfo, FolderHandleInfo } from "@deck/sdk";
+import { OutputSession } from "./output-session.ts";
 import { MAX_BYTES } from "./header.ts";
 import { outputName, type Edit } from "./edit.ts";
 import type { CropRequest, CropResponse } from "./crop.worker.ts";
@@ -66,6 +67,8 @@ export interface CropItem {
   edit: Edit;
 }
 export interface CropOutput {
+  destinationExpired?: boolean;
+  outputs?: Record<string, string>;
   folder: FolderHandleInfo;
   saved: string[];
   failed: string[];
@@ -78,14 +81,17 @@ export async function saveCrops(
   signal: AbortSignal,
   progress: (done: number) => void = () => undefined,
   render: Renderer = renderCrop,
+  session?: OutputSession,
 ): Promise<CropOutput | null> {
   if (!items.length || signal.aborted) return null;
-  const parent = await deck.fs.pickFolder();
-  if (!parent || signal.aborted) return null;
-  const batch = await deck.fs.createOutputFolder({ parentHandle: parent.handle, suggestedName: "잘라낸 이미지" });
+  const destination = session ?? new OutputSession(deck, "잘라낸 이미지");
+  const batch = await destination.get(signal);
+  if (!batch) return null;
+  let destinationExpired = false;
+  const outputs: Record<string, string> = {};
   const saved: string[] = [],
     failed: string[] = [];
-  const used = new Set<string>();
+  const used = destination.usedNames;
   try {
     for (const item of items) {
       if (signal.aborted) break;
@@ -97,15 +103,23 @@ export async function saveCrops(
         while (used.has(name.toLowerCase()))
           name = proposed.replace(/\.[^.]+$/, `_${suffix++}.${format === "jpeg" ? "jpg" : "png"}`);
         used.add(name.toLowerCase());
-        await deck.fs.writeBlob({ batchId: batch.batchId, suggestedName: name, blob: result.blob }, { signal });
+        const output = await deck.fs.writeBlob(
+          { batchId: batch.batchId, suggestedName: name, blob: result.blob },
+          { signal },
+        );
+        outputs[item.file.handle] = output.name;
         saved.push(item.file.handle);
-      } catch {
+      } catch (error) {
         if (!signal.aborted) failed.push(item.file.handle);
+        if (error && typeof error === "object" && "code" in error && error.code === "NOT_FOUND") {
+          destinationExpired = true;
+          break;
+        }
       }
       progress(saved.length + failed.length);
     }
   } finally {
-    await deck.fs.closeOutputFolder({ batchId: batch.batchId });
+    if (!session) await destination.close();
   }
-  return { folder: batch.folder, saved, failed, cancelled: signal.aborted };
+  return { folder: batch.folder, outputs, destinationExpired, saved, failed, cancelled: signal.aborted };
 }

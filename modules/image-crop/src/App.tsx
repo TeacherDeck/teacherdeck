@@ -20,7 +20,9 @@ import {
 } from "@deck/ui";
 import { useEffect, useRef, useState } from "react";
 import { RATIOS, centeredRect, clampRect, orientedSize, transferRect, type Rect } from "./edit.ts";
+import { OutputSession } from "./output-session.ts";
 import { readImage, renderCrop, saveCrops, type CropItem } from "./batch.ts";
+type SaveStatus = { state: "saved" | "failed" | "pending"; file: FileHandleInfo; folder?: FolderHandleInfo };
 interface Item extends CropItem {
   ratio: string;
   initialPreview: Blob | undefined;
@@ -49,6 +51,8 @@ export function App({ deck }: { deck: Deck }) {
   const [previewing, setPreviewing] = useState(false);
   const [format, setFormat] = useState<"png" | "jpeg">("png");
   const [advance, setAdvance] = useState(true);
+  const destination = useRef<OutputSession | null>(null);
+  const [saveStatuses, setSaveStatuses] = useState<Record<string, SaveStatus>>({});
   const [folder, setFolder] = useState<FolderHandleInfo | null>(null);
   const [done, setDone] = useState(0);
   const [total, setTotal] = useState(0);
@@ -96,7 +100,17 @@ export function App({ deck }: { deck: Deck }) {
       if (url) URL.revokeObjectURL(url);
     };
   }, [current?.bytes, current?.edit.turns, current?.edit.flipX, current?.edit.flipY]);
-  useEffect(() => () => controller.current?.abort(), []);
+  useEffect(
+    () => () => {
+      controller.current?.abort();
+      void destination.current?.close().catch(() => undefined);
+    },
+    [],
+  );
+  function resetDestination() {
+    void destination.current?.close().catch(() => setMessage("저장 작업을 정리하지 못했어요. 저장한 결과는 유지해요."));
+    destination.current = null;
+  }
   useEffect(
     () =>
       deck.on("fs.dropped", ({ files }) => {
@@ -110,7 +124,7 @@ export function App({ deck }: { deck: Deck }) {
     setItems((all) => all.map((item, i) => (i === index ? { ...item, edit: { ...item.edit, rect: fixed } } : item)));
   }
   async function addFiles(files: FileHandleInfo[]) {
-    if (locked.current) return;
+    if (locked.current || !files.length) return;
     const incoming = [...new Map(files.filter(accepted).map((file) => [file.handle, file])).values()].filter(
       (file) => !items.some((item) => item.file.handle === file.handle),
     );
@@ -218,27 +232,61 @@ export function App({ deck }: { deck: Deck }) {
     );
     setMessage("회전·반전·비율과 사진 안의 상대적인 자르기 범위를 모두 적용했어요. 사진을 하나씩 확인해 주세요.");
   }
-  async function save(all = false) {
+  async function save(all = false, retry = false) {
     if (locked.current || !current) return;
     locked.current = true;
     setBusy(true);
-    setFolder(null);
     const abort = new AbortController();
     controller.current = abort;
-    const selected = all ? items : [current];
+    const selected = retry
+      ? items.filter((item) => saveStatuses[item.file.handle] && saveStatuses[item.file.handle]?.state !== "saved")
+      : all
+        ? items
+        : [current];
+    if (!selected.length) {
+      locked.current = false;
+      setBusy(false);
+      return;
+    }
+    destination.current ??= new OutputSession(deck, "잘라낸 이미지");
     setTotal(selected.length);
     setDone(0);
     try {
-      const result = await saveCrops(deck, selected, format, abort.signal, setDone);
+      const result = await saveCrops(deck, selected, format, abort.signal, setDone, renderCrop, destination.current);
       if (result) {
         setFolder(result.folder);
+        setSaveStatuses((previous) => {
+          const next = { ...previous };
+          const saved = new Set(result.saved);
+          const failed = new Set(result.failed);
+          for (const item of selected) {
+            if (!saved.has(item.file.handle) && !failed.has(item.file.handle) && previous[item.file.handle]) continue;
+            next[item.file.handle] = {
+              file: item.file,
+              state: saved.has(item.file.handle) ? "saved" : failed.has(item.file.handle) ? "failed" : "pending",
+              folder: result.folder,
+            };
+          }
+          return next;
+        });
         setMessage(
           `${result.saved.length}개 저장했어요.${result.failed.length ? ` ${result.failed.length}개는 저장하지 못했어요. 현재 편집은 유지해요.` : ""}${result.cancelled ? " 취소했어요. 저장된 결과는 새 폴더에 남아요." : ""}`,
         );
-        if (!all && advance && result.saved.includes(current.file.handle) && index < items.length - 1)
+        if (result.destinationExpired) {
+          resetDestination();
+          setMessage(
+            "저장 작업이 만료됐거나 결과 폴더를 사용할 수 없어요. 저장하지 못한 사진 재시도를 누르고 폴더를 다시 선택해 주세요. 이전 결과는 유지해요.",
+          );
+        }
+        if (!all && !retry && advance && result.saved.includes(current.file.handle) && index < items.length - 1)
           setIndex(index + 1);
       }
     } catch {
+      setSaveStatuses((previous) => {
+        const next = { ...previous };
+        for (const item of selected) next[item.file.handle] = { file: item.file, state: "failed" };
+        return next;
+      });
       setMessage("결과를 저장하지 못했어요. 편집 내용은 유지해요. 폴더와 저장 공간을 확인해 주세요.");
     } finally {
       locked.current = false;
@@ -286,6 +334,8 @@ export function App({ deck }: { deck: Deck }) {
               setItems([]);
               setIndex(0);
               setFailed([]);
+              resetDestination();
+              setSaveStatuses({});
               setFolder(null);
               setMessage("");
             }}
@@ -464,11 +514,62 @@ export function App({ deck }: { deck: Deck }) {
           disabled={busy}
           onChange={setAdvance}
         />
-        <Caption secondary>저장할 때 폴더를 선택하고 그 안에 새 결과 폴더를 만들어요. 원본은 수정하지 않아요.</Caption>
-        {busy && <ProgressBar header="처리 진행" value={total ? done / total : 0} />}
+        <Caption secondary>
+          처음 저장할 때만 폴더를 선택해요. 같은 작업은 한 결과 폴더에 모으고, 같은 사진을 다시 저장하면 새 이름을
+          붙여요. 원본은 수정하지 않아요.
+        </Caption>
+        <Button
+          disabled={busy || !folder}
+          onClick={() => {
+            resetDestination();
+            setMessage("다음 저장 때 새 저장 폴더를 선택해요. 이전 결과는 그대로 유지해요.");
+          }}
+        >
+          다음 저장 폴더 변경
+        </Button>
+        {busy && <ProgressBar header="처리 진행" value={total ? (done / total) * 100 : 0} />}
       </ToolLayout.Section>
       <ToolLayout.Section step="result" title="처리 결과">
         {message && <InfoBar severity="informational" message={message} />}{" "}
+        {Object.keys(saveStatuses).length > 0 && (
+          <ListView
+            header="사진별 저장 결과"
+            items={Object.values(saveStatuses)}
+            getKey={(result) => result.file.handle}
+            renderItem={(result) => (
+              <div className={s.actions}>
+                <Body>
+                  {result.file.name} ·{" "}
+                  {result.state === "saved"
+                    ? "저장했어요"
+                    : result.state === "failed"
+                      ? "저장 실패 · 폴더 권한과 저장 공간을 확인해 주세요"
+                      : "아직 저장하지 않았어요"}
+                </Body>
+                {result.folder && (
+                  <Button
+                    disabled={busy}
+                    onClick={() => {
+                      void deck.fs
+                        .reveal(result.folder?.handle ?? "")
+                        .catch(() => setMessage("결과 폴더를 열지 못했어요. 저장한 폴더에서 확인해 주세요."));
+                    }}
+                  >
+                    저장 위치 열기
+                  </Button>
+                )}
+              </div>
+            )}
+          />
+        )}
+        <Button
+          disabled={busy || !Object.values(saveStatuses).some((result) => result.state !== "saved")}
+          onClick={() => {
+            void save(false, true);
+          }}
+        >
+          저장하지 못한 사진 재시도
+        </Button>
         {folder && (
           <Button
             onClick={() => {

@@ -3,6 +3,7 @@
 import type { Deck, FileHandleInfo, FolderHandleInfo } from "@deck/sdk";
 import { MAX_INPUT, type Parts } from "./archive.ts";
 import { parseParts, type Parsed, type Photo, type Sheet } from "./ooxml.ts";
+import { OutputSession } from "./output-session.ts";
 import type { Student } from "./roster.ts";
 export interface Extraction {
   file: FileHandleInfo;
@@ -35,7 +36,8 @@ export function planPhotos(extractions: Extraction[], renamed: Record<string, st
     for (const [index, photo] of extraction.photos.entries()) {
       const id = `${extraction.file.handle}:${photo.key}`;
       const matchedStudents = extraction.students.filter((s) => s.photoKey === photo.key);
-      const student = matchedStudents.length === 1 ? matchedStudents[0] : undefined;
+      const candidate = matchedStudents.length === 1 ? matchedStudents[0] : undefined;
+      const student = candidate?.identityConfirmed !== false ? candidate : undefined;
       const suggested = extraction.students.find((s) => s.suggestionKey === photo.key);
       const base = safeBase(
         renamed[id] ??
@@ -54,11 +56,13 @@ export function planPhotos(extractions: Extraction[], renamed: Record<string, st
         confirmed: Boolean(student),
         label: student
           ? `${student.grade}학년 ${student.classNumber}반 ${student.number}번 ${student.name}`
-          : suggested
-            ? `추측: ${suggested.grade}학년 ${suggested.classNumber}반 ${suggested.number}번 ${suggested.name} · 이름을 확인해 주세요`
-            : matchedStudents.length > 1
-              ? "여러 학생 칸에 연결된 사진 · 직접 확인해 주세요"
-              : "주인 미확인 사진",
+          : candidate
+            ? `학생 신원 미확인: ${candidate.grade}학년 ${candidate.classNumber}반 ${candidate.number}번 ${candidate.name} · 학년·반을 확인해 주세요`
+            : suggested
+              ? `추측: ${suggested.grade}학년 ${suggested.classNumber}반 ${suggested.number}번 ${suggested.name} · 이름을 확인해 주세요`
+              : matchedStudents.length > 1
+                ? "여러 학생 칸에 연결된 사진 · 직접 확인해 주세요"
+                : "주인 미확인 사진",
       });
     }
   return result;
@@ -126,19 +130,24 @@ export async function readExtraction(
   const parsed: Parsed = await parseParts(parts, signal, true);
   const matched = await match(parsed.sheets, signal);
   const students = matched.students;
-  const confirmed = students.filter((s) => s.photoKey).length;
+  const confirmed = students.filter((s) => s.photoKey && s.identityConfirmed !== false).length;
+  const uncertain = students.filter((s) => s.photoKey && s.identityConfirmed === false).length;
   const guessed = students.filter((s) => s.suggestionKey).length;
   const missing = students.filter((s) => !s.photoKey && !s.suggestionKey).length;
   const warnings = [...parsed.warnings, ...matched.warnings];
+  if (uncertain)
+    warnings.push(`${uncertain}명은 학년·반을 확정하지 못했어요. 사진 위치가 맞아도 미확인 이름으로 저장해요.`);
   if (guessed) warnings.push(`${guessed}장` + "은 위치로 추측했어요. 미확인 이름으로 저장하고 직접 확인해 주세요.");
   if (missing) warnings.push(`사진을 찾지 못한 학생 ${missing}명을 명단에 유지해요.`);
   if (!students.length)
     warnings.push("학생 정보를 찾지 못했어요. 문서 안의 사진은 모두 미확인 사진으로 저장할 수 있어요.");
-  if (parsed.photos.length > confirmed + guessed)
-    warnings.push(`주인을 찾지 못한 사진 ${parsed.photos.length - confirmed - guessed}장도 저장해요.`);
+  if (parsed.photos.length > confirmed + guessed + uncertain)
+    warnings.push(`주인을 찾지 못한 사진 ${parsed.photos.length - confirmed - guessed - uncertain}장도 저장해요.`);
   return { file, students, photos: parsed.photos, warnings };
 }
 export interface SaveResult {
+  destinationExpired?: boolean;
+  outputs?: Record<string, string>;
   folder: FolderHandleInfo;
   saved: string[];
   failed: string[];
@@ -149,33 +158,46 @@ export async function savePhotos(
   photos: PlannedPhoto[],
   signal: AbortSignal,
   progress: (done: number) => void = () => undefined,
+  session?: OutputSession,
 ): Promise<SaveResult | null> {
   if (signal.aborted || !photos.length) return null;
-  const parent = await deck.fs.pickFolder();
-  if (!parent || signal.aborted) return null;
-  const batch = await deck.fs.createOutputFolder({ parentHandle: parent.handle, suggestedName: "명렬표 사진" });
+  const destination = session ?? new OutputSession(deck, "명렬표 사진");
+  const batch = await destination.get(signal);
+  if (!batch) return null;
+  let destinationExpired = false;
+  const outputs: Record<string, string> = {};
   const saved: string[] = [],
     failed: string[] = [];
   try {
     for (const photo of photos) {
       if (signal.aborted) break;
       try {
-        await deck.fs.writeBlob(
+        let name = photo.filename;
+        let suffix = 2;
+        while (destination.usedNames.has(name.toLocaleLowerCase("en-US")))
+          name = photo.filename.replace(/\.[^.]+$/, `_${suffix++}.${photo.extension}`);
+        destination.usedNames.add(name.toLocaleLowerCase("en-US"));
+        const output = await deck.fs.writeBlob(
           {
             batchId: batch.batchId,
-            suggestedName: photo.filename,
+            suggestedName: name,
             blob: new Blob([photo.bytes], { type: photo.mime }),
           },
           { signal },
         );
+        outputs[photo.id] = output.name;
         saved.push(photo.id);
-      } catch {
+      } catch (error) {
         if (!signal.aborted) failed.push(photo.id);
+        if (error && typeof error === "object" && "code" in error && error.code === "NOT_FOUND") {
+          destinationExpired = true;
+          break;
+        }
       }
       progress(saved.length + failed.length);
     }
   } finally {
-    await deck.fs.closeOutputFolder({ batchId: batch.batchId });
+    if (!session) await destination.close();
   }
-  return { folder: batch.folder, saved, failed, cancelled: signal.aborted };
+  return { folder: batch.folder, outputs, destinationExpired, saved, failed, cancelled: signal.aborted };
 }

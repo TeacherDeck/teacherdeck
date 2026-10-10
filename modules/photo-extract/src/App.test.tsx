@@ -154,3 +154,81 @@ describe("compact photo extraction flow", () => {
     deck.dispose();
   });
 });
+
+describe("photo saving recovery", () => {
+  it("preserves saved and failed photo identities when another document is added, and retries only failures", async () => {
+    const noPreview = { ...sample, photos: sample.photos.map((photo) => ({ ...photo, preview: false })) };
+    vi.mocked(readExtraction).mockResolvedValueOnce(noPreview);
+    const savedId = `${file.handle}:${sample.photos[0]?.key}`;
+    const failedId = `${file.handle}:${sample.photos[1]?.key}`;
+    vi.mocked(savePhotos)
+      .mockResolvedValueOnce({
+        folder: { handle: "output", name: "합성 결과" },
+        saved: [savedId],
+        failed: [failedId],
+        cancelled: false,
+      })
+      .mockResolvedValueOnce({
+        folder: { handle: "output", name: "합성 결과" },
+        saved: [failedId],
+        failed: [],
+        cancelled: false,
+      });
+    const { deck, selection } = await setup();
+    fireEvent.click(screen.getByRole("button", { name: "파일 추가" }));
+    await screen.findByText("1개 파일 · 사진 2장 · 학생 2명");
+    fireEvent.click(screen.getByRole("button", { name: "사진 저장" }));
+    await screen.findByText(/미확인_002.jpg · 저장 실패/);
+    expect(screen.getByText(/10301_가상가.jpg · 저장했어요/)).toBeTruthy();
+    const added = { ...file, handle: "input-new", name: "합성 추가.xlsx" };
+    selection.files = [added];
+    const addedPhoto = noPreview.photos[0];
+    if (!addedPhoto) throw new Error("SYNTHETIC_PHOTO_MISSING");
+    vi.mocked(readExtraction).mockResolvedValueOnce({
+      ...noPreview,
+      file: added,
+      students: [],
+      photos: [addedPhoto],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "파일 추가" }));
+    await screen.findByText("2개 파일 · 사진 3장 · 학생 2명");
+    expect(screen.getByText(/미확인_002.jpg · 저장 실패/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "결과 폴더 열기" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "저장하지 못한 사진 재시도" }));
+    await screen.findByText(/미확인_002.jpg · 저장했어요/);
+    expect(vi.mocked(savePhotos).mock.calls[1]?.[1].map((photo) => photo.id)).toEqual([failedId]);
+    expect(vi.mocked(savePhotos).mock.calls[0]?.[4]).toBe(vi.mocked(savePhotos).mock.calls[1]?.[4]);
+    deck.dispose();
+  });
+});
+
+describe("photo save progress units", () => {
+  it("shows one of two completed photos at half of the progress bar", async () => {
+    let finish: (() => void) | undefined;
+    vi.mocked(readExtraction).mockResolvedValue({
+      ...sample,
+      photos: sample.photos.map((photo) => ({ ...photo, preview: false })),
+    });
+    vi.mocked(savePhotos).mockImplementation(async (_deck, _photos, _signal, progress) => {
+      progress?.(1);
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      return {
+        folder: { handle: "output", name: "합성 결과" },
+        saved: [`${file.handle}:${sample.photos[0]?.key}`],
+        failed: [],
+        cancelled: false,
+      };
+    });
+    const { deck } = await setup();
+    fireEvent.click(screen.getByRole("button", { name: "파일 추가" }));
+    await screen.findByText("1개 파일 · 사진 2장 · 학생 2명");
+    fireEvent.click(screen.getByRole("button", { name: "사진 저장" }));
+    const bar = await screen.findByRole("progressbar", { name: "처리 진행" });
+    await waitFor(() => expect(Number(bar.getAttribute("aria-valuenow"))).toBe(0.5));
+    finish?.();
+    await waitFor(() => expect(screen.getByRole("button", { name: "취소" }).hasAttribute("disabled")).toBe(true));
+    deck.dispose();
+  });
+});

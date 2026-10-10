@@ -150,3 +150,51 @@ describe("archive and output safety", () => {
     expect(plans[0]?.bytes).toEqual(fakeJpeg(1));
   });
 });
+
+describe("roster identity confidence", () => {
+  const photos = [{ key: "synthetic.png", bytes: new Uint8Array([1]), extension: "png", mime: "image/png" }];
+  it("keeps each staggered class header inside its own column block", () => {
+    const students = matchPhotos(
+      collectStudents(
+        [
+          { row: 0, col: 0, text: "1학년 1반" },
+          { row: 1, col: 10, text: "1학년 2반" },
+          { row: 2, col: 0, text: "1번 가상가" },
+          { row: 2, col: 12, text: "1번 가상나" },
+        ],
+        "합성",
+      ).students,
+      [{ row: 1, col: 0, key: "synthetic.png" }],
+    );
+    expect(students.map((student) => student.classNumber)).toEqual([1, 2]);
+    const plan = planPhotos([{ file, students, photos, warnings: [] }])[0];
+    expect(plan?.confirmed).toBe(true);
+    expect(plan?.filename).toBe("10101_가상가.png");
+  });
+  it.each(
+    [
+      [
+        { row: 0, col: 0, text: "1학년 1반" },
+        { row: 0, col: 0, text: "1학년 2반" },
+        { row: 2, col: 0, text: "1번 가상가" },
+      ],
+      [
+        { row: 4, col: 0, text: "1학년 1반" },
+        { row: 2, col: 0, text: "1번 가상가" },
+      ],
+      [{ row: 2, col: 0, text: "1 2 1 가상가" }],
+      [
+        { row: 2, col: 0, text: "1학년 2반 1번 가상가" },
+        { row: 5, col: 0, text: "1학년 2반 1번 가상나" },
+      ],
+    ].map((cells) => [cells]),
+  )("does not confirm an ambiguous identity even with an exact photo coordinate", (cells) => {
+    const students = matchPhotos(collectStudents(cells, "합성").students, [{ row: 1, col: 0, key: "synthetic.png" }]);
+    expect(students[0]?.photoKey).toBe("synthetic.png");
+    expect(students[0]?.identityConfirmed).toBe(false);
+    const plan = planPhotos([{ file, students, photos, warnings: [] }])[0];
+    expect(plan?.confirmed).toBe(false);
+    expect(plan?.filename).toMatch(/^미확인_/);
+    expect(plan?.label).toContain("학생 신원 미확인");
+  });
+});

@@ -4,7 +4,7 @@
   "id": "image-crop",
   "name": "이미지 자르기",
   "description": "사진에서 영역을 직접 골라 자르고 회전·반전한 이미지를 새 파일로 저장해요.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "category": "image",
   "icon": "icon.svg",
   "entry": "index.html",

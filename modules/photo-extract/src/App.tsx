@@ -17,6 +17,7 @@ import {
   deckTokens,
 } from "@deck/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { OutputSession } from "./output-session.ts";
 import { planPhotos, readExtraction, savePhotos, type Extraction } from "./batch.ts";
 const useStyles = makeStyles({
   actions: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: deckTokens.inlineGap },
@@ -25,6 +26,7 @@ const useStyles = makeStyles({
   previews: { maxHeight: "45vh", overflowY: "auto" },
   caption: { overflowWrap: "anywhere" },
 });
+type SaveStatus = { id: string; filename: string; state: "saved" | "failed" | "pending"; folder?: FolderHandleInfo };
 const supported = (file: FileHandleInfo) => /\.(xlsx|xls)$/i.test(file.name);
 export function App({ deck }: { deck: Deck }) {
   const s = useStyles();
@@ -37,6 +39,8 @@ export function App({ deck }: { deck: Deck }) {
   const [failedFiles, setFailedFiles] = useState<FileHandleInfo[]>([]);
   const [progress, setProgress] = useState(0);
   const [total, setTotal] = useState(0);
+  const destination = useRef<OutputSession | null>(null);
+  const [saveStatuses, setSaveStatuses] = useState<Record<string, SaveStatus>>({});
   const [folder, setFolder] = useState<FolderHandleInfo | null>(null);
   const [urls, setUrls] = useState<Record<string, string>>({});
   const plans = useMemo(() => planPhotos(extractions, renamed), [extractions, renamed]);
@@ -53,7 +57,17 @@ export function App({ deck }: { deck: Deck }) {
       for (const url of Object.values(next)) URL.revokeObjectURL(url);
     };
   }, [extractions]);
-  useEffect(() => () => controller.current?.abort(), []);
+  useEffect(
+    () => () => {
+      controller.current?.abort();
+      void destination.current?.close().catch(() => undefined);
+    },
+    [],
+  );
+  function resetDestination() {
+    void destination.current?.close().catch(() => setMessage("저장 작업을 정리하지 못했어요. 저장한 결과는 유지해요."));
+    destination.current = null;
+  }
   useEffect(
     () =>
       deck.on("fs.dropped", ({ files }) => {
@@ -62,7 +76,7 @@ export function App({ deck }: { deck: Deck }) {
     [deck, extractions],
   );
   async function addFiles(files: FileHandleInfo[]) {
-    if (locked.current) return;
+    if (locked.current || !files.length) return;
     const accepted = [...new Map(files.filter(supported).map((file) => [file.handle, file])).values()].filter(
       (file) => !extractions.some((e) => e.file.handle === file.handle),
     );
@@ -76,7 +90,6 @@ export function App({ deck }: { deck: Deck }) {
     }
     locked.current = true;
     setBusy(true);
-    setFolder(null);
     const abort = new AbortController();
     controller.current = abort;
     setTotal(accepted.length);
@@ -127,24 +140,58 @@ export function App({ deck }: { deck: Deck }) {
       setMessage("파일을 선택하지 못했어요. 다시 선택해 주세요.");
     }
   }
-  async function save() {
+  async function save(retry = false) {
     if (locked.current || !plans.length) return;
     locked.current = true;
     setBusy(true);
-    setFolder(null);
     const abort = new AbortController();
     controller.current = abort;
-    setTotal(plans.length);
+    const selected = retry
+      ? plans.filter((photo) => saveStatuses[photo.id] && saveStatuses[photo.id]?.state !== "saved")
+      : plans;
+    if (!selected.length) {
+      locked.current = false;
+      setBusy(false);
+      return;
+    }
+    destination.current ??= new OutputSession(deck, "명렬표 사진");
+    setTotal(selected.length);
     setProgress(0);
     try {
-      const result = await savePhotos(deck, plans, abort.signal, setProgress);
+      const result = await savePhotos(deck, selected, abort.signal, setProgress, destination.current);
       if (result) {
         setFolder(result.folder);
+        setSaveStatuses((previous) => {
+          const next = { ...previous };
+          const saved = new Set(result.saved);
+          const failed = new Set(result.failed);
+          for (const photo of selected) {
+            if (!saved.has(photo.id) && !failed.has(photo.id) && previous[photo.id]) continue;
+            next[photo.id] = {
+              id: photo.id,
+              filename: result.outputs?.[photo.id] ?? photo.filename,
+              state: saved.has(photo.id) ? "saved" : failed.has(photo.id) ? "failed" : "pending",
+              folder: result.folder,
+            };
+          }
+          return next;
+        });
         setMessage(
           `${result.saved.length}장 저장${result.failed.length ? ` · ${result.failed.length}장 실패` : ""}${result.cancelled ? " · 취소했어요. 저장된 사진은 결과 폴더에 유지해요." : "했어요. 원본 문서는 그대로 유지해요."}`,
         );
+        if (result.destinationExpired) {
+          resetDestination();
+          setMessage(
+            "저장 작업이 만료됐거나 결과 폴더를 사용할 수 없어요. 저장하지 못한 사진 재시도를 누르고 폴더를 다시 선택해 주세요. 이전 결과는 유지해요.",
+          );
+        }
       }
     } catch {
+      setSaveStatuses((previous) => {
+        const next = { ...previous };
+        for (const photo of selected) next[photo.id] = { id: photo.id, filename: photo.filename, state: "failed" };
+        return next;
+      });
       setMessage("사진을 저장하지 못했어요. 미리보기는 유지해요. 폴더 권한과 저장 공간을 확인해 주세요.");
     } finally {
       locked.current = false;
@@ -189,6 +236,8 @@ export function App({ deck }: { deck: Deck }) {
               setExtractions([]);
               setFailedFiles([]);
               setRenamed({});
+              resetDestination();
+              setSaveStatuses({});
               setFolder(null);
               setMessage("");
             }}
@@ -230,7 +279,8 @@ export function App({ deck }: { deck: Deck }) {
       </ToolLayout.Section>
       <ToolLayout.Section step="preview" title="사진과 예정 파일명">
         <Caption secondary>
-          위치가 정확한 사진만 학번·이름을 붙여요. 추측·미확인 사진은 모두 별도로 저장하고 이름을 직접 고칠 수 있어요.
+          학생의 학년·반과 사진 위치가 모두 확인된 사진만 학번·이름을 붙여요. 추측·미확인 사진은 모두 별도로 저장하고
+          이름을 직접 고칠 수 있어요.
         </Caption>
         <div className={s.previews}>
           <ListView
@@ -253,7 +303,7 @@ export function App({ deck }: { deck: Deck }) {
                     description={`예정 파일명: ${photo.filename}`}
                   />
                   <Caption secondary>
-                    {photo.confirmed ? "정확한 좌표" : "미확인"} · {(photo.bytes.length / 1024).toFixed(1)} KiB
+                    {photo.confirmed ? "학생·사진 확인" : "미확인"} · {(photo.bytes.length / 1024).toFixed(1)} KiB
                     {urls[photo.id] ? " · 사진 미리보기 준비됨" : " · 이 형식은 미리보기를 지원하지 않아요"}
                   </Caption>
                 </div>
@@ -273,7 +323,13 @@ export function App({ deck }: { deck: Deck }) {
               renderItem={(student) => (
                 <Body>
                   {student.sheet} · {student.grade}학년 {student.classNumber}반 {student.number}번 {student.name} ·{" "}
-                  {student.photoKey ? "사진 확인" : student.suggestionKey ? "사진 추측, 확인 필요" : "사진 없음"}
+                  {student.photoKey
+                    ? student.identityConfirmed === false
+                      ? "학생 신원 미확인"
+                      : "사진 확인"
+                    : student.suggestionKey
+                      ? "사진 추측, 확인 필요"
+                      : "사진 없음"}
                 </Body>
               )}
             />
@@ -285,12 +341,61 @@ export function App({ deck }: { deck: Deck }) {
       </ToolLayout.Section>
       <ToolLayout.Section step="run" title="사진 저장">
         <Caption secondary>
-          사진 저장을 누르면 폴더를 선택해요. 선택한 폴더 안에 새 결과 폴더를 만들고 사진을 모두 저장해요.
+          처음 저장할 때 폴더를 선택해요. 같은 작업과 재시도는 한 결과 폴더에 모으고, 이미 저장한 사진은 새 이름으로
+          저장해요.
         </Caption>
-        {busy && <ProgressBar header="처리 진행" value={total ? progress / total : 0} />}
+        <Button
+          disabled={busy || !folder}
+          onClick={() => {
+            resetDestination();
+            setMessage("다음 저장 때 새 저장 폴더를 선택해요. 이전 결과는 그대로 유지해요.");
+          }}
+        >
+          다음 저장 폴더 변경
+        </Button>
+        {busy && <ProgressBar header="처리 진행" value={total ? (progress / total) * 100 : 0} />}
       </ToolLayout.Section>
       <ToolLayout.Section step="result" title="처리 결과">
         {message && <InfoBar severity="informational" message={message} />}
+        {Object.keys(saveStatuses).length > 0 && (
+          <ListView
+            header="사진별 저장 결과"
+            items={Object.values(saveStatuses)}
+            getKey={(result) => result.id}
+            renderItem={(result) => (
+              <div className={s.actions}>
+                <Body>
+                  {result.filename} ·{" "}
+                  {result.state === "saved"
+                    ? "저장했어요"
+                    : result.state === "failed"
+                      ? "저장 실패 · 폴더 권한과 저장 공간을 확인해 주세요"
+                      : "아직 저장하지 않았어요"}
+                </Body>
+                {result.folder && (
+                  <Button
+                    disabled={busy}
+                    onClick={() => {
+                      void deck.fs
+                        .reveal(result.folder?.handle ?? "")
+                        .catch(() => setMessage("결과 폴더를 열지 못했어요. 저장한 폴더에서 확인해 주세요."));
+                    }}
+                  >
+                    저장 위치 열기
+                  </Button>
+                )}
+              </div>
+            )}
+          />
+        )}
+        <Button
+          disabled={busy || !Object.values(saveStatuses).some((result) => result.state !== "saved")}
+          onClick={() => {
+            void save(true);
+          }}
+        >
+          저장하지 못한 사진 재시도
+        </Button>
         {folder && (
           <Button
             onClick={() => {

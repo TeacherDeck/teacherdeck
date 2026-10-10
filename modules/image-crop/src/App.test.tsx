@@ -114,3 +114,95 @@ describe("image crop editing flow", () => {
     deck.dispose();
   });
 });
+
+describe("crop save recovery", () => {
+  it("lists each failed photo and retries only unsaved photos in the same session", async () => {
+    vi.mocked(saveCrops)
+      .mockResolvedValueOnce({
+        folder: { handle: "output", name: "합성 결과" },
+        saved: ["first"],
+        failed: ["second"],
+        cancelled: false,
+      })
+      .mockResolvedValueOnce({
+        folder: { handle: "output", name: "합성 결과" },
+        saved: ["second"],
+        failed: [],
+        cancelled: false,
+      });
+    const { deck } = await setup();
+    fireEvent.click(screen.getByRole("button", { name: "전체 사진 저장" }));
+    await screen.findByText(/합성 다음사진.png · 저장 실패/);
+    expect(screen.getByText(/합성 첫사진.png · 저장했어요/)).toBeTruthy();
+    const retry = screen.getByRole("button", { name: "저장하지 못한 사진 재시도" });
+    fireEvent.click(retry);
+    await screen.findByText(/합성 다음사진.png · 저장했어요/);
+    expect(vi.mocked(saveCrops).mock.calls[1]?.[1].map((entry) => entry.file.handle)).toEqual(["second"]);
+    expect(vi.mocked(saveCrops).mock.calls[0]?.[6]).toBe(vi.mocked(saveCrops).mock.calls[1]?.[6]);
+    expect(retry.hasAttribute("disabled")).toBe(true);
+    deck.dispose();
+  });
+  it("keeps unprocessed photos recoverable after cancellation", async () => {
+    vi.mocked(saveCrops).mockResolvedValueOnce({
+      folder: { handle: "output", name: "합성 결과" },
+      saved: ["first"],
+      failed: [],
+      cancelled: true,
+    });
+    const { deck } = await setup();
+    fireEvent.click(screen.getByRole("button", { name: "전체 사진 저장" }));
+    await screen.findByText(/합성 다음사진.png · 아직 저장하지 않았어요/);
+    expect(screen.getByText(/합성 첫사진.png · 저장했어요/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "저장하지 못한 사진 재시도" }).hasAttribute("disabled")).toBe(false);
+    deck.dispose();
+  });
+});
+
+describe("crop destination recovery UI", () => {
+  it("starts a new output session for unsaved photos after expiration while preserving successful results", async () => {
+    vi.mocked(saveCrops)
+      .mockResolvedValueOnce({
+        folder: { handle: "old-output", name: "합성 결과" },
+        saved: ["first"],
+        failed: ["second"],
+        cancelled: false,
+        destinationExpired: true,
+      })
+      .mockResolvedValueOnce({
+        folder: { handle: "new-output", name: "합성 새 결과" },
+        saved: ["second"],
+        failed: [],
+        cancelled: false,
+      });
+    const { deck } = await setup();
+    fireEvent.click(screen.getByRole("button", { name: "전체 사진 저장" }));
+    await screen.findByText(/저장 작업이 만료됐거나/);
+    expect(screen.getByText(/합성 첫사진.png · 저장했어요/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "저장하지 못한 사진 재시도" }));
+    await screen.findByText(/합성 다음사진.png · 저장했어요/);
+    expect(vi.mocked(saveCrops).mock.calls[1]?.[1].map((entry) => entry.file.handle)).toEqual(["second"]);
+    expect(vi.mocked(saveCrops).mock.calls[0]?.[6]).not.toBe(vi.mocked(saveCrops).mock.calls[1]?.[6]);
+    expect(screen.getAllByRole("button", { name: "저장 위치 열기" })).toHaveLength(2);
+    deck.dispose();
+  });
+});
+
+describe("crop progress units", () => {
+  it("shows one of two completed photos at half of the progress bar", async () => {
+    let finish: (() => void) | undefined;
+    vi.mocked(saveCrops).mockImplementation(async (_deck, _items, _format, _signal, progress) => {
+      progress?.(1);
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      return { folder: { handle: "output", name: "합성 결과" }, saved: ["first"], failed: [], cancelled: false };
+    });
+    const { deck } = await setup();
+    fireEvent.click(screen.getByRole("button", { name: "전체 사진 저장" }));
+    const bar = await screen.findByRole("progressbar", { name: "처리 진행" });
+    await waitFor(() => expect(Number(bar.getAttribute("aria-valuenow"))).toBe(0.5));
+    finish?.();
+    await waitFor(() => expect(screen.getByRole("button", { name: "취소" }).hasAttribute("disabled")).toBe(true));
+    deck.dispose();
+  });
+});

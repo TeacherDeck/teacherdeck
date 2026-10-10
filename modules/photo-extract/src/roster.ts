@@ -11,6 +11,9 @@ export interface Student extends Cell {
   number: number;
   name: string;
   sheet: string;
+  /** Identity confidence is independent of the photo coordinate match. */
+  identityConfirmed?: boolean;
+  identityWarning?: string;
   photoKey?: string;
   suggestionKey?: string;
 }
@@ -32,7 +35,7 @@ function parse(cell: Cell, patterns: RegExp[], sheet: string): Student | null {
     number = Number(match[3]);
   const name = (match[4] ?? "").trim().replace(/\s+/g, " ");
   return name && [grade, classNumber, number].every((n) => Number.isSafeInteger(n) && n > 0 && n <= 9999)
-    ? { ...cell, grade, classNumber, number, name, sheet }
+    ? { ...cell, grade, classNumber, number, name, sheet, identityConfirmed: patterns === strict }
     : null;
 }
 /** Port of TimeAlert's strict/contextual/loose passes and (grade,class,number) deduplication. */
@@ -47,6 +50,7 @@ export function collectStudents(
     return match ? [{ ...cell, grade: Number(match[1]), classNumber: Number(match[2]) }] : [];
   });
   if (headers.length > 1000) throw new Error("ROSTER_LIMIT");
+  const headerColumns = [...new Set(headers.map((header) => header.col))].sort((a, b) => a - b);
   let missingHeader = 0;
   let candidateCount = 0;
   const contextual = ordered.flatMap((cell) => {
@@ -54,14 +58,20 @@ export function collectStudents(
     const match = /^(\d+)\s*번\s*([가-힣A-Za-z][가-힣A-Za-z\s·ㆍ.-]*)$/.exec(cell.text);
     if (!match) return [];
     if (++candidateCount > 1000) throw new Error("ROSTER_LIMIT");
-    const preceding = headers
-      .filter((h) => h.row <= cell.row)
-      .sort((a, b) => b.row - a.row || Math.abs(a.col - cell.col) - Math.abs(b.col - cell.col));
-    const header = preceding[0] ?? (headers.length === 1 ? headers[0] : undefined);
+    // Headers apply to their column block, even if another block starts on a newer row.
+    const column = headerColumns.filter((col) => col <= cell.col).at(-1);
+    const scoped = headers.filter((h) => h.col === column && h.row <= cell.row);
+    const latestRow = Math.max(...scoped.map((h) => h.row));
+    const candidates = scoped.filter((h) => h.row === latestRow);
+    const header = candidates[0] ?? (headers.length === 1 ? headers[0] : undefined);
     if (!header) {
       missingHeader++;
       return [];
     }
+    if (
+      ![header.grade, header.classNumber, Number(match[1])].every((n) => Number.isSafeInteger(n) && n > 0 && n <= 9999)
+    )
+      return [];
     return [
       {
         ...cell,
@@ -70,6 +80,13 @@ export function collectStudents(
         number: Number(match[1]),
         name: (match[2] ?? "").trim().replace(/\s+/g, " "),
         sheet,
+        identityConfirmed:
+          candidates.length > 0 &&
+          candidates.every((h) => h.grade === header.grade && h.classNumber === header.classNumber),
+        ...(!candidates.length ||
+        candidates.some((h) => h.grade !== header.grade || h.classNumber !== header.classNumber)
+          ? { identityWarning: "학년·반 머리글의 적용 범위를 확인해 주세요" }
+          : {}),
       },
     ];
   });
@@ -87,15 +104,20 @@ export function collectStudents(
     });
   if (parsed.length > 1000) throw new Error("ROSTER_LIMIT");
   parsed.sort((a, b) => a.row - b.row || a.col - b.col);
-  const seen = new Set<string>();
+  const seen = new Map<string, Student>();
   let duplicates = 0;
   const students = parsed.filter((s) => {
     const key = `${s.grade}-${s.classNumber}-${s.number}`;
     if (seen.has(key)) {
       duplicates++;
+      const prior = seen.get(key);
+      if (prior && (prior.name !== s.name || prior.identityConfirmed === false || s.identityConfirmed === false)) {
+        prior.identityConfirmed = false;
+        prior.identityWarning = "중복 학생 정보가 서로 달라 학번·이름을 확인해 주세요";
+      }
       return false;
     }
-    seen.add(key);
+    seen.set(key, s);
     return true;
   });
   return { students, missingHeader, duplicates };

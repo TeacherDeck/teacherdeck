@@ -3,6 +3,7 @@
 import { connect } from "@deck/sdk";
 import { createMockHost, type MockHandler } from "@deck/sdk/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { OutputSession } from "./output-session.ts";
 import { readExtraction, savePhotos, type PlannedPhoto } from "./batch.ts";
 import { fakeJpeg } from "./fixtures.test-support.ts";
 const origin = "http://deckmod.photo-extract.modules.localhost";
@@ -126,6 +127,30 @@ describe("SDK-only photo output", () => {
     ).rejects.toThrow("INVALID_ARCHIVE");
     expect(host.requests.map((r) => r.method)).toEqual(["openRead", "closeRead"]);
     expect(file.size).toBe(4);
+    deck.dispose();
+  });
+});
+
+describe("photo retry output session", () => {
+  it("reuses the output folder across a failed write and retry, then releases the batch", async () => {
+    let attempts = 0;
+    const { deck, host } = await setup({
+      "fs.beginWrite": () => {
+        if (++attempts === 1) throw { code: "INTERNAL", message: "합성 쓰기 실패" };
+        return { writeId: "write-2", chunkBytes: 65536 };
+      },
+    });
+    const session = new OutputSession(deck, "명렬표 사진");
+    const first = await savePhotos(deck, [photo(1), photo(2)], new AbortController().signal, () => undefined, session);
+    expect(first?.failed).toEqual(["p-1"]);
+    expect(first?.saved).toEqual(["p-2"]);
+    const retried = await savePhotos(deck, [photo(1)], new AbortController().signal, () => undefined, session);
+    expect(retried?.saved).toEqual(["p-1"]);
+    expect(retried?.folder).toEqual(first?.folder);
+    expect(host.requests.filter((request) => request.method === "pickFolder")).toHaveLength(1);
+    expect(host.requests.filter((request) => request.method === "createOutputFolder")).toHaveLength(1);
+    await session.close();
+    expect(host.requests.filter((request) => request.method === "closeOutputFolder")).toHaveLength(1);
     deck.dispose();
   });
 });
