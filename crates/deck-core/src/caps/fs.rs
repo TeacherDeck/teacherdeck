@@ -71,6 +71,106 @@ pub struct DroppedFiles {
     pub files: Vec<FileHandleInfo>,
 }
 
+/// Closes a read session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CloseReadArgs {
+    /// Opaque read session id.
+    pub read_id: String,
+}
+
+/// A bounded read resource.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FileRead {
+    /// Opaque read session id.
+    pub read_id: String,
+    /// Total file bytes.
+    pub size: u64,
+    /// Maximum bytes per GET.
+    pub chunk_bytes: usize,
+    /// Same-module resource URL; never log it.
+    pub url: String,
+}
+
+/// Creates a new output directory under a picked folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateOutputFolderArgs {
+    /// Picked folder handle.
+    pub parent_handle: String,
+    /// One folder name, never a path.
+    pub suggested_name: String,
+}
+
+/// A newly created output directory and write grant.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OutputBatch {
+    /// Opaque output grant.
+    pub batch_id: String,
+    /// Display info for the new folder.
+    pub folder: FolderHandleInfo,
+}
+
+/// Starts a new output file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BeginWriteArgs {
+    /// Output grant.
+    pub batch_id: String,
+    /// One file name, never a path.
+    pub suggested_name: String,
+    /// Expected complete size.
+    pub size: u64,
+}
+
+/// A sequential output write session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FileWrite {
+    /// Opaque write session.
+    pub write_id: String,
+    /// Maximum bytes per writeChunk.
+    pub chunk_bytes: usize,
+}
+
+/// Appends one bounded byte chunk.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WriteChunkArgs {
+    /// Opaque write session.
+    pub write_id: String,
+    /// Expected byte offset.
+    pub offset: u64,
+    /// At most 65536 bytes.
+    pub data: Vec<u8>,
+}
+
+/// Acknowledged write position.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WriteChunkResult {
+    /// Offset for the next chunk.
+    pub next_offset: u64,
+}
+
+/// Commits or aborts a write session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WriteIdArgs {
+    /// Opaque write session.
+    pub write_id: String,
+}
+
+/// Closes an output grant.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BatchIdArgs {
+    /// Opaque output grant.
+    pub batch_id: String,
+}
+
 /// Lowercase extension of a file name, without the dot.
 pub fn extension_of(name: &str) -> String {
     match name.rsplit_once('.') {
@@ -97,4 +197,44 @@ mod tests {
         assert_eq!(a, PickFilesArgs::default());
         assert!(serde_json::from_str::<PickFilesArgs>(r#"{"path":"C:/"}"#).is_err());
     }
+}
+
+/// DestinationGrant contract.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DestinationGrant {
+    /// grant handle; opaque handles never expose paths.
+    pub grant_handle: String,
+    /// label; opaque handles never expose paths.
+    pub label: String,
+    /// persistent; opaque handles never expose paths.
+    pub persistent: bool,
+    /// available; opaque handles never expose paths.
+    pub available: bool,
+}
+
+/// PickDestinationArgs contract.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PickDestinationArgs {
+    /// remember; opaque handles never expose paths.
+    pub remember: bool,
+}
+
+/// DestinationArgs contract.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DestinationArgs {
+    /// grant handle; opaque handles never expose paths.
+    pub grant_handle: String,
+}
+
+/// Retrieve one grant or the owner's remembered grant.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DestinationStatusArgs {
+    /// Opaque saved grant; omitted to retrieve the current remembered destination.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub grant_handle: Option<String>,
 }

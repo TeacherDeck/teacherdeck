@@ -15,7 +15,11 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+pub mod capture;
+pub mod clipboard;
 pub mod fs;
+pub mod global_shortcut;
+pub mod overlay;
 pub mod storage;
 pub mod system;
 pub mod window;
@@ -58,6 +62,58 @@ const fn m(name: &'static str, long: bool, summary: &'static str) -> MethodSpec 
 /// v1 capabilities (capabilities.md §2).
 pub const REGISTRY: &[CapSpec] = &[
     CapSpec {
+        name: "global-shortcut",
+        version: "1.0.0",
+        summary: "승인된 네이티브 global-shortcut 기능",
+        methods: &[
+            m("status", false, "등록 단축키 조회"),
+            m("register", false, "register"),
+            m("replace", false, "replace"),
+            m("unregister", false, "unregister"),
+        ],
+    },
+    CapSpec {
+        name: "overlay",
+        version: "1.0.0",
+        summary: "승인된 네이티브 overlay 기능",
+        methods: &[
+            m("status", false, "영역 창 현재 상태"),
+            m("create", false, "create"),
+            m("update", false, "update"),
+            m("show", false, "show"),
+            m("hide", false, "hide"),
+            m("close", false, "close"),
+        ],
+    },
+    CapSpec {
+        name: "capture",
+        version: "1.0.0",
+        summary: "승인된 네이티브 capture 기능",
+        methods: &[
+            m("displays", false, "displays"),
+            m("capture", true, "capture"),
+            m("arm", false, "arm"),
+            m("status", false, "status"),
+            m("update", false, "update"),
+            m("trigger", true, "시작한 세션에 한 장 저장"),
+            m("resetSequence", false, "resetSequence"),
+            m("stop", false, "stop"),
+        ],
+    },
+    CapSpec {
+        name: "clipboard",
+        version: "1.0.0",
+        summary: "구조화 클립보드 출력(읽기 없음)",
+        methods: &[
+            m("writeText", false, "일반 텍스트 복사(256KiB 이하)"),
+            m(
+                "writeRichText",
+                false,
+                "구조화 서식과 일반 텍스트 복사(256KiB 이하)",
+            ),
+        ],
+    },
+    CapSpec {
         name: "system",
         version: "1.0.0",
         summary: "앱·OS 정보",
@@ -76,9 +132,17 @@ pub const REGISTRY: &[CapSpec] = &[
     },
     CapSpec {
         name: "fs",
-        version: "1.0.0",
+        version: "1.2.0",
         summary: "파일 선택과 핸들(경로는 노출하지 않음)",
         methods: &[
+            m(
+                "pickDestination",
+                true,
+                "명시적으로 기억할 새 파일 저장 폴더 선택",
+            ),
+            m("destinationStatus", false, "저장 폴더 권한 상태"),
+            m("revealDestination", false, "저장 폴더 열기"),
+            m("revokeDestination", false, "저장 폴더 권한 해제"),
             m("pickFiles", true, "파일 선택 대화상자 → FileHandleInfo[]"),
             m(
                 "pickFolder",
@@ -87,6 +151,14 @@ pub const REGISTRY: &[CapSpec] = &[
             ),
             m("stat", false, "핸들의 최신 정보"),
             m("reveal", false, "탐색기에서 파일 위치 열기"),
+            m("openRead", true, "파일 읽기 리소스 열기(256KiB 청크)"),
+            m("closeRead", false, "파일 읽기 리소스 닫기"),
+            m("createOutputFolder", true, "새 결과 폴더 만들기"),
+            m("beginWrite", true, "새 결과 파일 쓰기 시작"),
+            m("writeChunk", false, "64KiB 이하 순차 청크 쓰기"),
+            m("commitWrite", true, "완성된 결과를 덮어쓰기 없이 게시"),
+            m("abortWrite", false, "미완성 파일 쓰기 취소"),
+            m("closeOutputFolder", false, "결과 폴더 작업 권한 닫기"),
         ],
     },
     CapSpec {

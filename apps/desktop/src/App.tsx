@@ -13,10 +13,10 @@ import {
   SettingsRegular,
   WrenchRegular,
 } from "@fluentui/react-icons";
-import { MODULE_ORIGIN, type InitPayload } from "@deck/sdk";
+import { type InitPayload } from "@deck/sdk";
 import { DeckProvider, EmptyState, deckTokens, themeToPayload } from "@deck/ui";
 import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ModuleBridge } from "./bridge/ModuleBridge.ts";
+import { ModuleBridge, moduleEntryOrigin } from "./bridge/ModuleBridge.ts";
 import { KeepAliveSet } from "./bridge/keepAlive.ts";
 import type { Category } from "./generated/Category.ts";
 import type { ModuleEntry } from "./generated/ModuleEntry.ts";
@@ -57,12 +57,15 @@ const useStyles = makeStyles({
     gap: tokens.spacingVerticalXS,
     padding: tokens.spacingHorizontalS,
     minWidth: "200px",
+    minHeight: 0,
+    overflowY: "auto",
   },
   spacer: { flexGrow: 1 },
   railButton: { justifyContent: "flex-start" },
   content: {
     flexGrow: 1,
     minWidth: 0,
+    minHeight: 0,
     overflowY: "auto",
     overflowX: "hidden",
     position: "relative",
@@ -73,26 +76,75 @@ const useStyles = makeStyles({
   hidden: { display: "none" },
 });
 
-function SecProbe({ origin }: { origin: string }) {
+function SecProbe({ origin, modules }: { origin: string; modules: ModuleEntry[] }) {
   const ref = useRef<HTMLIFrameElement>(null);
+  const moduleFrames = useRef(new Map<string, HTMLIFrameElement>());
+  const fixtures = useMemo(
+    () =>
+      modules
+        .flatMap((entry) => {
+          const moduleOrigin = moduleEntryOrigin(entry.resolution.id, entry.entryUrl ?? "");
+          return moduleOrigin === null ? [] : [{ id: entry.resolution.id, origin: moduleOrigin }];
+        })
+        .slice(0, 2),
+    [modules],
+  );
   useEffect(() => {
+    let legacy: Record<string, unknown> | undefined;
+    const results = new Map<string, unknown>();
+    let reported = false;
+    const report = (timeout: boolean) => {
+      if (reported || (!timeout && (legacy === undefined || results.size !== fixtures.length))) return;
+      reported = true;
+      void host.secProbeReport({
+        ...legacy,
+        moduleIsolation: fixtures.map((f) => ({ moduleId: f.id, result: results.get(f.id) ?? { status: "timeout" } })),
+        isolationComplete: legacy !== undefined && fixtures.length === 2 && results.size === 2,
+      });
+    };
     const onMessage = (e: MessageEvent) => {
       const data = e.data as { kind?: string; result?: unknown } | null;
       if (e.origin === origin && e.source === ref.current?.contentWindow && data?.kind === "sec-probe") {
-        void host.secProbeReport(data.result);
+        if (typeof data.result === "object" && data.result !== null) legacy = data.result as Record<string, unknown>;
+      } else if (data?.kind === "sec-module-probe") {
+        const fixture = fixtures.find(
+          (f) => e.origin === f.origin && e.source === moduleFrames.current.get(f.id)?.contentWindow,
+        );
+        if (fixture !== undefined) results.set(fixture.id, data.result);
       }
+      report(false);
     };
+    const timer = setTimeout(() => report(true), 12000);
     window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, [origin]);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("message", onMessage);
+    };
+  }, [origin, fixtures]);
   return (
-    <iframe
-      ref={ref}
-      title="sec-probe"
-      src={`${origin}/_probe/index.html`}
-      sandbox="allow-scripts allow-same-origin"
-      hidden
-    />
+    <>
+      <iframe
+        ref={ref}
+        title="sec-probe"
+        src={`${origin}/_probe/index.html`}
+        sandbox="allow-scripts allow-same-origin"
+        hidden
+      />
+      {fixtures.map((f) => (
+        <iframe
+          key={f.id}
+          ref={(element) => {
+            if (element === null) moduleFrames.current.delete(f.id);
+            else moduleFrames.current.set(f.id, element);
+          }}
+          title={`sec-probe-${f.id}`}
+          src={`${f.origin}/_probe/module.html`}
+          sandbox="allow-scripts allow-same-origin"
+          referrerPolicy="no-referrer"
+          hidden
+        />
+      ))}
+    </>
   );
 }
 
@@ -125,7 +177,7 @@ export function App() {
 
   const bridge = useMemo(
     () =>
-      new ModuleBridge(info?.moduleOrigin ?? MODULE_ORIGIN, {
+      new ModuleBridge({
         init: async (moduleId): Promise<InitPayload> => {
           const entry = modulesRef.current.find((m) => m.resolution.id === moduleId);
           const granted = await host.moduleActivated(moduleId);
@@ -179,6 +231,30 @@ export function App() {
     [bridge, page, mounted],
   );
 
+  useEffect(() => {
+    const off = host.onModuleEvent((event) => {
+      const entry = modulesRef.current.find((m) => m.resolution.id === event.moduleId);
+      if (!entry?.resolution.picked || !entry.entryUrl) return;
+      const caps = {
+        "capture.completed": "capture",
+        "capture.failed": "capture",
+        "overlay.changed": "overlay",
+        "shortcut.triggered": "global-shortcut",
+      } as const;
+      if (!Object.hasOwn(caps, event.topic)) return;
+      const cap = caps[event.topic];
+      if (!entry.manifest || (!(cap in entry.manifest.requires) && !(cap in entry.manifest.optional))) return;
+      bridge.sendEvent(event.moduleId, event.topic, event.payload);
+    });
+    return () => void off.then((fn) => fn()).catch(() => undefined);
+  }, [bridge]);
+  useEffect(() => {
+    const off = host.onShowModule(({ moduleId }) => {
+      if (modulesRef.current.some((m) => m.resolution.id === moduleId && m.resolution.picked && m.entryUrl))
+        navigate({ kind: "module", id: moduleId });
+    });
+    return () => void off.then((fn) => fn()).catch(() => undefined);
+  }, [navigate]);
   const changeTheme = (p: ThemePreference) => {
     savePreference(p);
     setPref(p);
@@ -275,7 +351,7 @@ export function App() {
           </main>
         </div>
       </div>
-      {info.secProbe && <SecProbe origin={info.moduleOrigin} />}
+      {info.secProbe && <SecProbe origin={info.moduleOrigin} modules={modules} />}
     </DeckProvider>
   );
 }

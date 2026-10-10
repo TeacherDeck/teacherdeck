@@ -67,6 +67,14 @@ export const deckTokens = {
   /** Caption glyphs: Segoe Fluent Icons on Windows 11, Segoe MDL2 Assets on Windows 10 (same code points). */
   captionIconFont: '"Segoe Fluent Icons", "Segoe MDL2 Assets"',
   captionIconSize: "10px",
+  /** Original QuickCapture mini toolbar, outside the captured pixel rectangle. */
+  captureToolbarHeight: "36px",
+  captureToolbarSurfaceHeight: "30px",
+  captureToolbarButtonSize: "28px",
+  /** Keep native capture actions usable even for a tiny captured pixel rectangle. */
+  captureToolbarMinWidth: "300px",
+  /** A nonzero alpha keeps the otherwise transparent Windows region draggable. */
+  captureHitTestFill: "rgba(0, 0, 0, 0.004)",
 } as const;
 
 /** Fluent theme for a color mode with the deck fonts and WinUI extras. */

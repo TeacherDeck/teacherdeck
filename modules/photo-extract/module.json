@@ -1,0 +1,14 @@
+{
+  "$schema": "../../schema/module.schema.json",
+  "manifestVersion": 1,
+  "id": "photo-extract",
+  "name": "명렬표 사진 꺼내기",
+  "description": "사진명렬표에서 학생 사진을 원본 그대로 꺼내 학번과 이름으로 저장해요.",
+  "version": "0.1.2",
+  "category": "image",
+  "icon": "icon.svg",
+  "entry": "index.html",
+  "authors": [{ "name": "rochelobeJYJ" }],
+  "requires": { "fs": "^1.1" },
+  "optional": {}
+}

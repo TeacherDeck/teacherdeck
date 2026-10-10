@@ -35,7 +35,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { DismissRegular } from "@fluentui/react-icons";
-import type { ReactNode } from "react";
+import { useCallback, type CompositionEventHandler, type KeyboardEventHandler, type ReactNode, type Ref } from "react";
 import { deckTokens } from "./tokens/index.ts";
 import { Body, Caption } from "./typography.tsx";
 
@@ -47,6 +47,8 @@ function defined<T extends Record<string, unknown>>(o: T): { [K in keyof T]?: Ex
 }
 
 const useStyles = makeStyles({
+  field: { minWidth: 0 },
+  fit: { minWidth: 0, maxWidth: "100%" },
   stack: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalS },
   list: {
     border: `${tokens.strokeWidthThin} solid ${deckTokens.cardStroke}`,
@@ -245,10 +247,12 @@ export interface NumberBoxProps extends HeaderedProps {
 
 /** Number input with spin buttons; out-of-range values are clamped (WinUI NumberBox). */
 export function NumberBox({ value, onChange, min, max, step = 1, validationMessage, ...header }: NumberBoxProps) {
+  const s = useStyles();
   const clamp = (n: number) => Math.min(max ?? Infinity, Math.max(min ?? -Infinity, n));
   return (
-    <Field {...fieldProps(header, validationMessage)}>
+    <Field className={s.field} {...fieldProps(header, validationMessage)}>
       <SpinButton
+        className={s.fit}
         value={value}
         step={step}
         aria-label={header.header}
@@ -268,7 +272,16 @@ export interface TextBoxProps extends HeaderedProps {
   placeholder?: string;
   /** Multi-line input (Textarea). */
   multiline?: boolean;
+  /** Initial visible line count for multi-line inputs. */
+  rows?: number;
   validationMessage?: string;
+  /** Selectable output without allowing edits. */
+  readOnly?: boolean;
+  /** Focus and selection target is the actual text input, including multi-line inputs. */
+  inputRef?: Ref<HTMLInputElement | HTMLTextAreaElement>;
+  onKeyDown?: KeyboardEventHandler<HTMLInputElement | HTMLTextAreaElement>;
+  onCompositionStart?: CompositionEventHandler<HTMLInputElement | HTMLTextAreaElement>;
+  onCompositionEnd?: CompositionEventHandler<HTMLInputElement | HTMLTextAreaElement>;
 }
 
 /** Single- or multi-line text input (WinUI TextBox). */
@@ -277,16 +290,40 @@ export function TextBox({
   onChange,
   placeholder,
   multiline = false,
+  rows,
   validationMessage,
+  readOnly,
+  inputRef,
+  onKeyDown,
+  onCompositionStart,
+  onCompositionEnd,
   ...header
 }: TextBoxProps) {
-  const common = { value, "aria-label": header.header, ...defined({ placeholder, disabled: header.disabled }) };
+  const setInputRef = useCallback(
+    (element: HTMLInputElement | HTMLTextAreaElement | null) => {
+      if (typeof inputRef === "function") return inputRef(element);
+      if (inputRef !== undefined && inputRef !== null) inputRef.current = element;
+      return undefined;
+    },
+    [inputRef],
+  );
+  const common = {
+    value,
+    "aria-label": header.header,
+    ...defined({ placeholder, disabled: header.disabled, readOnly, onKeyDown, onCompositionStart, onCompositionEnd }),
+  };
   return (
     <Field {...fieldProps(header, validationMessage)}>
       {multiline ? (
-        <Textarea {...common} resize="vertical" onChange={(_, d) => onChange(d.value)} />
+        <Textarea
+          {...common}
+          {...defined({ rows })}
+          ref={setInputRef}
+          resize="vertical"
+          onChange={(_, d) => onChange(d.value)}
+        />
       ) : (
-        <Input {...common} onChange={(_, d) => onChange(d.value)} />
+        <Input {...common} ref={setInputRef} onChange={(_, d) => onChange(d.value)} />
       )}
     </Field>
   );
@@ -305,10 +342,12 @@ export interface ComboBoxProps<T extends string> extends HeaderedProps {
 
 /** Pick one of several options from a dropdown (WinUI ComboBox, non-editable). */
 export function ComboBox<T extends string>({ options, value, onChange, ...header }: ComboBoxProps<T>) {
+  const s = useStyles();
   const current = options.find((o) => o.value === value);
   return (
-    <Field {...fieldProps(header)}>
+    <Field className={s.field} {...fieldProps(header)}>
       <Dropdown
+        className={s.fit}
         aria-label={header.header}
         value={current?.label ?? ""}
         selectedOptions={[value]}

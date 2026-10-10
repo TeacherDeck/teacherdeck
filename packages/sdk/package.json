@@ -1,6 +1,6 @@
 {
   "name": "@deck/sdk",
-  "version": "0.1.0",
+  "version": "0.4.1",
   "private": true,
   "description": "TeacherDeck module SDK: bridge client for host capabilities",
   "license": "GPL-3.0-only",

@@ -93,6 +93,18 @@ impl<T, R: RandomSource> HandleTable<T, R> {
         }
     }
 
+    /// Retires one handle only when it belongs to the caller. Unknown handles
+    /// are harmless; a different owner's handle is never removed.
+    pub fn release(&mut self, module_id: &str, handle: &str) -> Result<(), HandleError> {
+        if let Some(slot) = self.slots.get(handle)
+            && slot.module_id != module_id
+        {
+            return Err(HandleError::NotOwner);
+        }
+        self.slots.remove(handle);
+        Ok(())
+    }
+
     /// Drops every handle owned by `module_id` (e.g. when the module is unloaded).
     pub fn release_module(&mut self, module_id: &str) {
         self.slots.retain(|_, slot| slot.module_id != module_id);
@@ -153,6 +165,21 @@ mod tests {
         let b = t.issue("m-a", "b");
         assert_ne!(a, b);
         assert_eq!(t.len(), 2);
+    }
+
+    #[test]
+    fn release_one_handle_preserves_other_handles_and_owners() {
+        let mut t = table(false);
+        let a = t.issue("m-a", "first");
+        let second = t.issue("m-a", "second");
+        let other = t.issue("m-b", "other");
+        assert_eq!(t.release("m-b", &a), Err(HandleError::NotOwner));
+        assert_eq!(t.resolve("m-a", &a), Ok(&"first"));
+        assert_eq!(t.release("m-a", &a), Ok(()));
+        assert_eq!(t.resolve("m-a", &a), Err(HandleError::NotFound));
+        assert_eq!(t.release("m-a", &a), Ok(()));
+        assert_eq!(t.resolve("m-a", &second), Ok(&"second"));
+        assert_eq!(t.resolve("m-b", &other), Ok(&"other"));
     }
 
     #[test]

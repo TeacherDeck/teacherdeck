@@ -20,7 +20,13 @@ import {
   mergeClasses,
   tokens,
 } from "@deck/ui";
-import { ArrowResetRegular, FullScreenMaximizeRegular, PauseRegular, PinRegular, PlayRegular } from "@fluentui/react-icons";
+import {
+  ArrowResetRegular,
+  FullScreenMaximizeRegular,
+  PauseRegular,
+  PinRegular,
+  PlayRegular,
+} from "@fluentui/react-icons";
 import { useCallback, useEffect, useState } from "react";
 import { DEFAULT_PRESETS_SEC, addPreset, loadPresets } from "./presets.ts";
 import { type TimerState, create, format, remaining, reset, tick, toggle } from "./timer.ts";
@@ -44,8 +50,16 @@ const useStyles = makeStyles({
     justifyContent: "center",
     borderRadius: tokens.borderRadiusNone,
     border: "none",
+    boxSizing: "border-box",
+    overflowY: "auto",
   },
-  presentationDigits: { fontSize: `calc(${tokens.fontSizeHero1000} * 4)`, lineHeight: tokens.lineHeightHero1000 },
+  presentationDigits: {
+    fontSize: `min(calc(${tokens.fontSizeHero1000} * 4), calc((100vw - ${tokens.spacingHorizontalXXXL} * 2) / 5), calc(100vh / 3))`,
+    lineHeight: "120%",
+    flexShrink: 0,
+    whiteSpace: "nowrap",
+    maxWidth: "100%",
+  },
   // Static white on the strong red stays readable in both themes (UI-005).
   finished: { backgroundColor: tokens.colorPaletteRedBackground3, color: tokens.colorNeutralForegroundStaticInverted },
   row: { display: "flex", flexWrap: "wrap", gap: deckTokens.inlineGap, alignItems: "end" },
@@ -54,7 +68,7 @@ const useStyles = makeStyles({
 export function App({ deck }: { deck: Deck }) {
   const s = useStyles();
   const [timer, setTimer] = useState<TimerState>(() => create(5 * 60 * 1000));
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => performance.now());
   const [presets, setPresets] = useState<number[]>(DEFAULT_PRESETS_SEC);
   const [customMin, setCustomMin] = useState(5);
   const [presenting, setPresenting] = useState(false);
@@ -71,7 +85,7 @@ export function App({ deck }: { deck: Deck }) {
   useEffect(() => {
     if (timer.status !== "running") return undefined;
     const id = setInterval(() => {
-      const t = Date.now();
+      const t = performance.now();
       setNow(t);
       setTimer((prev) => tick(prev, t));
     }, 200);
@@ -104,8 +118,20 @@ export function App({ deck }: { deck: Deck }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement) return;
-      const t = Date.now();
+      if (e.repeat || e.isComposing || e.ctrlKey || e.altKey || e.metaKey) return;
+      if (e.key === "Escape" && presenting) {
+        e.preventDefault();
+        void setPresentation(false);
+        return;
+      }
+      if (
+        e.target instanceof Element &&
+        e.target.closest(
+          "input, textarea, select, button, a, [contenteditable], [role=button], [role=slider], [role=checkbox], [role=switch], [role=combobox]",
+        )
+      )
+        return;
+      const t = performance.now();
       if (e.code === "Space") {
         e.preventDefault();
         setNow(t);
@@ -114,8 +140,6 @@ export function App({ deck }: { deck: Deck }) {
         setTimer((prev) => reset(prev));
       } else if (e.key === "f" || e.key === "F") {
         void setPresentation(!presenting);
-      } else if (e.key === "Escape" && presenting) {
-        void setPresentation(false);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -138,7 +162,11 @@ export function App({ deck }: { deck: Deck }) {
         <Button
           appearance="primary"
           icon={timer.status === "running" ? <PauseRegular /> : <PlayRegular />}
-          onClick={() => setTimer((prev) => toggle(prev, Date.now()))}
+          onClick={() => {
+            const t = performance.now();
+            setNow(t);
+            setTimer((prev) => toggle(prev, t));
+          }}
         >
           {timer.status === "running" ? "일시정지" : "시작"}
         </Button>

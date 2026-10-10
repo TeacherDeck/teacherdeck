@@ -4,19 +4,26 @@
 //! `fs` capability (capabilities.md §2.2). Paths stay in the handle table; modules only get
 //! handles and display names (CAP-002). Never log paths or names (PRV-003).
 
+#[cfg(test)]
+#[path = "fs_tests.rs"]
+mod tests;
+
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use deck_core::caps::fs::{
-    DroppedFiles, FileHandleInfo, FolderHandleInfo, HandleArgs, PickFilesArgs, extension_of,
+    BatchIdArgs, BeginWriteArgs, CloseReadArgs, CreateOutputFolderArgs, DroppedFiles,
+    FileHandleInfo, FolderHandleInfo, HandleArgs, OutputBatch, PickFilesArgs, WriteChunkArgs,
+    WriteChunkResult, WriteIdArgs, extension_of,
 };
 use deck_core::error::{DeckError, ErrorCode};
 use serde_json::Value;
-use tauri::AppHandle;
+use tauri::http::{Method, Request, Response, StatusCode};
+use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::DialogExt;
 
 use super::{internal, parse_args, to_value};
-use crate::state::AppState;
+use crate::state::{AppState, FileHandleKind, FileHandleTarget};
 
 /// fs methods.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,10 +32,34 @@ pub enum Op {
     PickFiles,
     /// `pickFolder`
     PickFolder,
+    /// Persistent append-new destination selection.
+    PickDestination,
+    /// Restores an owned grant.
+    DestinationStatus,
+    /// Reveals an owned grant.
+    RevealDestination,
+    /// Revokes metadata only.
+    RevokeDestination,
     /// `stat`
     Stat,
     /// `reveal`
     Reveal,
+    /// `openRead`
+    OpenRead,
+    /// `closeRead`
+    CloseRead,
+    /// `createOutputFolder`
+    CreateOutputFolder,
+    /// `beginWrite`
+    BeginWrite,
+    /// `writeChunk`
+    WriteChunk,
+    /// `commitWrite`
+    CommitWrite,
+    /// `abortWrite`
+    AbortWrite,
+    /// `closeOutputFolder`
+    CloseOutputFolder,
 }
 
 impl Op {
@@ -37,8 +68,20 @@ impl Op {
         Some(match method {
             "pickFiles" => Self::PickFiles,
             "pickFolder" => Self::PickFolder,
+            "pickDestination" => Self::PickDestination,
+            "destinationStatus" => Self::DestinationStatus,
+            "revealDestination" => Self::RevealDestination,
+            "revokeDestination" => Self::RevokeDestination,
             "stat" => Self::Stat,
             "reveal" => Self::Reveal,
+            "openRead" => Self::OpenRead,
+            "closeRead" => Self::CloseRead,
+            "createOutputFolder" => Self::CreateOutputFolder,
+            "beginWrite" => Self::BeginWrite,
+            "writeChunk" => Self::WriteChunk,
+            "commitWrite" => Self::CommitWrite,
+            "abortWrite" => Self::AbortWrite,
+            "closeOutputFolder" => Self::CloseOutputFolder,
             _ => return None,
         })
     }
@@ -67,17 +110,42 @@ fn file_info(handle: String, path: &Path) -> std::io::Result<FileHandleInfo> {
     })
 }
 
-fn issue(state: &AppState, module_id: &str, path: PathBuf) -> Result<String, DeckError> {
+fn issue(
+    state: &AppState,
+    module_id: &str,
+    path: PathBuf,
+    kind: FileHandleKind,
+    generation: u64,
+) -> Result<String, DeckError> {
     let mut table = state.handles.lock().map_err(|_| internal())?;
-    Ok(table.issue(module_id, path))
+    Ok(table.issue(
+        module_id,
+        FileHandleTarget {
+            path,
+            kind,
+            generation,
+        },
+    ))
 }
 
-fn resolve(state: &AppState, module_id: &str, handle: &str) -> Result<PathBuf, DeckError> {
+fn resolve(
+    state: &AppState,
+    module_id: &str,
+    handle: &str,
+    generation: u64,
+    kind: Option<FileHandleKind>,
+) -> Result<PathBuf, DeckError> {
     let table = state.handles.lock().map_err(|_| internal())?;
-    table
+    let target = table
         .resolve(module_id, handle)
-        .cloned()
-        .map_err(|e| DeckError::new(e.code(), e.to_string()))
+        .map_err(|e| DeckError::new(e.code(), e.to_string()))?;
+    if target.generation != generation || kind.is_some_and(|kind| kind != target.kind) {
+        return Err(DeckError::new(
+            ErrorCode::PermissionDenied,
+            "이 작업에 사용할 수 있는 파일 핸들이 아니에요.",
+        ));
+    }
+    Ok(target.path.clone())
 }
 
 fn io_error(e: &std::io::Error) -> DeckError {
@@ -90,11 +158,22 @@ fn io_error(e: &std::io::Error) -> DeckError {
 
 /// Issues handles for dropped paths (files only) for the active module (BRG-009).
 pub fn issue_dropped(state: &AppState, module_id: &str, paths: &[PathBuf]) -> DroppedFiles {
+    let Ok(transfers) = state.transfers.lock() else {
+        return DroppedFiles { files: vec![] };
+    };
+    let generation = transfers.generation(module_id);
     let files = paths
         .iter()
         .filter(|p| p.is_file())
         .filter_map(|p| {
-            let handle = issue(state, module_id, p.clone()).ok()?;
+            let handle = issue(
+                state,
+                module_id,
+                p.clone(),
+                FileHandleKind::ReadFile,
+                generation,
+            )
+            .ok()?;
             file_info(handle, p).ok()
         })
         .collect();
@@ -109,6 +188,80 @@ pub async fn call(
     op: Op,
     args: Value,
 ) -> Result<Value, DeckError> {
+    let generation = state
+        .transfers
+        .lock()
+        .map_err(|_| internal())?
+        .generation(module_id);
+    match op {
+        Op::PickDestination => {
+            let a: deck_core::caps::fs::PickDestinationArgs = parse_args(args)?;
+            let dialog = app
+                .dialog()
+                .file()
+                .set_title("새 캡처 파일을 저장할 폴더 선택");
+            let picked =
+                tauri::async_runtime::spawn_blocking(move || dialog.blocking_pick_folder())
+                    .await
+                    .map_err(|_| internal())?;
+            let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
+                return Ok(Value::Null);
+            };
+            let message = if a.remember {
+                "이 폴더에 새 캡처 파일만 저장하고, 다음 실행에도 이 권한을 기억할까요? 기존 파일은 수정하지 않아요."
+            } else {
+                "이 폴더에 새 캡처 파일만 저장하도록 허용할까요? 기존 파일은 수정하지 않아요."
+            };
+            let confirm = app
+                .dialog()
+                .message(message)
+                .title("캡처 저장 권한")
+                .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancel);
+            if !tauri::async_runtime::spawn_blocking(move || confirm.blocking_show())
+                .await
+                .map_err(|_| internal())?
+            {
+                return Ok(Value::Null);
+            }
+            let store = state.modules.read().map_err(|_| internal())?;
+            crate::bridge::authorize(&store, &state.host_caps, module_id, "fs", "pickDestination")?;
+            drop(store);
+            if state
+                .transfers
+                .lock()
+                .map_err(|_| internal())?
+                .generation(module_id)
+                != generation
+            {
+                return Err(DeckError::new(
+                    ErrorCode::Cancelled,
+                    "폴더 선택을 취소했어요.",
+                ));
+            }
+            return to_value(&crate::destination::pick(
+                state, module_id, &path, a.remember,
+            )?);
+        }
+        Op::DestinationStatus => {
+            let a: deck_core::caps::fs::DestinationStatusArgs = parse_args(args)?;
+            return to_value(&crate::destination::status(
+                state,
+                module_id,
+                a.grant_handle.as_deref(),
+            )?);
+        }
+        Op::RevealDestination | Op::RevokeDestination => {
+            let a: deck_core::caps::fs::DestinationArgs = parse_args(args)?;
+            if op == Op::RevealDestination {
+                crate::destination::reveal(state, module_id, &a.grant_handle)?;
+            } else {
+                crate::destination::revoke(state, module_id, &a.grant_handle)?;
+                crate::capture_host::stop_owner(app, module_id);
+            }
+            return Ok(Value::Null);
+        }
+        _ => {}
+    }
     match op {
         Op::PickFiles => {
             let a: PickFilesArgs = parse_args(args)?;
@@ -128,10 +281,23 @@ pub async fn call(
             .await
             .map_err(|_| internal())?
             .unwrap_or_default();
+            let transfers = state.transfers.lock().map_err(|_| internal())?;
+            if transfers.generation(module_id) != generation {
+                return Err(DeckError::new(
+                    ErrorCode::Cancelled,
+                    "파일 선택을 취소했어요.",
+                ));
+            }
             let mut out = Vec::new();
             for fp in picked {
                 let Ok(path) = fp.into_path() else { continue };
-                let handle = issue(state, module_id, path.clone())?;
+                let handle = issue(
+                    state,
+                    module_id,
+                    path.clone(),
+                    FileHandleKind::ReadFile,
+                    generation,
+                )?;
                 out.push(file_info(handle, &path).map_err(|e| io_error(&e))?);
             }
             tracing::debug!(module = %module_id, count = out.len(), "files picked");
@@ -144,10 +310,23 @@ pub async fn call(
                 tauri::async_runtime::spawn_blocking(move || dialog.blocking_pick_folder())
                     .await
                     .map_err(|_| internal())?;
+            let transfers = state.transfers.lock().map_err(|_| internal())?;
+            if transfers.generation(module_id) != generation {
+                return Err(DeckError::new(
+                    ErrorCode::Cancelled,
+                    "폴더 선택을 취소했어요.",
+                ));
+            }
             let info = match picked.and_then(|fp| fp.into_path().ok()) {
                 Some(path) => Some(FolderHandleInfo {
                     name: display_name(&path),
-                    handle: issue(state, module_id, path)?,
+                    handle: issue(
+                        state,
+                        module_id,
+                        path,
+                        FileHandleKind::OutputParent,
+                        generation,
+                    )?,
                 }),
                 None => None,
             };
@@ -155,16 +334,245 @@ pub async fn call(
         }
         Op::Stat => {
             let HandleArgs { handle } = parse_args(args)?;
-            let path = resolve(state, module_id, &handle)?;
+            let path = resolve(state, module_id, &handle, generation, None)?;
             to_value(&file_info(handle, &path).map_err(|e| io_error(&e))?)
         }
         Op::Reveal => {
             let HandleArgs { handle } = parse_args(args)?;
-            let path = resolve(state, module_id, &handle)?;
+            let path = resolve(state, module_id, &handle, generation, None)?;
             reveal(&path)?;
             Ok(Value::Null)
         }
+        _ => {
+            let app = app.clone();
+            let module_id = module_id.to_owned();
+            tauri::async_runtime::spawn_blocking(move || {
+                let state = app.state::<AppState>();
+                // Recheck permissions after waiting for a worker; unload generations are checked below.
+                {
+                    let store = state.modules.read().map_err(|_| internal())?;
+                    crate::bridge::authorize(
+                        &store,
+                        &state.host_caps,
+                        &module_id,
+                        "fs",
+                        op.method(),
+                    )?;
+                }
+                transfer_call(&state, &module_id, generation, op, args)
+            })
+            .await
+            .map_err(|_| internal())?
+        }
     }
+}
+
+impl Op {
+    fn method(self) -> &'static str {
+        match self {
+            Self::OpenRead => "openRead",
+            Self::CloseRead => "closeRead",
+            Self::CreateOutputFolder => "createOutputFolder",
+            Self::BeginWrite => "beginWrite",
+            Self::WriteChunk => "writeChunk",
+            Self::CommitWrite => "commitWrite",
+            Self::AbortWrite => "abortWrite",
+            Self::CloseOutputFolder => "closeOutputFolder",
+            Self::PickFiles => "pickFiles",
+            Self::PickFolder => "pickFolder",
+            Self::PickDestination => "pickDestination",
+            Self::DestinationStatus => "destinationStatus",
+            Self::RevealDestination => "revealDestination",
+            Self::RevokeDestination => "revokeDestination",
+            Self::Stat => "stat",
+            Self::Reveal => "reveal",
+        }
+    }
+}
+
+fn transfer_call(
+    state: &AppState,
+    owner: &str,
+    generation: u64,
+    op: Op,
+    args: Value,
+) -> Result<Value, DeckError> {
+    let mut transfers = state.transfers.lock().map_err(|_| internal())?;
+    match op {
+        Op::OpenRead => {
+            let HandleArgs { handle } = parse_args(args)?;
+            let path = resolve(
+                state,
+                owner,
+                &handle,
+                generation,
+                Some(FileHandleKind::ReadFile),
+            )?;
+            to_value(&transfers.open_read(owner, generation, &path)?)
+        }
+        Op::CloseRead => {
+            let CloseReadArgs { read_id } = parse_args(args)?;
+            transfers.close_read(owner, generation, &read_id)?;
+            Ok(Value::Null)
+        }
+        Op::CreateOutputFolder => {
+            let a: CreateOutputFolderArgs = parse_args(args)?;
+            let parent = resolve(
+                state,
+                owner,
+                &a.parent_handle,
+                generation,
+                Some(FileHandleKind::OutputParent),
+            )?;
+            let (batch_id, path) =
+                transfers.create_output(owner, generation, &parent, &a.suggested_name)?;
+            let folder = FolderHandleInfo {
+                name: display_name(&path),
+                handle: issue(state, owner, path, FileHandleKind::OutputParent, generation)?,
+            };
+            to_value(&OutputBatch { batch_id, folder })
+        }
+        Op::BeginWrite => {
+            let a: BeginWriteArgs = parse_args(args)?;
+            let temp = state.file_temp.as_ref().ok_or_else(internal)?;
+            to_value(&transfers.begin_write(
+                owner,
+                generation,
+                &a.batch_id,
+                &a.suggested_name,
+                a.size,
+                temp,
+            )?)
+        }
+        Op::WriteChunk => {
+            let a: WriteChunkArgs = parse_args(args)?;
+            to_value(&WriteChunkResult {
+                next_offset: transfers.write(owner, generation, &a.write_id, a.offset, &a.data)?,
+            })
+        }
+        Op::CommitWrite => {
+            let WriteIdArgs { write_id } = parse_args(args)?;
+            let path = transfers.commit(owner, generation, &write_id)?;
+            let handle = issue(
+                state,
+                owner,
+                path.clone(),
+                FileHandleKind::ReadFile,
+                generation,
+            )?;
+            to_value(&file_info(handle, &path).map_err(|e| io_error(&e))?)
+        }
+        Op::AbortWrite => {
+            let WriteIdArgs { write_id } = parse_args(args)?;
+            transfers.abort(owner, generation, &write_id)?;
+            Ok(Value::Null)
+        }
+        Op::CloseOutputFolder => {
+            let BatchIdArgs { batch_id } = parse_args(args)?;
+            transfers.close_output(owner, generation, &batch_id)?;
+            Ok(Value::Null)
+        }
+        _ => Err(internal()),
+    }
+}
+
+/// Serves only authenticated, bounded reads from a module's own resource origin.
+pub fn serve_file_resource(state: &AppState, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
+    let result = (|| -> Result<Vec<u8>, DeckError> {
+        let owner =
+            crate::protocol::module_id_from_uri(request.uri()).ok_or_else(resource_denied)?;
+        if let Some(origin) = request.headers().get("origin")
+            && origin.to_str().ok() != Some(crate::origins::module_origin(owner).as_str())
+        {
+            return Err(resource_denied());
+        }
+        let (token, offset, length) = resource_args(request.uri())?;
+        {
+            let store = state.modules.read().map_err(|_| internal())?;
+            crate::bridge::authorize(&store, &state.host_caps, owner, "fs", "openRead")?;
+        }
+        let mut transfers = state.transfers.lock().map_err(|_| internal())?;
+        transfers.read(owner, token, offset, length)
+    })();
+    match result {
+        Ok(bytes) => {
+            let size = bytes.len();
+            let body = if request.method() == Method::HEAD {
+                vec![]
+            } else {
+                bytes
+            };
+            let mut response =
+                crate::protocol::respond(StatusCode::OK, "application/octet-stream", body);
+            if let Ok(value) = size.to_string().parse() {
+                response.headers_mut().insert("content-length", value);
+            }
+            response.headers_mut().insert(
+                "cross-origin-resource-policy",
+                tauri::http::HeaderValue::from_static("same-origin"),
+            );
+            response
+        }
+        Err(error) => {
+            let status = match error.code {
+                ErrorCode::PermissionDenied => StatusCode::FORBIDDEN,
+                ErrorCode::NotFound => StatusCode::NOT_FOUND,
+                ErrorCode::InvalidArgs => StatusCode::BAD_REQUEST,
+                ErrorCode::Busy => StatusCode::CONFLICT,
+                _ => StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            let body = if request.method() == Method::HEAD {
+                vec![]
+            } else {
+                serde_json::to_vec(&error).unwrap_or_default()
+            };
+            crate::protocol::respond(status, "application/json", body)
+        }
+    }
+}
+
+fn resource_denied() -> DeckError {
+    DeckError::new(
+        ErrorCode::PermissionDenied,
+        "이 파일 자료에 접근할 수 없어요.",
+    )
+}
+
+fn resource_args(uri: &tauri::http::Uri) -> Result<(&str, u64, usize), DeckError> {
+    let invalid = || DeckError::new(ErrorCode::InvalidArgs, "파일 읽기 범위를 확인해 주세요.");
+    let token = uri
+        .path()
+        .strip_prefix("/_resources/")
+        .ok_or_else(invalid)?;
+    if token.len() != 32
+        || !token
+            .bytes()
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+    {
+        return Err(invalid());
+    }
+    let mut offset = None;
+    let mut length = None;
+    for part in uri.query().ok_or_else(invalid)?.split('&') {
+        let (key, value) = part.split_once('=').ok_or_else(invalid)?;
+        if value.is_empty() || !value.bytes().all(|c| c.is_ascii_digit()) {
+            return Err(invalid());
+        }
+        match key {
+            "offset" if offset.is_none() => {
+                offset = Some(value.parse::<u64>().map_err(|_| invalid())?)
+            }
+            "length" if length.is_none() => {
+                length = Some(value.parse::<usize>().map_err(|_| invalid())?)
+            }
+            _ => return Err(invalid()),
+        }
+    }
+    let length = length.ok_or_else(invalid)?;
+    if length > crate::file_read::READ_CHUNK_BYTES {
+        return Err(invalid());
+    }
+    Ok((token, offset.ok_or_else(invalid)?, length))
 }
 
 /// Opens Explorer with the file selected. No shell plugin is involved (SEC-003).

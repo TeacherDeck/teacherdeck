@@ -1,0 +1,27 @@
+{
+  "$schema": "../../schema/module.schema.json",
+  "manifestVersion": 1,
+  "id": "quick-capture",
+  "name": "퀵캡처",
+  "description": "영역을 띄워 둔 채 단축키나 더블클릭으로 연속 캡처하고 자동 저장해요.",
+  "version": "0.1.2",
+  "category": "image",
+  "icon": "icon.svg",
+  "entry": "index.html",
+  "authors": [
+    {
+      "name": "rochelobeJYJ"
+    }
+  ],
+  "requires": {
+    "overlay": "^1.0.0",
+    "fs": "^1.2.0",
+    "capture": "^1.0.0",
+    "global-shortcut": "^1.0.0",
+    "storage": "^1.0.0"
+  },
+  "optional": {},
+  "ui": {
+    "keepAlive": true
+  }
+}

@@ -11,9 +11,20 @@ use std::error::Error;
 use std::io::Write as _;
 use std::path::Path;
 
-use deck_core::caps::fs::{
-    DroppedFiles, FileFilter, FileHandleInfo, FolderHandleInfo, HandleArgs, PickFilesArgs,
+use deck_core::caps::capture::*;
+use deck_core::caps::clipboard::{
+    ClipboardBlock, ClipboardCell, ClipboardRun, ClipboardWriteRichTextArgs, ClipboardWriteTextArgs,
 };
+use deck_core::caps::fs::{
+    BatchIdArgs, BeginWriteArgs, CloseReadArgs, CreateOutputFolderArgs, DroppedFiles, FileFilter,
+    FileHandleInfo, FileRead, FileWrite, FolderHandleInfo, HandleArgs, OutputBatch, PickFilesArgs,
+    WriteChunkArgs, WriteChunkResult, WriteIdArgs,
+};
+use deck_core::caps::fs::{
+    DestinationArgs, DestinationGrant, DestinationStatusArgs, PickDestinationArgs,
+};
+use deck_core::caps::global_shortcut::*;
+use deck_core::caps::overlay::*;
 use deck_core::caps::storage::{KeyArgs, SetArgs};
 use deck_core::caps::system::{OsInfo, SystemInfo};
 use deck_core::caps::window::ToggleArgs;
@@ -102,7 +113,7 @@ fn registry_ts() -> Result<Output, Box<dyn Error>> {
     version: {},
     methods: {{
 ",
-            c.name,
+            serde_json::to_string(c.name)?,
             serde_json::to_string(c.version)?
         ));
         for m in c.methods {
@@ -186,10 +197,59 @@ fn main() -> Result<(), Box<dyn Error>> {
         ts::<FileFilter>(SDK_DIR, &cfg)?,
         ts::<PickFilesArgs>(SDK_DIR, &cfg)?,
         ts::<HandleArgs>(SDK_DIR, &cfg)?,
+        ts::<CloseReadArgs>(SDK_DIR, &cfg)?,
+        ts::<FileRead>(SDK_DIR, &cfg)?,
+        ts::<CreateOutputFolderArgs>(SDK_DIR, &cfg)?,
+        ts::<OutputBatch>(SDK_DIR, &cfg)?,
+        ts::<BeginWriteArgs>(SDK_DIR, &cfg)?,
+        ts::<FileWrite>(SDK_DIR, &cfg)?,
+        ts::<WriteChunkArgs>(SDK_DIR, &cfg)?,
+        ts::<WriteChunkResult>(SDK_DIR, &cfg)?,
+        ts::<WriteIdArgs>(SDK_DIR, &cfg)?,
+        ts::<BatchIdArgs>(SDK_DIR, &cfg)?,
         ts::<FileHandleInfo>(SDK_DIR, &cfg)?,
         ts::<FolderHandleInfo>(SDK_DIR, &cfg)?,
         ts::<DroppedFiles>(SDK_DIR, &cfg)?,
         ts::<ToggleArgs>(SDK_DIR, &cfg)?,
+        ts::<ClipboardWriteTextArgs>(SDK_DIR, &cfg)?,
+        ts::<ClipboardWriteRichTextArgs>(SDK_DIR, &cfg)?,
+        ts::<ClipboardBlock>(SDK_DIR, &cfg)?,
+        ts::<ClipboardCell>(SDK_DIR, &cfg)?,
+        ts::<ClipboardRun>(SDK_DIR, &cfg)?,
+        ts::<PhysicalRect>(SDK_DIR, &cfg)?,
+        ts::<DisplayInfo>(SDK_DIR, &cfg)?,
+        ts::<CaptureNaming>(SDK_DIR, &cfg)?,
+        ts::<CaptureSettings>(SDK_DIR, &cfg)?,
+        ts::<CaptureArgs>(SDK_DIR, &cfg)?,
+        ts::<CaptureResult>(SDK_DIR, &cfg)?,
+        ts::<CaptureArmArgs>(SDK_DIR, &cfg)?,
+        ts::<CaptureSession>(SDK_DIR, &cfg)?,
+        ts::<CaptureStatusArgs>(SDK_DIR, &cfg)?,
+        ts::<CaptureSessionArgs>(SDK_DIR, &cfg)?,
+        ts::<CaptureUpdateArgs>(SDK_DIR, &cfg)?,
+        ts::<CaptureCompletedEvent>(SDK_DIR, &cfg)?,
+        ts::<CaptureFailedEvent>(SDK_DIR, &cfg)?,
+        ts::<CaptureFormat>(SDK_DIR, &cfg)?,
+        ts::<CaptureNamingMode>(SDK_DIR, &cfg)?,
+        ts::<OverlayStyle>(SDK_DIR, &cfg)?,
+        ts::<OverlayInfo>(SDK_DIR, &cfg)?,
+        ts::<OverlayCreateArgs>(SDK_DIR, &cfg)?,
+        ts::<OverlayArgs>(SDK_DIR, &cfg)?,
+        ts::<OverlayUpdateArgs>(SDK_DIR, &cfg)?,
+        ts::<OverlayUiLayout>(SDK_DIR, &cfg)?,
+        ts::<OverlayUiState>(SDK_DIR, &cfg)?,
+        ts::<OverlayUiActionArgs>(SDK_DIR, &cfg)?,
+        ts::<OverlayUiAction>(SDK_DIR, &cfg)?,
+        ts::<ShortcutModifier>(SDK_DIR, &cfg)?,
+        ts::<ShortcutRegisterArgs>(SDK_DIR, &cfg)?,
+        ts::<ShortcutInfo>(SDK_DIR, &cfg)?,
+        ts::<ShortcutArgs>(SDK_DIR, &cfg)?,
+        ts::<ShortcutReplaceArgs>(SDK_DIR, &cfg)?,
+        ts::<ShortcutTriggeredEvent>(SDK_DIR, &cfg)?,
+        ts::<DestinationGrant>(SDK_DIR, &cfg)?,
+        ts::<PickDestinationArgs>(SDK_DIR, &cfg)?,
+        ts::<DestinationArgs>(SDK_DIR, &cfg)?,
+        ts::<DestinationStatusArgs>(SDK_DIR, &cfg)?,
     ];
     sdk.push(registry_ts()?);
     let shell = vec![

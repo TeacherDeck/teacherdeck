@@ -187,6 +187,65 @@ mod tests {
     }
 
     #[test]
+    fn clipboard_requires_declared_active_module_and_satisfied_version() {
+        let host = caps::host_caps();
+        let declared = store_with(r#"{"clipboard":"^1.0"}"#, "{}");
+        for method in ["writeText", "writeRichText"] {
+            assert_eq!(
+                code(authorize(
+                    &declared,
+                    &host,
+                    "sample-tool",
+                    "clipboard",
+                    method
+                )),
+                None
+            );
+            assert_eq!(
+                code(authorize(
+                    &declared,
+                    &host,
+                    "missing-tool",
+                    "clipboard",
+                    method
+                )),
+                Some(ErrorCode::PermissionDenied)
+            );
+        }
+        let undeclared = store_with(r#"{"storage":"^1.0"}"#, "{}");
+        assert_eq!(
+            code(authorize(
+                &undeclared,
+                &host,
+                "sample-tool",
+                "clipboard",
+                "writeText"
+            )),
+            Some(ErrorCode::PermissionDenied)
+        );
+        let mismatched = store_with(r#"{"storage":"^1.0"}"#, r#"{"clipboard":"^2.0"}"#);
+        assert_eq!(
+            code(authorize(
+                &mismatched,
+                &host,
+                "sample-tool",
+                "clipboard",
+                "writeRichText"
+            )),
+            Some(ErrorCode::VersionMismatch)
+        );
+        assert_eq!(
+            code(authorize(
+                &declared,
+                &host,
+                "sample-tool",
+                "clipboard",
+                "readText"
+            )),
+            Some(ErrorCode::CapabilityUnavailable)
+        );
+    }
+    #[test]
     fn optional_cap_beyond_host_is_version_mismatch() {
         let s = store_with(r#"{"storage":"^1.0"}"#, r#"{"window":"^2.0"}"#);
         let host = caps::host_caps();

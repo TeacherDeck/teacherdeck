@@ -65,12 +65,20 @@ pub fn module_visibility(
 
 /// The shell removed a module iframe: restore window state, drop its handles and storage cache.
 #[tauri::command]
-pub fn module_unloaded(app: AppHandle, state: State<'_, AppState>, module_id: String) {
+pub async fn module_unloaded(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    module_id: String,
+) -> Result<(), ()> {
     restore(&app, &state, &module_id);
+    if let Ok(mut transfers) = state.transfers.lock() {
+        transfers.unload(&module_id);
+    }
     if let Ok(mut table) = state.handles.lock() {
         table.release_module(&module_id);
     }
     state.storage.forget(&module_id);
+    Ok(())
 }
 
 fn updater_configured(app: &AppHandle) -> bool {

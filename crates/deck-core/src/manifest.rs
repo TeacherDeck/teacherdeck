@@ -213,7 +213,7 @@ impl ModuleManifest {
                 if !is_valid_cap_name(cap) {
                     push(
                         &path,
-                        "캡 이름은 소문자로 시작하는 영문 소문자·숫자여야 해요.".to_owned(),
+                        "캡 이름은 소문자로 시작하는 32자 이하 영문 소문자·숫자와 내부 단일 하이픈이어야 해요.".to_owned(),
                     );
                 }
                 if let Err(e) = VersionReq::parse(range) {

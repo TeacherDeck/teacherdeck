@@ -35,7 +35,10 @@ allow = [
 confidence-threshold = 0.9
 # The allowlist is shared policy; crates that do not use a license yet are fine.
 unused-allowed-license = "allow"
-exceptions = []
+exceptions = [
+  { name = "clipboard-win", version = "=5.4.1", allow = ["BSL-1.0"] },
+  { name = "error-code", version = "=3.4.0", allow = ["BSL-1.0"] },
+]
 
 [licenses.private]
 # Workspace crates (publish = false) are our own GPL-3.0-only code.

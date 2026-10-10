@@ -11,11 +11,14 @@
 
 ```ts
 type Envelope = { deck: 1 } & (
-  | { kind: "hello"; sdk: string }                                   // module → shell
-  | { kind: "init"; module: { id: string; version: string };         // shell → module
-      host: { app: string; caps: Record<string, string> };            // cap → 제공 버전
-      granted: string[];                                              // 이 모듈이 호출 가능한 캡
-      theme: ThemePayload }
+  | { kind: "hello"; sdk: string } // module → shell
+  | {
+      kind: "init";
+      module: { id: string; version: string }; // shell → module
+      host: { app: string; caps: Record<string, string> }; // cap → 제공 버전
+      granted: string[]; // 이 모듈이 호출 가능한 캡
+      theme: ThemePayload;
+    }
   | { kind: "req"; id: string; cap: string; method: string; args: unknown }
   | { kind: "res"; id: string; ok: true; result: unknown }
   | { kind: "res"; id: string; ok: false; error: DeckError }
@@ -24,8 +27,15 @@ type Envelope = { deck: 1 } & (
 );
 type DeckError = { code: ErrorCode; message: string; details?: unknown };
 type ErrorCode =
-  | "PERMISSION_DENIED" | "CAPABILITY_UNAVAILABLE" | "VERSION_MISMATCH"
-  | "INVALID_ARGS" | "NOT_FOUND" | "CANCELLED" | "TIMEOUT" | "BUSY" | "INTERNAL";
+  | "PERMISSION_DENIED"
+  | "CAPABILITY_UNAVAILABLE"
+  | "VERSION_MISMATCH"
+  | "INVALID_ARGS"
+  | "NOT_FOUND"
+  | "CANCELLED"
+  | "TIMEOUT"
+  | "BUSY"
+  | "INTERNAL";
 type ThemePayload = { mode: "light" | "dark"; mica: boolean; tokens: Record<string, string> };
 ```
 
@@ -35,17 +45,17 @@ type ThemePayload = { mode: "light" | "dark"; mica: boolean; tokens: Record<stri
 
 ### 오류 코드
 
-| 코드 | 의미 |
-|---|---|
-| `PERMISSION_DENIED` | 모듈이 선언하지 않았거나 허가받지 않은 캡·핸들을 사용했다. |
-| `CAPABILITY_UNAVAILABLE` | 호스트에 없는 캡·메서드다. |
-| `VERSION_MISMATCH` | 캡 버전이 선언 범위를 만족하지 않는다. |
-| `INVALID_ARGS` | 인자 형식이 잘못됐거나 메시지가 크기 제한을 넘었다. |
-| `NOT_FOUND` | 대상(핸들, 키 등)이 없다. |
-| `CANCELLED` | `cancel`로 취소됐다. |
-| `TIMEOUT` | 시간 안에 응답하지 않았다. |
-| `BUSY` | 동시에 처리할 수 없는 상태다. |
-| `INTERNAL` | 호스트 내부 오류다. |
+| 코드                     | 의미                                                       |
+| ------------------------ | ---------------------------------------------------------- |
+| `PERMISSION_DENIED`      | 모듈이 선언하지 않았거나 허가받지 않은 캡·핸들을 사용했다. |
+| `CAPABILITY_UNAVAILABLE` | 호스트에 없는 캡·메서드다.                                 |
+| `VERSION_MISMATCH`       | 캡 버전이 선언 범위를 만족하지 않는다.                     |
+| `INVALID_ARGS`           | 인자 형식이 잘못됐거나 메시지가 크기 제한을 넘었다.        |
+| `NOT_FOUND`              | 대상(핸들, 키 등)이 없다.                                  |
+| `CANCELLED`              | `cancel`로 취소됐다.                                       |
+| `TIMEOUT`                | 시간 안에 응답하지 않았다.                                 |
+| `BUSY`                   | 동시에 처리할 수 없는 상태다.                              |
+| `INTERNAL`               | 호스트 내부 오류다.                                        |
 
 `message`에는 경로·파일명·사용자 데이터를 넣지 않는다(CAP-007, PRV-003).
 
@@ -71,18 +81,18 @@ module                     shell
 
 ## 4. 이벤트 (v1)
 
-| topic | 방향 | payload | 수신 대상 |
-|---|---|---|---|
-| `theme.changed` | shell → module | `ThemePayload` | 모든 로드된 모듈 |
-| `fs.dropped` | shell → module | 드롭된 파일의 `FileHandleInfo[]` | `fs` 캡이 있는 활성 모듈 |
-| `module.visibility` | shell → module | `{ visible: boolean }` | keepAlive 모듈 |
-| `job.progress` | shell → module | `{ id, done, total }` | 해당 job을 요청한 모듈 |
+| topic               | 방향           | payload                          | 수신 대상                |
+| ------------------- | -------------- | -------------------------------- | ------------------------ |
+| `theme.changed`     | shell → module | `ThemePayload`                   | 모든 로드된 모듈         |
+| `fs.dropped`        | shell → module | 드롭된 파일의 `FileHandleInfo[]` | `fs` 캡이 있는 활성 모듈 |
+| `module.visibility` | shell → module | `{ visible: boolean }`           | keepAlive 모듈           |
+| `job.progress`      | shell → module | `{ id, done, total }`            | 해당 job을 요청한 모듈   |
 
 `fs.dropped` payload(`DroppedFiles`)는 Rust 원천에서 생성한다. `module.visibility`는 `{ visible: boolean }`이다.
 
 ## 5. 규칙
 
-- **BRG-001** [MUST] 셸은 `event.source`가 알려진 모듈 iframe의 contentWindow이고 `event.origin`이 모듈 origin인 메시지만 처리한다. 모듈 id는 iframe 매핑으로 판정하며, 메시지 내용의 자기 신고를 믿지 않는다. — 강제: 셸 단위 테스트(`apps/desktop/src/bridge/ModuleBridge.test.ts`)
+- **BRG-001** [MUST] 셸은 `event.source`가 알려진 모듈 iframe의 contentWindow이고 `event.origin`이 그 프레임의 검증된 entryUrl에 등록된 정확한 모듈 origin인 메시지만 처리한다. 응답·이벤트의 targetOrigin도 해당 origin이다. 모듈 id는 iframe 매핑으로 판정하며, 메시지 내용의 자기 신고나 origin suffix만 믿지 않는다. 언로드된 프레임의 늦은 응답은 버린다. — 강제: 셸 단위 테스트(`apps/desktop/src/bridge/ModuleBridge.test.ts`)
 - **BRG-002** [MUST] 모듈(SDK)은 `window.parent`에서 온, 셸 origin의 메시지만 처리한다. — 강제: SDK 테스트(`packages/sdk/src/client.test.ts`)
 - **BRG-003** [MUST] 모듈은 로드 후 10초 안에 `hello`를 보낸다. 셸은 `init`으로 응답한다. `init` 수신 전에는 `req`를 보내지 않는다. 시간 초과 시 셸은 로드 오류 화면을 띄운다. — 강제: SDK 구현, 셸 테스트
 - **BRG-004** [MUST] `req.id`는 모듈 세션 내 고유한 UUID다. 모든 `req`는 정확히 하나의 `res`를 받는다. 기본 타임아웃은 30초(SDK 측, `TIMEOUT`)이며, 레지스트리에서 `long`으로 표시된 메서드는 예외다. — 강제: SDK 테스트(`packages/sdk/src/client.test.ts`)
@@ -91,3 +101,7 @@ module                     shell
 - **BRG-007** [MUST] 메시지는 JSON 직렬화 가능해야 하며 1MB를 넘지 않는다. 초과 시 `INVALID_ARGS`를 반환한다. — 강제: SDK·셸 검사와 테스트
 - **BRG-008** [MUST] 프로토콜 버전은 정수 필드 `deck`이다. 깨지는 변경 시 증가시키고, 셸은 N과 N-1을 지원한다. — 강제: [manual]
 - **BRG-009** [MUST] v1 이벤트는 `theme.changed`, `fs.dropped`(fs 캡이 있는 활성 모듈에만), `module.visibility`, `job.progress`다. 새 이벤트 추가는 스펙 변경이다. — 강제: TS 유니온 타입(`EVENT_TOPICS`, `EventPayloads`)
+
+### 승인된 캡처 이벤트 (ADR-0017)
+
+기존 deck:1 envelope를 유지하며 capture.completed({sessionHandle,result}), capture.failed({sessionHandle,error}), overlay.changed(OverlayInfo), shortcut.triggered({shortcutHandle})를 추가한다. Rust 캡 원천 타입을 pnpm gen으로 SDK에 생성한다. 이벤트는 살아 있는 소유 iframe에만 전달하며 inactive broadcast나 pixels는 포함하지 않는다. 다시 연 모듈은 capture.status({})로 상태를 복원한다. 별도 셸 창의 deck://overlay-state는 OverlayUiState이며 region/toolbar label 매핑으로 소유자를 판정한다. overlay_ui_state와 overlay_ui_action은 payload의 자기 신고 owner를 받지 않는다.

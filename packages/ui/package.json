@@ -1,6 +1,6 @@
 {
   "name": "@deck/ui",
-  "version": "0.2.0",
+  "version": "0.6.1",
   "private": true,
   "description": "TeacherDeck shared UI components on Fluent UI React v9",
   "license": "GPL-3.0-only",

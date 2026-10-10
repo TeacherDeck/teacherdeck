@@ -1,0 +1,18 @@
+{
+  "name": "@deck-module/quick-capture",
+  "version": "0.1.2",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "deckTemplate": 1,
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@deck/sdk": "workspace:*",
+    "@deck/ui": "workspace:*",
+    "@fluentui/react-icons": "2.0.343",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  }
+}
