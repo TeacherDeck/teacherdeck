@@ -712,7 +712,7 @@ dependencies = [
 
 [[package]]
 name = "deck-codegen"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "deck-core",
  "schemars 1.2.2",
@@ -723,7 +723,7 @@ dependencies = [
 
 [[package]]
 name = "deck-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "schemars 1.2.2",
  "semver",
@@ -4132,7 +4132,7 @@ dependencies = [
 
 [[package]]
 name = "teacherdeck"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "deck-core",
  "getrandom 0.4.3",
