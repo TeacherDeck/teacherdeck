@@ -21,8 +21,18 @@ const useDocumentStyles = makeStaticStyles({
 
 const useStyles = makeStyles({
   // UI-004: transparent root so the Mica backdrop shows through; surfaces use layer tokens.
-  transparent: { backgroundColor: "transparent", minHeight: "100vh", overflowX: "clip", color: tokens.colorNeutralForeground1 },
-  opaque: { backgroundColor: tokens.colorNeutralBackground2, minHeight: "100vh", overflowX: "clip", color: tokens.colorNeutralForeground1 },
+  transparent: {
+    backgroundColor: "transparent",
+    minHeight: "100vh",
+    overflowX: "clip",
+    color: tokens.colorNeutralForeground1,
+  },
+  opaque: {
+    backgroundColor: tokens.colorNeutralBackground2,
+    minHeight: "100vh",
+    overflowX: "clip",
+    color: tokens.colorNeutralForeground1,
+  },
 });
 
 export interface DeckProviderProps {
@@ -46,14 +56,22 @@ export function DeckProvider({ deck, theme, mica, children }: DeckProviderProps)
   const [payload, setPayload] = useState<ThemePayload | undefined>(deck?.theme);
   useEffect(() => deck?.on("theme.changed", setPayload), [deck]);
 
-  const resolved = theme !== undefined ? toTheme(theme) : payload !== undefined ? payloadToTheme(payload) : createDeckTheme("light");
+  const resolved =
+    theme !== undefined ? toTheme(theme) : payload !== undefined ? payloadToTheme(payload) : createDeckTheme("light");
   const transparent = mica ?? payload?.mica ?? false;
-  // Native scrollbars and form controls follow color-scheme on the root element, so they match
-  // the theme instead of staying light in dark mode.
-  const mode = theme !== undefined ? ("mode" in theme ? theme.mode : undefined) : payload?.mode;
+  // Tint native scrollbars with the theme so they don't stay light in dark mode. Not via
+  // color-scheme: a root color-scheme repaints the canvas and makes iframes opaque, which
+  // breaks the transparent root (UI-004). Theme tokens live on the provider element, so the
+  // root gets resolved values; nested providers (gallery previews) restore it on unmount.
+  const thumb = resolved.colorNeutralStroke1;
   useEffect(() => {
-    document.documentElement.style.colorScheme = mode ?? "light";
-  }, [mode]);
+    const root = document.documentElement.style;
+    const previous = root.scrollbarColor;
+    root.scrollbarColor = `${thumb} transparent`;
+    return () => {
+      root.scrollbarColor = previous;
+    };
+  }, [thumb]);
   return (
     <FluentProvider theme={resolved} className={transparent ? styles.transparent : styles.opaque}>
       {children}
