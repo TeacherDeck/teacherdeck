@@ -150,7 +150,9 @@ it("keeps corrupt data locked if preservation fails and recovers only after expl
   await screen.findByText(/작업하지 못했어요/);
   await waitFor(() => expect(globalThis.document.querySelector('[role="dialog"]')).toBeNull());
   expect(f.store.get(STATE_KEY)).toBe(damaged);
-  expect((screen.getByRole("button", { name: "메모 저장" }) as HTMLButtonElement).disabled).toBe(true);
+  // Fluent restores the background's accessibility a moment after the dialog leaves the DOM
+  // (Tabster Modalizer); wait for it instead of racing it.
+  await waitFor(() => expect((screen.getByRole("button", { name: "메모 저장" }) as HTMLButtonElement).disabled).toBe(true));
   f.fail("");
   dialog = await preview();
   fireEvent.click(within(dialog).getByRole("button", { name: "확인하고 복원" }));
@@ -158,7 +160,7 @@ it("keeps corrupt data locked if preservation fails and recovers only after expl
   await waitFor(() => expect(globalThis.document.querySelector('[role="dialog"]')).toBeNull());
   expect(f.store.get(STATE_KEY)).toEqual(imported);
   expect([...f.store.entries()].some(([key, value]) => key.startsWith("recovery.") && value === damaged)).toBe(true);
-  expect((screen.getByRole("button", { name: "메모 저장" }) as HTMLButtonElement).disabled).toBe(false);
+  await waitFor(() => expect((screen.getByRole("button", { name: "메모 저장" }) as HTMLButtonElement).disabled).toBe(false));
   f.view.unmount();
   f.deck.dispose();
 });
