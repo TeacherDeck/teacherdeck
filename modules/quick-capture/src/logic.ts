@@ -24,6 +24,16 @@ export interface Preferences {
   destinationGrant?: string;
 }
 export const PREFERENCES_KEY = "capture-preferences-v1";
+export const CAPTURE_KEYS = [
+  ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+  ...Array.from({ length: 24 }, (_, i) => `F${i + 1}`).filter((key) => key !== "F12"),
+  "Space",
+  "Enter",
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+];
 export function defaults(borderColor: string): Preferences {
   return {
     version: 1,
@@ -65,7 +75,7 @@ export function restorePreferences(value: unknown, borderColor: string): Prefere
     },
     shortcut:
       typeof key === "string" &&
-      /^(?:[A-Z0-9]|F(?:[1-9]|1[01]))$/.test(key) &&
+      CAPTURE_KEYS.includes(key) &&
       Array.isArray(modifiers) &&
       modifiers.length > 0 &&
       modifiers.every((m) => ["control", "shift", "alt", "meta"].includes(String(m)))
@@ -214,7 +224,7 @@ export function shortcutFromKey(event: {
     : event.code.startsWith("Digit")
       ? event.code.slice(5)
       : event.code;
-  if (!/^(?:[A-Z0-9]|F(?:[1-9]|1[01]))$/.test(key)) return null;
+  if (!CAPTURE_KEYS.includes(key)) return null;
   const modifiers: ShortcutRegisterArgs["modifiers"] = [];
   if (event.ctrlKey) modifiers.push("control");
   if (event.shiftKey) modifiers.push("shift");

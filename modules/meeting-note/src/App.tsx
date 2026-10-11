@@ -26,6 +26,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Entry, type EntryKind, type Meeting, emptyMeeting, parseEntry, speakerIndex } from "./meeting.ts";
 import { createWriter, loadMeeting } from "./storage.ts";
 import { publicClipboard } from "./clipboard.ts";
+import { Elapsed } from "./elapsed.tsx";
 import { type ExportFormat, exportText, pickMeeting, saveFile } from "./files.ts";
 import {
   type Library,
@@ -1076,6 +1077,7 @@ export function App({ deck }: { deck: Deck }) {
             <Caption secondary className={s.saved}>
               {status}
             </Caption>
+            <Elapsed startedAt={meeting.startedAt} />
             <Button size="small" onClick={() => setDialog("export")}>
               내보내기 (F8)
             </Button>

@@ -32,6 +32,7 @@ import {
   applyPreferences,
   ShortcutApplyError,
   shortcutFromKey,
+  CAPTURE_KEYS,
   same,
   type Preferences,
 } from "./logic.ts";
@@ -57,7 +58,7 @@ const useStyles = makeStyles({
   },
   numbers: { display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: deckTokens.inlineGap },
 });
-const KEYS = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", ...Array.from({ length: 11 }, (_, i) => `F${i + 1}`)];
+const KEYS = CAPTURE_KEYS;
 export function App({ deck }: { deck: Deck }) {
   const s = useStyles();
   const color = createDeckTheme(deck.theme.mode).colorPaletteRedBorderActive;
