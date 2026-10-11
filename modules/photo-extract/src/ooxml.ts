@@ -2,7 +2,7 @@
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import type { Parts } from "./archive.ts";
 import { inspectPhoto } from "./photo.ts";
-import { collectStudents, type Anchor, type Cell, type Student } from "./roster.ts";
+import { collectStudents, ambiguousAnchorCoordinates, type Anchor, type Cell, type Student } from "./roster.ts";
 export interface Photo {
   key: string;
   bytes: Uint8Array<ArrayBuffer>;
@@ -189,6 +189,11 @@ export async function parseParts(parts: Parts, signal?: AbortSignal, deferCollec
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
     }
     if (anchors.length > 1000) throw new Error("ROSTER_LIMIT");
+    if (!deferCollection) {
+      const ambiguous = ambiguousAnchorCoordinates(anchors).size;
+      if (ambiguous)
+        warnings.push(`${ambiguous}개 사진 위치에 서로 다른 이미지가 겹쳐 있어요. 모두 미확인 이름으로 저장해요.`);
+    }
     sheets.push({ name: source.name, students: collected.students, anchors, cells });
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
   }

@@ -19,6 +19,38 @@ async function extract(bytes: Uint8Array): Promise<Extraction> {
   };
 }
 describe("TimeAlert roster extraction parity", () => {
+  it("keeps every overlapping different image unconfirmed regardless of drawing order", async () => {
+    const result = await extract(
+      fixture(
+        [{ row: 4, col: 2, text: "1학년 3반 1번 가상가" }],
+        [
+          { row: 3, col: 2 },
+          { row: 3, col: 2 },
+        ],
+      ),
+    );
+    for (const anchors of [result.photos, [...result.photos].reverse()]) {
+      const students = matchPhotos(
+        result.students,
+        anchors.map((photo) => ({ row: 3, col: 2, key: photo.key })),
+      );
+      const plans = planPhotos([{ ...result, students }]);
+      expect(plans).toHaveLength(2);
+      expect(plans.every((photo) => !photo.confirmed && photo.filename.startsWith("미확인_"))).toBe(true);
+      expect(students[0]?.photoKey).toBeUndefined();
+      expect(students[0]?.suggestionKey).toBeUndefined();
+    }
+    expect(result.warnings.some((warning) => warning.includes("서로 다른 이미지가 겹쳐"))).toBe(true);
+  });
+  it("retains confirmation for repeated references to the same image at one coordinate", () => {
+    const students = collectStudents([{ row: 4, col: 2, text: "1학년 3반 1번 가상가" }], "합성").students;
+    expect(
+      matchPhotos(students, [
+        { row: 3, col: 2, key: "same" },
+        { row: 3, col: 2, key: "same" },
+      ])[0]?.photoKey,
+    ).toBe("same");
+  });
   it.each([14, 24, 33])(
     "keeps all %i students around styled self-closing cells and preserves distinct photo bytes",
     async (count) => {

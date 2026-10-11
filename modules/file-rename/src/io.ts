@@ -215,6 +215,13 @@ export async function copyBatch(
   }
   return { results, folder: batch.folder };
 }
+export class RenamePlanExpired extends Error {
+  readonly partial: RenameResult | undefined;
+  constructor(partial: RenameResult | undefined) {
+    super("RENAME_PLAN_EXPIRED");
+    this.partial = partial;
+  }
+}
 export async function renameBatch(
   deck: Deck,
   plan: RenamePlan,
@@ -224,6 +231,8 @@ export async function renameBatch(
   let result: RenameResult | undefined;
   do {
     if (signal.aborted) break;
+    // Check before every group: an expired plan cannot be continued or automatically retried.
+    if (Date.now() >= plan.expiresAt) throw new RenamePlanExpired(result);
     result = await deck.fileOps.executeRename({ planHandle: plan.planHandle });
     progress(result);
   } while (!result.done);

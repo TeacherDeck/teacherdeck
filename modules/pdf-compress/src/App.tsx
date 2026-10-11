@@ -40,6 +40,7 @@ export function App({ deck }: { deck: Deck }) {
   const [pageDone, setPageDone] = useState(0);
   const [pageTotal, setPageTotal] = useState(0);
   const [parent, setParent] = useState<FolderHandleInfo | null>(null);
+  const parentRef = useRef<FolderHandleInfo | null>(null);
   const [folder, setFolder] = useState<FolderHandleInfo | null>(null);
   useEffect(() => {
     let active = true;
@@ -51,7 +52,27 @@ export function App({ deck }: { deck: Deck }) {
       controller.current?.abort();
     };
   }, [deck]);
-  useEffect(() => deck.on("fs.dropped", ({ files: incoming }) => add(incoming)), [deck, options, auto, ack, parent]);
+  useEffect(() => deck.on("fs.dropped", ({ files: incoming }) => add(incoming)), [deck, options, auto, ack]);
+  function rememberParent(value: FolderHandleInfo) {
+    // Native events can arrive after a batch finishes but before React commits a new
+    // render/effect. The next run must already know the successfully chosen folder.
+    parentRef.current = value;
+    setParent(value);
+  }
+  async function chooseParent() {
+    if (lock.current) return;
+    lock.current = true;
+    setBusy(true);
+    try {
+      const value = await deck.fs.pickFolder();
+      if (value) rememberParent(value);
+    } catch {
+      setMessage("폴더를 선택하지 못했어요. 다시 선택해 주세요.");
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  }
   function add(incoming: FileHandleInfo[]) {
     if (lock.current) {
       setMessage("현재 파일을 처리하고 있어요. 끝난 뒤 다음 파일을 추가해 주세요.");
@@ -91,10 +112,10 @@ export function App({ deck }: { deck: Deck }) {
     setPageDone(0);
     setPageTotal(0);
     try {
-      let destination = parent;
+      let destination = parentRef.current;
       if (!destination) destination = await deck.fs.pickFolder();
       if (!destination) return;
-      setParent(destination);
+      rememberParent(destination);
       void deck.storage.set("pdf-compression", options).catch(() => undefined);
       const merge = (incoming: Result[]) =>
         setResults((old) => [...new Map([...old, ...incoming].map((r) => [r.file.handle, r])).values()]);
@@ -240,12 +261,7 @@ export function App({ deck }: { deck: Deck }) {
         <Button
           disabled={busy}
           onClick={() => {
-            void deck.fs
-              .pickFolder()
-              .then((value) => {
-                if (value) setParent(value);
-              })
-              .catch(() => setMessage("폴더를 선택하지 못했어요. 다시 선택해 주세요."));
+            void chooseParent();
           }}
         >
           다음 저장 폴더 선택

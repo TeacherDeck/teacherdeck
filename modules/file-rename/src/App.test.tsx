@@ -41,6 +41,44 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("rename screen workflows", () => {
+  it("preserves partial results on plan expiry and requires a fresh preview for the remaining files", async () => {
+    const partial = {
+      historyHandle: "history",
+      success: 1,
+      failed: 0,
+      notStarted: 1,
+      done: false,
+      items: [
+        { sourceHandle: "source-1", status: "success" as const },
+        { sourceHandle: "source-2", status: "notStarted" as const },
+      ],
+    };
+    vi.spyOn(io, "renameBatch").mockImplementation(async (_deck, _plan, _signal, progress) => {
+      progress(partial);
+      throw new io.RenamePlanExpired(partial);
+    });
+    const { deck, view } = await setup({
+      "file-ops.planRename": () => ({
+        planHandle: "plan",
+        expiresAt: Date.now() + 300000,
+        items: files.map((file) => ({ sourceHandle: file.handle, finalName: `new-${file.name}`, status: "ready" })),
+      }),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "파일 추가" }));
+    await screen.findByText("합성자료1.txt");
+    await choose("실행 방식", "원본 이름 변경");
+    fireEvent.click(screen.getByRole("button", { name: "원본 폴더 충돌 확인" }));
+    await screen.findByText("원본 폴더 충돌을 확인했어요. 실행 직전에 다시 검사해요.");
+    fireEvent.click(screen.getByRole("button", { name: "원본 이름 변경" }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByText("호스트 확인 후 변경"));
+    await screen.findByText(/이름 변경 계획이 만료됐어요/);
+    expect((screen.getByRole("button", { name: "남은 변경 계속" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "실패·미처리 새 미리보기" }));
+    expect(screen.queryByText("합성자료1.txt")).toBeNull();
+    expect(screen.getByText("합성자료2.txt")).toBeTruthy();
+    view.unmount();
+    deck.dispose();
+  });
   it("keeps manual names when switching modes, sorts before assigning serials and shows exact Excel failures", async () => {
     const { deck, view } = await setup();
     fireEvent.click(screen.getByRole("button", { name: "파일 추가" }));

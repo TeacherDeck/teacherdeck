@@ -4,7 +4,7 @@
   "id": "file-rename",
   "name": "파일명 정리",
   "description": "패턴·엑셀 정확 연결·문서 정보로 파일명을 정하고 복사하거나 보호된 원본 변경을 실행해요.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "category": "file",
   "icon": "icon.svg",
   "entry": "index.html",

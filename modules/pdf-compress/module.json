@@ -4,7 +4,7 @@
   "id": "pdf-compress",
   "name": "PDF 용량 줄이기",
   "description": "여러 PDF의 글자와 문서 구조를 유지하며 바로 압축해 새 폴더에 저장해요.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "category": "document",
   "icon": "icon.svg",
   "entry": "index.html",

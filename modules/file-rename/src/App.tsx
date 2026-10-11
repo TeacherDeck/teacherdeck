@@ -29,6 +29,7 @@ import {
   histories,
   readWorkbook,
   renameBatch,
+  RenamePlanExpired,
   templateFile,
   type CopyResult,
 } from "./io.ts";
@@ -324,10 +325,23 @@ export function App({ deck }: { deck: Deck }) {
         );
       } else {
         if (!plan) throw new Error("NO_PLAN");
-        const out = await renameBatch(deck, plan, signal, (value) => {
-          setRenameResult(value);
-          setDone(value.success + value.failed);
-        });
+        let out;
+        try {
+          out = await renameBatch(deck, plan, signal, (value) => {
+            setRenameResult(value);
+            setDone(value.success + value.failed);
+          });
+        } catch (error) {
+          if (!(error instanceof RenamePlanExpired)) throw error;
+          if (error.partial) setRenameResult(error.partial);
+          setPlan(null);
+          const updatedHistory = await histories(deck).catch(() => null);
+          if (updatedHistory) setHistory(updatedHistory);
+          setMessage(
+            "이름 변경 계획이 만료됐어요. 완료한 변경과 이력은 유지해요. 실패·미처리는 새 미리보기로 옮겨 파일 상태와 원본 폴더 충돌을 다시 확인해 주세요.",
+          );
+          return;
+        }
         if (out) setRenameResult(out);
         setHistory(await histories(deck));
         setMessage(
@@ -696,7 +710,7 @@ export function App({ deck }: { deck: Deck }) {
             </Button>
           )}
           {operation === "rename" && renameResult && !renameResult.done && (
-            <Button disabled={busy} onClick={() => void run()}>
+            <Button disabled={busy || !plan} onClick={() => void run()}>
               남은 변경 계속
             </Button>
           )}

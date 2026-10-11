@@ -65,8 +65,10 @@ export async function pageInfo(page: PDFPageProxy): Promise<PageInfo> {
     const x = transform[4] ?? 0;
     const y = transform[5] ?? 0;
     const angle = Math.atan2(transform[1] ?? 0, transform[0] ?? 1);
-    const dx = Math.cos(angle) * item.width;
-    const dy = Math.sin(angle) * item.width;
+    // TextContent widths are in source user space; the viewport also applies UserUnit.
+    const width = item.width * view.scale * view.userUnit;
+    const dx = Math.cos(angle) * width;
+    const dy = Math.sin(angle) * width;
     const upX = transform[2] ?? 0;
     const upY = transform[3] ?? 0;
     const fontStyle = content.styles[item.fontName];

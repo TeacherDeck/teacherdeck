@@ -4,7 +4,7 @@ import { connect } from "@deck/sdk";
 import { createMockHost, type MockHandler } from "@deck/sdk/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("pdfjs-dist", () => ({ GlobalWorkerOptions: {}, getDocument: vi.fn() }));
-import { copyBatch, folderFiles, renameBatch } from "./io.ts";
+import { copyBatch, folderFiles, renameBatch, RenamePlanExpired } from "./io.ts";
 import { DEFAULT_MATCH, DEFAULT_NAMING, preview } from "./logic.ts";
 const origin = "http://deckmod.file-rename.modules.localhost";
 const input = new Uint8Array(300000).map((_, i) => i % 251);
@@ -65,6 +65,36 @@ async function setup(overrides: Record<string, MockHandler> = {}) {
 }
 afterEach(() => vi.unstubAllGlobals());
 describe("typed SDK file workflows", () => {
+  it("stops an expired plan before another native group and preserves the last complete result", async () => {
+    const expiresAt = Date.now() + 300000;
+    const partial = {
+      historyHandle: "history",
+      success: 1,
+      failed: 0,
+      notStarted: 1,
+      done: false,
+      items: [
+        { sourceHandle: "source-1", status: "success" },
+        { sourceHandle: "source-2", status: "notStarted" },
+      ],
+    };
+    const { deck, host } = await setup({ "file-ops.executeRename": () => partial });
+    const now = vi.spyOn(Date, "now").mockReturnValue(expiresAt - 1);
+    try {
+      const error = await renameBatch(
+        deck,
+        { planHandle: "plan", items: [], expiresAt },
+        new AbortController().signal,
+        () => now.mockReturnValue(expiresAt),
+      ).catch((error) => error);
+      expect(error).toBeInstanceOf(RenamePlanExpired);
+      expect(error.partial).toEqual(partial);
+      expect(host.requests.filter((request) => request.method === "executeRename")).toHaveLength(1);
+    } finally {
+      now.mockRestore();
+      deck.dispose();
+    }
+  });
   it("streams exact bytes in bounded chunks into a fresh output without deleting sources", async () => {
     const { deck, host, chunks } = await setup();
     const result = await copyBatch(deck, rows.slice(0, 1), new AbortController().signal, () => undefined);
@@ -128,8 +158,11 @@ describe("typed SDK file workflows", () => {
       },
     });
     const signal = new AbortController();
-    const out = await renameBatch(deck, { planHandle: "plan", items: [], expiresAt: 0 }, signal.signal, () =>
-      signal.abort(),
+    const out = await renameBatch(
+      deck,
+      { planHandle: "plan", items: [], expiresAt: Date.now() + 300000 },
+      signal.signal,
+      () => signal.abort(),
     );
     expect(out?.success).toBe(1);
     expect(host.requests.filter((r) => r.method === "executeRename")).toHaveLength(1);
