@@ -56,7 +56,7 @@ pnpm tauri dev       # 개발 실행 (기본 모듈을 번들한 뒤 실행해�
 pnpm tauri build     # NSIS 설치본: target/release/bundle/nsis/
 ```
 
-Windows 개발 실행과 빌드는 쿨 예약실의 승인된 Python 실행 환경을 앱 내부에 준비해요. 처음에는 공식 배포 파일을 내려받아 해시를 검사하고, 이후에는 캐시와 준비된 파일을 확인해 재사용해요. 전역 Python 설치는 필요 없어요. 완성된 설치본은 실행 환경을 함께 포함해요. 원작 코어·모듈 갱신 절차는 [쿨 예약실 안내](modules/coolreserve/README.md)에 있어요.
+Windows 전체 검증·개발 실행·빌드는 쿨 예약실의 승인된 Python 실행 환경을 앱 내부에 준비해요. 처음에는 공식 배포 파일을 내려받아 해시를 검사하고, 이후에는 캐시와 준비된 파일을 확인해 재사용해요. `pnpm verify`도 Rust 빌드 전에 이 단계를 실행하므로 새 체크아웃에 앱 실행 이력이 없어도 검증할 수 있어요. 전역 Python 설치는 필요 없어요. 완성된 설치본은 실행 환경을 함께 포함해요. 원작 코어·모듈 갱신 절차는 [쿨 예약실 안내](modules/coolreserve/README.md)에 있어요.
 
 새 도구를 만들 때는 `pnpm new:module <id>`로 시작해요. 자세한 절차는 [modules/AGENTS.md](modules/AGENTS.md)에 있어요.
 
@@ -74,6 +74,8 @@ Windows 개발 실행과 빌드는 쿨 예약실의 승인된 Python 실행 환�
 - Windows 연동: [네트워크 루틴](modules/network-routine/README.md), [쿨 예약실](modules/coolreserve/README.md)
 
 설정의 공통 학급 자료에서 명부·시간표를 관리하고 수업 도구에서 선택해 불러올 수 있어요. 공통 자료에 등록하지 않고 각 도구에 직접 명단을 넣어 작업해도 돼요. TimeAlert 전체 암호화 백업 가져오기는 아직 지원하지 않아요.
+
+주간 시간표는 수업을 고른 뒤 요일·교시 칸을 눌러 여러 칸에 연속으로 배치해요. 칸 비우기와 XLSX·텍스트 붙여넣기도 지원하며, **시간표 저장**을 눌러야 변경을 보관해요.
 
 최근 구현과 검증 결과, 남은 작업은 [개발 현황](docs/DEVELOPMENT_STATUS.md)에 정리했어요.
 
