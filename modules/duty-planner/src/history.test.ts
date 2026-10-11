@@ -14,6 +14,7 @@ import {
   exportLegacy,
   loadMonths,
   recordAssigned,
+  performanceCounts,
   saveMonth,
   selectCurrent,
   switchMonth,
@@ -27,6 +28,21 @@ function sample() {
   return s;
 }
 describe("monthly performance ledger", () => {
+  it("preserves actual performance after its date becomes excluded and carries it into the next month", () => {
+    const s = sample();
+    s.assignments = { "6": ["A"] };
+    const recorded = recordAssigned(s, [6], new Date(2026, 9, 6));
+    expect(performanceCounts(recorded)["A"]).toBe(1);
+    const changed = { ...recorded, input: { ...recorded.input, excluded: [6] }, closed: true };
+    expect(performanceCounts(changed)["A"]).toBe(1);
+    expect(changed.actual).toEqual({ "6": ["A"] });
+    const next = switchMonth(changed, {}, 2026, 11);
+    expect(cumulativeInput(next, { "2026-10": changed }).teachers[0]?.past).toBe(3);
+    expect(JSON.parse(exportLegacy({ "2026-10": changed })).counts).toContainEqual({ name: "교사A", count: 3 });
+    const weekend = { ...recorded, actual: { "10": ["A"] }, input: { ...recorded.input, weekends: true } };
+    expect(performanceCounts(weekend)["A"]).toBe(1);
+    expect(performanceCounts({ ...s, actual: { "32": ["A"] } })["A"]).toBe(0);
+  });
   it("reslots a flexible fixed teacher to keep the remaining slot feasible", () => {
     const s = sample();
     s.input.perDay = 2;

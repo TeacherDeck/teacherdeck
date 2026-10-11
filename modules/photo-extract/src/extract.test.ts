@@ -19,6 +19,38 @@ async function extract(bytes: Uint8Array): Promise<Extraction> {
   };
 }
 describe("TimeAlert roster extraction parity", () => {
+  it("keeps every overlapping different image unconfirmed regardless of drawing order", async () => {
+    const result = await extract(
+      fixture(
+        [{ row: 4, col: 2, text: "1학년 3반 1번 가상가" }],
+        [
+          { row: 3, col: 2 },
+          { row: 3, col: 2 },
+        ],
+      ),
+    );
+    for (const anchors of [result.photos, [...result.photos].reverse()]) {
+      const students = matchPhotos(
+        result.students,
+        anchors.map((photo) => ({ row: 3, col: 2, key: photo.key })),
+      );
+      const plans = planPhotos([{ ...result, students }]);
+      expect(plans).toHaveLength(2);
+      expect(plans.every((photo) => !photo.confirmed && photo.filename.startsWith("미확인_"))).toBe(true);
+      expect(students[0]?.photoKey).toBeUndefined();
+      expect(students[0]?.suggestionKey).toBeUndefined();
+    }
+    expect(result.warnings.some((warning) => warning.includes("서로 다른 이미지가 겹쳐"))).toBe(true);
+  });
+  it("retains confirmation for repeated references to the same image at one coordinate", () => {
+    const students = collectStudents([{ row: 4, col: 2, text: "1학년 3반 1번 가상가" }], "합성").students;
+    expect(
+      matchPhotos(students, [
+        { row: 3, col: 2, key: "same" },
+        { row: 3, col: 2, key: "same" },
+      ])[0]?.photoKey,
+    ).toBe("same");
+  });
   it.each([14, 24, 33])(
     "keeps all %i students around styled self-closing cells and preserves distinct photo bytes",
     async (count) => {
@@ -121,6 +153,20 @@ describe("TimeAlert roster extraction parity", () => {
   });
 });
 describe("archive and output safety", () => {
+  it("resolves package-root references while rejecting URI authorities and root escapes", async () => {
+    const parts = unzipLimited(fixture([{ row: 2, col: 1, text: "1학년 2반 1번 가상가" }], [{ row: 1, col: 1 }]));
+    parts["xl/workbook.xml"] = strToU8(
+      '<workbook xmlns:r="urn:rel"><sheets><sheet name="합성 시트" r:id="sheetRef"/></sheets></workbook>',
+    );
+    parts["xl/_rels/workbook.xml.rels"] = strToU8(
+      '<Relationships><Relationship Target="/xl/worksheets/sheet1.xml" Id="sheetRef"/></Relationships>',
+    );
+    const parsed = await parseParts(parts);
+    expect(parsed.sheets[0]?.students[0]?.number).toBe(1);
+    expect(resolvePart("xl/drawings/a.xml", "/xl/media/image1.jpeg")).toBe("xl/media/image1.jpeg");
+    for (const target of ["//example.invalid/a", "/../escape.jpg", "/xl/../../escape.jpg", "/", "/xl//a.jpg"])
+      expect(() => resolvePart("xl/drawings/a.xml", target)).toThrow("INVALID_RELATIONSHIP");
+  });
   it("rejects BIFF, malformed paths, external relationships and DTD", async () => {
     expect(() => unzipLimited(new Uint8Array([0xd0, 0xcf, 0x11, 0xe0]))).toThrow("INVALID_ARCHIVE");
     expect(() => unzipLimited(zipSync({ "../xl/media/a.jpg": fakeJpeg(1) }))).toThrow("INVALID_ARCHIVE");
@@ -152,6 +198,62 @@ describe("archive and output safety", () => {
 });
 
 describe("roster identity confidence", () => {
+  it("never binds another sheet's drawing to an unrelated first-sheet roster", async () => {
+    const parts = unzipLimited(fixture([{ row: 1, col: 0, text: "1학년 1반 1번 가상가" }], [{ row: 0, col: 0 }]));
+    parts["xl/workbook.xml"] = strToU8(
+      '<workbook xmlns:r="urn:relations"><sheets><sheet name="합성명단" r:id="sheet1"/><sheet name="별도이미지" r:id="sheet2"/></sheets></workbook>',
+    );
+    parts["xl/_rels/workbook.xml.rels"] = strToU8(
+      '<Relationships><Relationship Id="sheet1" Target="worksheets/sheet1.xml"/><Relationship Id="sheet2" Target="worksheets/sheet2.xml"/></Relationships>',
+    );
+    parts["xl/worksheets/sheet1.xml"] = strToU8(
+      new TextDecoder().decode(parts["xl/worksheets/sheet1.xml"]).replace('<drawing r:id="drawing1"/>', ""),
+    );
+    delete parts["xl/worksheets/_rels/sheet1.xml.rels"];
+    parts["xl/worksheets/sheet2.xml"] = strToU8(
+      '<worksheet xmlns:r="urn:relations"><sheetData/><drawing r:id="drawing1"/></worksheet>',
+    );
+    parts["xl/worksheets/_rels/sheet2.xml.rels"] = strToU8(
+      '<Relationships><Relationship Id="drawing1" Target="../drawings/drawing1.xml"/></Relationships>',
+    );
+    const parsed = await parseParts(parts);
+    expect(parsed.sheets[0]?.anchors).toEqual([]);
+    expect(parsed.sheets[1]?.anchors[0]?.key).toBe("xl/media/image0.jpeg");
+    const plans = planPhotos([
+      {
+        file,
+        photos: parsed.photos,
+        students: parsed.sheets.flatMap((sheet) => matchPhotos(sheet.students, sheet.anchors)),
+        warnings: parsed.warnings,
+      },
+    ]);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]?.confirmed).toBe(false);
+    expect(plans[0]?.filename).toMatch(/^미확인_/);
+    expect(plans[0]?.bytes).toEqual(fakeJpeg(0));
+  });
+  it("keeps legacy unreferenced drawings as unnamed original photos", async () => {
+    const parts = unzipLimited(fixture([{ row: 1, col: 0, text: "1학년 1반 1번 가상가" }], [{ row: 0, col: 0 }]));
+    delete parts["xl/workbook.xml"];
+    delete parts["xl/_rels/workbook.xml.rels"];
+    delete parts["xl/worksheets/_rels/sheet1.xml.rels"];
+    parts["xl/worksheets/sheet1.xml"] = strToU8(
+      new TextDecoder().decode(parts["xl/worksheets/sheet1.xml"]).replace('<drawing r:id="drawing1"/>', ""),
+    );
+    const parsed = await parseParts(parts);
+    expect(parsed.sheets[0]?.anchors).toEqual([]);
+    expect(parsed.photos[0]?.bytes).toEqual(fakeJpeg(0));
+    const plans = planPhotos([
+      {
+        file,
+        photos: parsed.photos,
+        students: parsed.sheets.flatMap((sheet) => matchPhotos(sheet.students, sheet.anchors)),
+        warnings: parsed.warnings,
+      },
+    ]);
+    expect(plans[0]?.confirmed).toBe(false);
+    expect(plans[0]?.filename).toMatch(/^미확인_/);
+  });
   const photos = [{ key: "synthetic.png", bytes: new Uint8Array([1]), extension: "png", mime: "image/png" }];
   it("keeps each staggered class header inside its own column block", () => {
     const students = matchPhotos(

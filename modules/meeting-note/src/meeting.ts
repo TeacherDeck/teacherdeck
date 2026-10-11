@@ -157,12 +157,6 @@ export function readMeeting(value: unknown): Meeting {
     throw new Error("INVALID_MEETING");
   return data as Meeting;
 }
-export function entryInput(entry: Entry): string {
-  if (entry.raw) return entry.raw;
-  if (entry.kind === "안건") return `# ${entry.text}`;
-  const kinds: Record<EntryKind, string> = { 발언: "", 결정: "! ", 조치: "* ", 질의: "? ", 안건: "# " };
-  return `${entry.private ? "// " : ""}${kinds[entry.kind]}\\${entry.text}${entry.owner ? ` @${entry.owner}` : ""}${entry.due ? ` ~${entry.due}` : ""}`;
-}
 export function speakerIndex(code: string): number | null {
   const index = [
     "Digit1",

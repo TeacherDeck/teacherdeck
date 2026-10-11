@@ -6,9 +6,11 @@
 //! denied. Stable std does not expose Windows file IDs; metadata fingerprints supplement
 //! those retained handles rather than claiming cryptographic file identity.
 
+use std::collections::HashMap;
 use std::fs::{self, File, Metadata, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use deck_core::{DeckError, ErrorCode};
@@ -60,6 +62,20 @@ struct ParentGuard {
     metadata: Metadata,
     // Keeping this handle alive prevents Windows ancestors from being renamed/replaced.
     file: File,
+}
+
+/// Package-local retained ancestors. Shared locks remain owned by every opened file.
+/// This cache stores live handles, never a validation result without its lock.
+#[derive(Default)]
+pub(crate) struct FileReadPool {
+    parents: HashMap<PathBuf, Arc<ParentGuard>>,
+}
+
+impl FileReadPool {
+    /// Opens with shared locked ancestors while retaining every original snapshot check.
+    pub(crate) fn open(&mut self, path: &Path) -> Result<FileReadSession, DeckError> {
+        FileReadSession::open_inner(path, Some(self))
+    }
 }
 
 /// Retains validated directory handles from the filesystem root through one directory.
@@ -156,13 +172,17 @@ pub struct FileReadSession {
     path: PathBuf,
     file: File,
     initial: FileStamp,
-    parents: Vec<ParentGuard>,
+    parents: Vec<Arc<ParentGuard>>,
 }
 
 impl FileReadSession {
     /// Opens a trusted, host-resolved absolute path without granting writes or following
     /// symlinks/reparse points. Lexical parent traversal and non-regular files are rejected.
     pub fn open(path: &Path) -> Result<Self, DeckError> {
+        Self::open_inner(path, None)
+    }
+
+    fn open_inner(path: &Path, mut pool: Option<&mut FileReadPool>) -> Result<Self, DeckError> {
         if !path.is_absolute()
             || path
                 .components()
@@ -175,6 +195,11 @@ impl FileReadSession {
         let mut parents = Vec::with_capacity(ancestors.len());
         for ancestor in ancestors {
             if ancestor.as_os_str().is_empty() {
+                continue;
+            }
+            if let Some(parent) = pool.as_ref().and_then(|p| p.parents.get(ancestor)) {
+                validate_parent(parent)?;
+                parents.push(parent.clone());
                 continue;
             }
             let before = fs::symlink_metadata(ancestor).map_err(map_io)?;
@@ -193,11 +218,15 @@ impl FileReadSession {
             {
                 return Err(changed());
             }
-            parents.push(ParentGuard {
+            let parent = Arc::new(ParentGuard {
                 path: ancestor.to_path_buf(),
                 metadata: opened,
                 file,
             });
+            if let Some(pool) = pool.as_mut() {
+                pool.parents.insert(ancestor.to_path_buf(), parent.clone());
+            }
+            parents.push(parent);
         }
         let before = fs::symlink_metadata(path).map_err(map_io)?;
         validate_regular(&before)?;
@@ -247,17 +276,7 @@ impl FileReadSession {
 
     fn validate(&self) -> Result<(), DeckError> {
         for parent in &self.parents {
-            let current = fs::symlink_metadata(&parent.path).map_err(map_io)?;
-            let opened = parent.file.metadata().map_err(map_io)?;
-            if is_link(&current)
-                || is_link(&opened)
-                || !current.is_dir()
-                || !opened.is_dir()
-                || !same_identity(&parent.metadata, &current)
-                || !same_identity(&parent.metadata, &opened)
-            {
-                return Err(changed());
-            }
+            validate_parent(parent)?;
         }
         let current = fs::symlink_metadata(&self.path).map_err(map_io)?;
         let opened = self.file.metadata().map_err(map_io)?;
@@ -272,6 +291,21 @@ impl FileReadSession {
         }
         Ok(())
     }
+}
+
+fn validate_parent(parent: &ParentGuard) -> Result<(), DeckError> {
+    let current = fs::symlink_metadata(&parent.path).map_err(map_io)?;
+    let opened = parent.file.metadata().map_err(map_io)?;
+    if is_link(&current)
+        || is_link(&opened)
+        || !current.is_dir()
+        || !opened.is_dir()
+        || !same_identity(&parent.metadata, &current)
+        || !same_identity(&parent.metadata, &opened)
+    {
+        return Err(changed());
+    }
+    Ok(())
 }
 
 fn validate_regular(metadata: &Metadata) -> Result<(), DeckError> {
@@ -437,6 +471,36 @@ mod tests {
             ErrorCode::InvalidArgs
         );
         assert_eq!(fs::read(&path).unwrap(), bytes);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn pooled_sessions_keep_file_and_shared_ancestor_locks_after_pool_drop() {
+        let temp = fixture();
+        let parent = temp.path().join("synthetic-parent");
+        fs::create_dir(&parent).unwrap();
+        let first = parent.join("synthetic-first.bin");
+        let second = parent.join("synthetic-second.bin");
+        fs::write(&first, b"first").unwrap();
+        fs::write(&second, b"second").unwrap();
+        let mut pool = FileReadPool::default();
+        let first_session = pool.open(&first).unwrap();
+        let mut second_session = pool.open(&second).unwrap();
+        let unique_parents = pool.parents.len();
+        assert_eq!(unique_parents, second.ancestors().skip(1).count());
+        assert!(fs::write(&second, b"edited").is_err());
+        assert!(fs::rename(&parent, temp.path().join("synthetic-moved")).is_err());
+        drop(pool);
+        drop(first_session);
+        // Every file retains its own references; dropping the cache/another file
+        // must not permit replacement of this file or its shared ancestors.
+        assert!(fs::write(&second, b"edited").is_err());
+        assert!(fs::remove_file(&second).is_err());
+        assert!(fs::rename(&parent, temp.path().join("synthetic-moved")).is_err());
+        assert_eq!(second_session.read_chunk(0, 6).unwrap(), b"second");
+        drop(second_session);
+        fs::write(&second, b"edited").unwrap();
+        fs::rename(&parent, temp.path().join("synthetic-moved")).unwrap();
     }
 
     #[test]

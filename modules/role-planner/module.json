@@ -1,0 +1,14 @@
+{
+  "$schema": "../../schema/module.schema.json",
+  "manifestVersion": 1,
+  "id": "role-planner",
+  "name": "역할·당번 나누기",
+  "description": "필요한 인원과 교사의 고정·제외를 지키며 역할을 배정하고 실제 수행 횟수를 기록해요.",
+  "version": "0.2.2",
+  "category": "classroom",
+  "icon": "icon.svg",
+  "entry": "index.html",
+  "authors": [{ "name": "rochelobeJYJ" }],
+  "requires": { "storage": "^1.0", "fs": "^1.1", "window": "^1.0" },
+  "optional": { "school-data": "^1.0.0" }
+}

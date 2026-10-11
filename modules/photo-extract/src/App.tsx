@@ -9,6 +9,7 @@ import {
   InfoBar,
   Image,
   ListView,
+  NumberBox,
   ProgressBar,
   SettingsExpander,
   TextBox,
@@ -18,7 +19,15 @@ import {
 } from "@deck/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { OutputSession } from "./output-session.ts";
-import { planPhotos, readExtraction, savePhotos, type Extraction } from "./batch.ts";
+import {
+  DEFAULT_NAME_PATTERN,
+  planPhotos,
+  readExtraction,
+  savePhotos,
+  validNamePattern,
+  type Extraction,
+} from "./batch.ts";
+import { DEFAULT_INSETS, type Insets } from "./pdf-boxes.ts";
 const useStyles = makeStyles({
   actions: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: deckTokens.inlineGap },
   row: { display: "flex", alignItems: "center", gap: deckTokens.inlineGap },
@@ -27,11 +36,13 @@ const useStyles = makeStyles({
   caption: { overflowWrap: "anywhere" },
 });
 type SaveStatus = { id: string; filename: string; state: "saved" | "failed" | "pending"; folder?: FolderHandleInfo };
-const supported = (file: FileHandleInfo) => /\.(xlsx|xls)$/i.test(file.name);
+const supported = (file: FileHandleInfo) => /\.(xlsx|xls|pdf)$/i.test(file.name);
 export function App({ deck }: { deck: Deck }) {
   const s = useStyles();
   const [extractions, setExtractions] = useState<Extraction[]>([]);
   const [renamed, setRenamed] = useState<Record<string, string>>({});
+  const [pattern, setPattern] = useState(DEFAULT_NAME_PATTERN);
+  const [insets, setInsets] = useState<Insets>({ ...DEFAULT_INSETS });
   const [busy, setBusy] = useState(false);
   const locked = useRef(false);
   const controller = useRef<AbortController | null>(null);
@@ -43,7 +54,7 @@ export function App({ deck }: { deck: Deck }) {
   const [saveStatuses, setSaveStatuses] = useState<Record<string, SaveStatus>>({});
   const [folder, setFolder] = useState<FolderHandleInfo | null>(null);
   const [urls, setUrls] = useState<Record<string, string>>({});
-  const plans = useMemo(() => planPhotos(extractions, renamed), [extractions, renamed]);
+  const plans = useMemo(() => planPhotos(extractions, renamed, pattern), [extractions, renamed, pattern]);
   useEffect(() => {
     const next: Record<string, string> = {};
     for (const extraction of extractions)
@@ -73,18 +84,18 @@ export function App({ deck }: { deck: Deck }) {
       deck.on("fs.dropped", ({ files }) => {
         void addFiles(files);
       }),
-    [deck, extractions],
+    [deck, extractions, insets],
   );
-  async function addFiles(files: FileHandleInfo[]) {
+  async function addFiles(files: FileHandleInfo[], replace = false) {
     if (locked.current || !files.length) return;
     const accepted = [...new Map(files.filter(supported).map((file) => [file.handle, file])).values()].filter(
-      (file) => !extractions.some((e) => e.file.handle === file.handle),
+      (file) => replace || !extractions.some((e) => e.file.handle === file.handle),
     );
     if (!accepted.length) {
-      setMessage("사진명렬표 .xlsx 또는 ZIP 형식의 .xls 파일을 선택해 주세요.");
+      setMessage("사진명렬표 .xlsx, ZIP 형식의 .xls 또는 사진 출석부 .pdf 파일을 선택해 주세요.");
       return;
     }
-    if (accepted.length + extractions.length > 16) {
+    if (!replace && accepted.length + extractions.length > 16) {
       setMessage("한 번에 파일 16개까지 확인해요. 현재 사진을 저장한 뒤 목록을 비워 주세요.");
       return;
     }
@@ -97,21 +108,27 @@ export function App({ deck }: { deck: Deck }) {
     setMessage("사진과 학생 정보를 읽는 중이에요.");
     let added = 0;
     let failed = 0;
+    let invalidCrop = false;
     let cumulative = extractions.reduce((sum, e) => sum + e.photos.reduce((n, p) => n + p.bytes.length, 0), 0);
     try {
       for (const [i, file] of accepted.entries()) {
         if (abort.signal.aborted) break;
         try {
-          const result = await readExtraction(deck, file, abort.signal);
+          const result = await readExtraction(deck, file, abort.signal, undefined, undefined, insets);
           const retained = result.photos.reduce((n, p) => n + p.bytes.length, 0);
-          if (cumulative + retained > 128 * 1024 * 1024) throw new Error("INPUT_LIMIT");
+          const previous = replace
+            ? (extractions.find((e) => e.file.handle === file.handle)?.photos.reduce((n, p) => n + p.bytes.length, 0) ??
+              0)
+            : 0;
+          if (cumulative - previous + retained > 128 * 1024 * 1024) throw new Error("INPUT_LIMIT");
           if (abort.signal.aborted) break;
-          cumulative += retained;
-          setExtractions((current) => [...current, result]);
+          cumulative += retained - previous;
+          setExtractions((current) => [...current.filter((e) => e.file.handle !== file.handle), result]);
           setFailedFiles((current) => current.filter((input) => input.handle !== file.handle));
           added++;
-        } catch {
+        } catch (error) {
           if (!abort.signal.aborted) {
+            if (error instanceof Error && error.message === "EMPTY_CROP") invalidCrop = true;
             failed++;
             setFailedFiles((current) => [
               ...new Map([...current, file].map((input) => [input.handle, input])).values(),
@@ -123,7 +140,7 @@ export function App({ deck }: { deck: Deck }) {
       setMessage(
         abort.signal.aborted
           ? "읽기를 취소했어요. 이미 확인한 사진은 목록에 유지해요."
-          : `${added}개 파일을 확인했어요.${failed ? ` ${failed}개 파일은 읽지 못했어요. ZIP 형식의 .xlsx/.xls인지, 32MiB 이하인지 확인해 주세요.` : ""}`,
+          : `${added}개 파일을 확인했어요.${failed ? ` ${failed}개 파일은 읽지 못했어요. ${invalidCrop ? "PDF 여백이 너무 커 사진이 남지 않아요. 여백을 줄이고 다시 적용해 주세요." : "암호 없이 열리는 PDF 또는 ZIP 형식 .xlsx/.xls인지, 32MiB 이하인지 확인해 주세요. PDF는 100쪽·쪽과 원본 이미지당 2,400만 화소까지 읽어요."} 이전 미리보기와 이름 수정은 유지해요.` : ""}`,
       );
     } finally {
       locked.current = false;
@@ -134,14 +151,17 @@ export function App({ deck }: { deck: Deck }) {
   async function pick() {
     try {
       await addFiles(
-        await deck.fs.pickFiles({ multiple: true, filters: [{ name: "사진명렬표", extensions: ["xlsx", "xls"] }] }),
+        await deck.fs.pickFiles({
+          multiple: true,
+          filters: [{ name: "사진명렬표·사진 출석부", extensions: ["xlsx", "xls", "pdf"] }],
+        }),
       );
     } catch {
       setMessage("파일을 선택하지 못했어요. 다시 선택해 주세요.");
     }
   }
   async function save(retry = false) {
-    if (locked.current || !plans.length) return;
+    if (locked.current || !plans.length || !validNamePattern(pattern)) return;
     locked.current = true;
     setBusy(true);
     const abort = new AbortController();
@@ -205,7 +225,7 @@ export function App({ deck }: { deck: Deck }) {
   return (
     <ToolLayout
       title="명렬표 사진 꺼내기"
-      description="나이스 사진명렬표의 사진 원본을 학번·이름으로 저장해요. 사진을 다시 압축하지 않아요."
+      description="나이스 XLSX 사진명렬표와 PDF 사진 출석부에서 사진을 꺼내 학번·이름으로 저장해요."
     >
       <ToolLayout.Section step="input" title="사진명렬표 추가">
         <div className={s.actions}>
@@ -220,7 +240,7 @@ export function App({ deck }: { deck: Deck }) {
           </Button>
           <Button
             appearance="primary"
-            disabled={busy || !plans.length}
+            disabled={busy || !plans.length || !validNamePattern(pattern)}
             onClick={() => {
               void save();
             }}
@@ -273,9 +293,62 @@ export function App({ deck }: { deck: Deck }) {
             onPick={() => {
               void pick();
             }}
-            description=".xlsx 또는 나이스에서 받은 ZIP 형식 .xls 파일을 끌어 놓아도 돼요."
+            description=".xlsx, 나이스에서 받은 ZIP 형식 .xls, 사진 출석부 .pdf 파일을 끌어 놓아도 돼요."
           />
         )}
+      </ToolLayout.Section>
+      <ToolLayout.Section step="options" title="파일 이름과 PDF 여백">
+        <SettingsExpander header="이름·여백 조정" description="기본은 학번_이름 · PDF 사진 테두리는 자동으로 잘라내요">
+          <TextBox
+            header="파일 이름 형식"
+            value={pattern}
+            disabled={busy}
+            onChange={setPattern}
+            description="{학번} {학년} {반} {번호} {이름}을 조합해요. 예: {학년}_{반}_{번호}_{이름}"
+          />
+          {!validNamePattern(pattern) && (
+            <InfoBar
+              severity="error"
+              message="안내한 이름 재료를 하나 이상 넣어 주세요. 중괄호와 재료 이름을 확인해 주세요."
+            />
+          )}
+          <Caption>
+            PDF 사진의 안쪽을 더 자를 픽셀 수예요. 이미 읽은 PDF에는 ‘PDF 여백 다시 적용’을 눌러요. XLSX 원본에는
+            적용하지 않아요.
+          </Caption>
+          <div className={s.actions}>
+            {(
+              [
+                ["top", "위"],
+                ["bottom", "아래"],
+                ["left", "왼쪽"],
+                ["right", "오른쪽"],
+              ] as const
+            ).map(([key, label]) => (
+              <NumberBox
+                key={key}
+                header={`${label} 여백`}
+                value={insets[key]}
+                min={0}
+                max={500}
+                step={1}
+                disabled={busy}
+                onChange={(value) => setInsets((current) => ({ ...current, [key]: Math.round(value) }))}
+              />
+            ))}
+          </div>
+          <Button
+            disabled={busy || !extractions.some((e) => /\.pdf$/i.test(e.file.name))}
+            onClick={() => {
+              void addFiles(
+                extractions.filter((e) => /\.pdf$/i.test(e.file.name)).map((e) => e.file),
+                true,
+              );
+            }}
+          >
+            PDF 여백 다시 적용
+          </Button>
+        </SettingsExpander>
       </ToolLayout.Section>
       <ToolLayout.Section step="preview" title="사진과 예정 파일명">
         <Caption secondary>
@@ -314,7 +387,7 @@ export function App({ deck }: { deck: Deck }) {
         {students.length > 0 && (
           <SettingsExpander
             header="학생 명단"
-            description={`학생 ${students.length}명 · 사진 미확인/없음 ${students.filter((student) => !student.photoKey).length}명`}
+            description={`학생 ${students.length}명 · 정보 또는 사진 미확인 ${students.filter((student) => !student.photoKey || student.identityConfirmed === false).length}명`}
           >
             <ListView
               header="읽은 학생"
@@ -330,6 +403,7 @@ export function App({ deck }: { deck: Deck }) {
                     : student.suggestionKey
                       ? "사진 추측, 확인 필요"
                       : "사진 없음"}
+                  {student.identityWarning ? ` · ${student.identityWarning}` : ""}
                 </Body>
               )}
             />

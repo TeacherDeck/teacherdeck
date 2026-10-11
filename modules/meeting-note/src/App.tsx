@@ -23,15 +23,7 @@ import {
   tokens,
 } from "@deck/ui";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  type Entry,
-  type EntryKind,
-  type Meeting,
-  emptyMeeting,
-  entryInput,
-  parseEntry,
-  speakerIndex,
-} from "./meeting.ts";
+import { type Entry, type EntryKind, type Meeting, emptyMeeting, parseEntry, speakerIndex } from "./meeting.ts";
 import { createWriter, loadMeeting } from "./storage.ts";
 import { publicClipboard } from "./clipboard.ts";
 import { type ExportFormat, exportText, pickMeeting, saveFile } from "./files.ts";
@@ -46,6 +38,7 @@ import {
 } from "./library.ts";
 import { mergeRosters, pickRosters, saveRosters } from "./roster-files.ts";
 import { activeSpeakers, identifySpeakers, reviseSpeakers as applyRoster, speakerLabel } from "./speakers.ts";
+import { Recovery } from "./Recovery.tsx";
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "="];
 const SPEAKER_COLORS = [
   tokens.colorPaletteBlueForeground2,
@@ -361,6 +354,8 @@ export function App({ deck }: { deck: Deck }) {
   const [copyStatus, setCopyStatus] = useState("");
   const [ready, setReady] = useState(false);
   const [failedLoad, setFailedLoad] = useState(false);
+  const [canRecoverMeeting, setCanRecoverMeeting] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [running, setRunning] = useState(false);
   const [dialog, setDialog] = useState<
     "people" | "export" | "help" | "kinds" | "new" | "archive" | "remove" | "delete-entry" | "delete-roster" | ""
@@ -379,6 +374,8 @@ export function App({ deck }: { deck: Deck }) {
   const [privateNote, setPrivateNote] = useState(false);
   const privateChosen = useRef(false);
   const [editing, setEditing] = useState<string | null>(null);
+  const [editedOwner, setEditedOwner] = useState("");
+  const [editedDue, setEditedDue] = useState("");
   const editingId = useRef<string | null>(null);
   const previousDraft = useRef("");
   const previousComposer = useRef({
@@ -424,13 +421,19 @@ export function App({ deck }: { deck: Deck }) {
   );
   useEffect(() => {
     let active = true;
-    Promise.all([loadMeeting(deck), loadLibrary(deck)])
-      .then(([data, savedLibrary]) => {
+    setFailedLoad(false);
+    Promise.allSettled([loadMeeting(deck), loadLibrary(deck)])
+      .then(([meetingResult, libraryResult]) => {
         if (!active) return;
-        data = identifySpeakers(data);
+        if (meetingResult.status !== "fulfilled" || libraryResult.status !== "fulfilled") {
+          setCanRecoverMeeting(meetingResult.status === "fulfilled");
+          setFailedLoad(true);
+          return;
+        }
+        const data = identifySpeakers(meetingResult.value);
         latest.current = data;
         setMeeting(data);
-        setLibrary(savedLibrary);
+        setLibrary(libraryResult.value);
         setNames(activeSpeakers(data).join("\n"));
         setAbsent(data.absentees?.join("\n") ?? "");
         setDraft(data.draft);
@@ -447,7 +450,7 @@ export function App({ deck }: { deck: Deck }) {
     return () => {
       active = false;
     };
-  }, [deck]);
+  }, [deck, loadAttempt]);
   useEffect(() => {
     if (ready) queueMicrotask(() => (running ? input.current : attendeeInput.current)?.focus());
   }, [ready, running]);
@@ -504,14 +507,18 @@ export function App({ deck }: { deck: Deck }) {
     const raw = input.current?.value ?? latest.current.draft;
     const id = editingId.current;
     const original = id ? latest.current.entries.find((entry) => entry.id === id) : undefined;
-    const entry = parseEntry(
-      raw,
-      latest.current.speakers,
-      original?.speaker ?? latest.current.selected,
-      id ?? crypto.randomUUID(),
-      latest.current.speakerIds,
-      original?.speakerId ?? latest.current.selectedId,
-    );
+    const entry = original
+      ? raw.trim()
+        ? { ...original, text: raw.trimEnd(), raw, owner: editedOwner, due: editedDue }
+        : null
+      : parseEntry(
+          raw,
+          latest.current.speakers,
+          latest.current.selected,
+          id ?? crypto.randomUUID(),
+          latest.current.speakerIds,
+          latest.current.selectedId,
+        );
     if (!entry) {
       if (id) cancelEdit();
       return;
@@ -524,6 +531,10 @@ export function App({ deck }: { deck: Deck }) {
     if (privateChosen.current) entry.private = privateNote;
     else entry.private ||= privateNote;
     if (entry.private && entry.kind === "안건") entry.kind = "발언";
+    if (entry.kind !== "조치") {
+      entry.owner = "";
+      entry.due = "";
+    }
     if (original) entry.edited = true;
     entry.timestamp = original?.timestamp ?? new Date().toISOString();
     snapshot();
@@ -545,7 +556,7 @@ export function App({ deck }: { deck: Deck }) {
         : [...latest.current.entries, entry],
     });
     focusInput();
-  }, [ready, kind, privateNote, snapshot, update, cancelEdit]);
+  }, [ready, kind, privateNote, editedOwner, editedDue, snapshot, update, cancelEdit]);
   const selectSpeaker = useCallback(
     (selected: string, retag = false, selectedId = "") => {
       if (busyRef.current) return;
@@ -699,11 +710,13 @@ export function App({ deck }: { deck: Deck }) {
       }
       editingId.current = entry.id;
       setEditing(entry.id);
+      setEditedOwner(entry.owner);
+      setEditedDue(entry.due);
       setKind(entry.kind);
       kindChosen.current = false;
       privateChosen.current = false;
       setPrivateNote(entry.private);
-      setInput(entryInput(entry));
+      setInput(entry.text);
       focusInput();
     },
     [setInput, kind, privateNote],
@@ -992,7 +1005,11 @@ export function App({ deck }: { deck: Deck }) {
   if (!ready)
     return (
       <div className={s.page}>
-        {failedLoad ? <InfoBar severity="error" message={status} /> : <ProgressRing label="회의록을 불러오는 중" />}
+        {failedLoad ? (
+          <Recovery deck={deck} canContinue={canRecoverMeeting} onRetry={() => setLoadAttempt((value) => value + 1)} />
+        ) : (
+          <ProgressRing label="회의록을 불러오는 중" />
+        )}
       </div>
     );
   return (
@@ -1106,7 +1123,9 @@ export function App({ deck }: { deck: Deck }) {
                     </Button>
                   )}
                   <Caption secondary className={s.helpText}>
-                    Alt+숫자 화자 · ! 결정 · * 조치 · # 안건 · ? 질의 · // 비공개 · Enter 기록
+                    {editing
+                      ? "수정 중에는 기호·숫자도 본문으로 유지해요. 종류·화자는 버튼으로 바꿔요."
+                      : "Alt+숫자 화자 · ! 결정 · * 조치 · # 안건 · ? 질의 · // 비공개 · Enter 기록"}
                   </Caption>
                 </div>
                 <div className={s.inlineKinds}>
@@ -1144,6 +1163,12 @@ export function App({ deck }: { deck: Deck }) {
                     종류 · 비공개 선택
                   </Button>
                 </div>
+                {editing && kind === "조치" && (
+                  <div className={s.row}>
+                    <TextBox disabled={busy} header="조치 담당자" value={editedOwner} onChange={setEditedOwner} />
+                    <TextBox disabled={busy} header="조치 기한" value={editedDue} onChange={setEditedDue} />
+                  </div>
+                )}
                 <TextBox
                   disabled={busy}
                   header="발언 입력"

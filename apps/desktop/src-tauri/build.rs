@@ -19,6 +19,19 @@ const COMMANDS: &[&str] = &[
     "install_update",
     "restart_app",
     "sec_probe_report",
+    "school_data_load",
+    "school_data_save",
+    "school_data_pending",
+    "school_data_resolve_access",
+    "school_data_grants",
+    "school_data_revoke_grant",
+    "school_data_import_photo",
+    "school_data_read_backup",
+    "school_data_recover",
+    "school_data_read_workbook",
+    "school_data_write_workbook",
+    "messaging_pending_confirmations",
+    "messaging_resolve_confirmation",
 ];
 
 fn main() {

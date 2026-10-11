@@ -20,14 +20,23 @@ pub mod capture_host;
 mod capture_native;
 mod commands;
 pub mod destination;
+pub mod file_listing;
+pub mod file_ops;
 pub mod file_output;
 pub mod file_read;
 pub mod file_transfer;
+mod messaging_host;
+mod messaging_worker;
 pub mod modules;
+mod native_automation;
+pub mod native_workers;
+mod network_host;
+mod network_native;
 pub mod origins;
 pub mod platform;
 mod probe;
 mod protocol;
+mod school_data;
 pub mod state;
 pub mod storage;
 
@@ -73,6 +82,9 @@ fn serve(
         return res;
     }
     if path.starts_with("/_resources/") {
+        if let Some(response) = caps::school_data::serve_photo_resource(app, &state, request) {
+            return response;
+        }
         return caps::serve_file_resource(&state, request);
     }
     let Some(req) = module_request_path(request.uri()) else {
@@ -122,12 +134,37 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     );
 
     app.manage(capture_host::CaptureService::default());
+    app.manage(caps::office::OfficeService::default());
+    app.manage(
+        messaging_host::MessagingService::open(
+            paths.resource_dir()?.join("native/coolreserve"),
+            paths.app_data_dir()?.join("messaging"),
+        )
+        .unwrap_or_else(|_| messaging_host::MessagingService::unavailable()),
+    );
+    app.manage(
+        network_host::NetworkService::open(
+            paths.app_data_dir()?.join("native-network"),
+            paths.resource_dir()?,
+            std::env::current_exe()?,
+        )
+        .unwrap_or_else(|_| network_host::NetworkService::unavailable()),
+    );
+    app.manage(
+        school_data::SchoolDataService::open(paths.app_data_dir()?.join("school-data"))
+            .map_err(|_| std::io::Error::other("school data unavailable"))?,
+    );
     app.manage(AppState {
         app_version,
         host_caps,
         modules: RwLock::new(store),
         handles: Mutex::new(HandleTable::new(OsRng)),
         transfers: Mutex::new(Default::default()),
+        folder_listings: Mutex::new(Default::default()),
+        file_ops: Mutex::new(
+            file_ops::FileOpsService::open(paths.app_data_dir()?.join("file-operations"))
+                .unwrap_or_else(|_| file_ops::FileOpsService::unavailable()),
+        ),
         destinations: Mutex::new(
             destination::DestinationService::open(paths.app_data_dir()?.join("destination-grants"))
                 .map_err(|_| std::io::Error::other("destination grants unavailable"))?,
@@ -261,6 +298,19 @@ pub fn run() {
             commands::sec_probe_report,
             capture_host::overlay_ui_state,
             capture_host::overlay_ui_action,
+            caps::school_data::school_data_load,
+            caps::school_data::school_data_save,
+            caps::school_data::school_data_pending,
+            caps::school_data::school_data_resolve_access,
+            caps::school_data::school_data_grants,
+            caps::school_data::school_data_revoke_grant,
+            caps::school_data::school_data_import_photo,
+            caps::school_data::school_data_read_backup,
+            caps::school_data::school_data_recover,
+            caps::school_data::school_data_read_workbook,
+            caps::school_data::school_data_write_workbook,
+            caps::messaging::messaging_pending_confirmations,
+            caps::messaging::messaging_resolve_confirmation,
         ])
         .setup(setup)
         .run(tauri::generate_context!());

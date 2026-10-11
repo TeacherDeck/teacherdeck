@@ -69,6 +69,9 @@ vi.mock("./host.ts", () => ({
     onShowModule: vi.fn(noop),
     onFsDropped: vi.fn(noop),
   },
+  // Global dialogs from the school data and messaging services poll for pending requests.
+  schoolDataHost: { pending: vi.fn(() => Promise.resolve([])), resolveAccess: vi.fn() },
+  messagingConfirmationHost: { pending: vi.fn(() => Promise.resolve([])), resolve: vi.fn() },
   windowControls: {
     minimize: vi.fn(),
     toggleMaximize: vi.fn(),

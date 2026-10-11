@@ -1,0 +1,14 @@
+{
+  "$schema": "../../schema/module.schema.json",
+  "manifestVersion": 1,
+  "id": "office-convert",
+  "name": "문서 형식 변환",
+  "description": "설치된 한글·Office로 문서를 새 형식으로 변환해요. 원본은 유지해요.",
+  "version": "0.1.1",
+  "category": "document",
+  "icon": "icon.svg",
+  "entry": "index.html",
+  "authors": [{ "name": "TODO(human): 저자 이름" }],
+  "requires": { "fs": "^1.1.0", "office": "^1.0.0" },
+  "optional": {}
+}

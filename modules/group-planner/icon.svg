@@ -1,0 +1,6 @@
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<!-- Additional terms: see LICENSE-ADDITIONAL-TERMS -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <rect x="4" y="4" width="40" height="40" rx="10" fill="#0f6cbd"/>
+  <circle cx="16" cy="16" r="4" fill="#ffffff"/><circle cx="32" cy="16" r="4" fill="#ffffff"/><circle cx="24" cy="30" r="4" fill="#ffffff"/><path d="M20 16h8m-10 4 4 6m8-6-4 6" stroke="#ffffff" stroke-width="3" fill="none"/>
+</svg>

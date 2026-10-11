@@ -2,12 +2,27 @@
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 // About / credits = GPLv3 Appropriate Legal Notices (design-system.md §5).
 // GEN-007: never remove or weaken the attribution below; About.test.tsx guards it.
-import { Body1, Caption1, Link, Subtitle2, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Title3, makeStyles, tokens } from "@fluentui/react-components";
+import {
+  Body1,
+  Caption1,
+  Link,
+  Subtitle2,
+  Table,
+  TableBody,
+  TableCell,
+  TableHeader,
+  TableHeaderCell,
+  TableRow,
+  Title3,
+  makeStyles,
+  tokens,
+} from "@fluentui/react-components";
 import { SettingsExpander, deckTokens } from "@deck/ui";
 import licenseText from "../../../../LICENSE?raw";
 import additionalTerms from "../../../../LICENSE-ADDITIONAL-TERMS?raw";
 import type { ModuleEntry } from "../generated/ModuleEntry.ts";
 import thirdParty from "../generated/third-party.json" with { type: "json" };
+import messagingNotices from "../generated/messaging-notices.json" with { type: "json" };
 
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: deckTokens.itemGap, padding: deckTokens.pagePadding },
@@ -19,7 +34,13 @@ const useStyles = makeStyles({
     borderRadius: deckTokens.cardRadius,
     backgroundColor: deckTokens.layer,
   },
-  pre: { whiteSpace: "pre-wrap", fontFamily: tokens.fontFamilyMonospace, fontSize: tokens.fontSizeBase200, maxHeight: "50vh", overflowY: "auto" },
+  pre: {
+    whiteSpace: "pre-wrap",
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: tokens.fontSizeBase200,
+    maxHeight: "50vh",
+    overflowY: "auto",
+  },
 });
 
 /** The 7(b) attribution line, taken verbatim from LICENSE-ADDITIONAL-TERMS. */
@@ -40,7 +61,14 @@ export function moduleCredits(modules: ModuleEntry[]): ModuleCredit[] {
   return modules.flatMap((m) =>
     m.manifest === null
       ? []
-      : [{ id: m.resolution.id, name: m.manifest.name, version: m.manifest.version, authors: m.manifest.authors.map((a) => a.name) }],
+      : [
+          {
+            id: m.resolution.id,
+            name: m.manifest.name,
+            version: m.manifest.version,
+            authors: m.manifest.authors.map((a) => a.name),
+          },
+        ],
   );
 }
 
@@ -60,8 +88,8 @@ export function About({ appVersion, modules }: AboutProps) {
         <Body1>{attributionLine(additionalTerms)}</Body1>
         <Caption1>Copyright (C) 2026 신민성, 정영주</Caption1>
         <Body1>
-          이 프로그램은 GNU 일반 공중 사용 허가서 3판(GPL-3.0-only)과 제7조(b) 추가조항에 따라 배포돼요. 이
-          프로그램은 어떠한 보증도 없이 제공돼요.
+          이 프로그램은 GNU 일반 공중 사용 허가서 3판(GPL-3.0-only)과 제7조(b) 추가조항에 따라 배포돼요. 이 프로그램은
+          어떠한 보증도 없이 제공돼요.
         </Body1>
         <Link href="https://github.com/TeacherDeck" target="_blank" rel="noreferrer">
           소스 코드
@@ -106,6 +134,18 @@ export function About({ appVersion, modules }: AboutProps) {
             ))}
           </TableBody>
         </Table>
+      </SettingsExpander>
+      <SettingsExpander header="쿨 예약실 실행 환경 라이선스" description="Python과 동봉 라이브러리의 원래 고지 전문">
+        {messagingNotices.components.map((component) => (
+          <Body1 key={component.name}>
+            {component.name} {component.version} — {component.license}
+          </Body1>
+        ))}
+        {messagingNotices.files.map((notice) => (
+          <SettingsExpander key={notice.path} header={notice.path}>
+            <pre className={s.pre}>{notice.text}</pre>
+          </SettingsExpander>
+        ))}
       </SettingsExpander>
     </div>
   );

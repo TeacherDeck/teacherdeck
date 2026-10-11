@@ -137,7 +137,7 @@ Additional terms: see LICENSE-ADDITIONAL-TERMS
 | PRV-004 | MUST NOT | 테스트·문서·스크린샷·예제에 실존 인명·학교명·연락처를 쓰지 않는다. | [manual], 합성 데이터 생성기 제공 | [privacy.md](privacy.md) |
 | PRV-005 | MUST | 임시 파일은 앱 전용 temp 디렉터리에 만들고 작업 종료·앱 시작에 정리한다. | temp 헬퍼 API(`TempArea`), 출력 서비스와 테스트 | [privacy.md](privacy.md) |
 | PRV-006 | MUST NOT | 원본 파일 덮어쓰기·삭제를 기본 동작으로 하지 않는다. | [manual], GEN-005 | [privacy.md](privacy.md) |
-| PRV-007 | MUST | 모듈 데이터는 모듈 id로 격리한다. | storage 캡 테스트 | [privacy.md](privacy.md) |
+| PRV-007 | MUST | 모듈 데이터는 모듈 id로 격리한다. | storage·school-data 권한 테스트 | [privacy.md](privacy.md) |
 | SEC-001 | MUST | 셸 webview는 로컬 번들만 로드하며 CSP를 설정한다. | tauri.conf 검사 `check-security` | [security.md](security.md) |
 | SEC-002 | MUST | 모듈은 셸 및 다른 모듈과 독립 origin에서만 서빙한다. | origin 생성·authority 검증(`origins.rs`, `protocol.rs`), 셸 브리지·CSP 테스트 | [security.md](security.md) |
 | SEC-003 | MUST | Tauri ACL은 셸 main과 ADR-0017의 로컬 캡처 보조 창에만 아래 정확한 최소 권한으로 준다. | `check-security` | [security.md](security.md) |

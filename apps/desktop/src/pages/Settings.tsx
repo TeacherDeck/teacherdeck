@@ -2,7 +2,7 @@
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 // Settings (PowerToys SettingsCard pattern). Updates are only applied after the user agrees (SEC-008).
 import { Button, Dropdown, Option, Title3, makeStyles } from "@fluentui/react-components";
-import { ArrowSyncRegular, DarkThemeRegular, SparkleRegular } from "@fluentui/react-icons";
+import { ArrowSyncRegular, BookContactsRegular, DarkThemeRegular, SparkleRegular } from "@fluentui/react-icons";
 import { SettingsCard, ToggleSwitch, deckTokens } from "@deck/ui";
 import { useState } from "react";
 import type { UpdateStatus } from "../generated/UpdateStatus.ts";
@@ -39,6 +39,7 @@ export interface SettingsProps {
   checkUpdate(): Promise<UpdateStatus>;
   installUpdate(): Promise<void>;
   restart(): Promise<void>;
+  onSchoolData?(): void;
 }
 
 export function Settings({
@@ -50,6 +51,7 @@ export function Settings({
   checkUpdate,
   installUpdate,
   restart,
+  onSchoolData,
 }: SettingsProps) {
   const s = useStyles();
   const [status, setStatus] = useState<UpdateStatus | null>(null);
@@ -75,6 +77,12 @@ export function Settings({
   return (
     <div className={s.page}>
       <Title3 as="h1">설정</Title3>
+      {onSchoolData !== undefined && <SettingsCard
+        icon={<BookContactsRegular />}
+        header="우리 반·수업 자료"
+        description="명부와 시간표를 한 번 등록하고 필요한 도구에서 불러와요."
+        action={<Button onClick={onSchoolData}>자료 관리</Button>}
+      />}
       <SettingsCard
         icon={<DarkThemeRegular />}
         header="테마"

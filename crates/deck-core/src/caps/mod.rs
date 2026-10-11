@@ -17,9 +17,14 @@ use ts_rs::TS;
 
 pub mod capture;
 pub mod clipboard;
+pub mod file_ops;
 pub mod fs;
 pub mod global_shortcut;
+pub mod messaging;
+pub mod network;
+pub mod office;
 pub mod overlay;
+pub mod school_data;
 pub mod storage;
 pub mod system;
 pub mod window;
@@ -61,6 +66,74 @@ const fn m(name: &'static str, long: bool, summary: &'static str) -> MethodSpec 
 
 /// v1 capabilities (capabilities.md §2).
 pub const REGISTRY: &[CapSpec] = &[
+    CapSpec {
+        name: "messaging",
+        version: "1.0.0",
+        summary: "확인한 쿨메신저 예약 등록",
+        methods: &[
+            m("connect", true, "지원하는 쿨메신저 연결 확인"),
+            m("recipients", true, "수신자 계정 조회"),
+            m("plan", true, "예약 내용과 첨부 검증"),
+            m("start", true, "호스트 확인 후 선택한 작업 시작"),
+            m("status", false, "자기 작업 진행 상태"),
+            m("cancel", false, "이후 처리 중지 요청"),
+        ],
+    },
+    CapSpec {
+        name: "office",
+        version: "1.0.0",
+        summary: "설치된 한글·Office로 새 형식 변환",
+        methods: &[
+            m("availability", false, "설치된 변환 프로그램 조회"),
+            m("convert", true, "원본을 보존하고 실제 새 형식으로 저장"),
+            m("cancel", false, "자기 모듈의 현재 변환 취소"),
+        ],
+    },
+    CapSpec {
+        name: "network",
+        version: "1.0.0",
+        summary: "저장된 IP·DNS 프로필과 네트워크 루틴",
+        methods: &[
+            m("adapters", false, "연결 장치 조회"),
+            m("inspect", false, "현재 연결과 선택한 Wi-Fi 상태"),
+            m(
+                "saveProfile",
+                false,
+                "내부 설정과 자동 주소 복원 프로필 저장",
+            ),
+            m("configureRoutine", true, "사용자가 설정한 자동 전환 활성화"),
+            m("status", false, "저장된 루틴·자동 실행 상태"),
+            m("evaluate", true, "저장된 설정으로 지금 검사"),
+            m("apply", true, "선택한 프로필 적용과 수동 우선 유지"),
+            m("stopRoutine", true, "현재 주소를 유지하고 자동 실행 중지"),
+        ],
+    },
+    CapSpec {
+        name: "file-ops",
+        version: "1.0.0",
+        summary: "확인된 파일명 변경과 보호된 되돌리기",
+        methods: &[
+            m("planRename", true, "파일명 변경 계획 검증"),
+            m("executeRename", true, "호스트 확인 후 변경 묶음 실행"),
+            m("listHistory", true, "자기 모듈의 변경 이력 조회"),
+            m("undoRename", true, "수정·교체되지 않은 파일만 되돌리기"),
+        ],
+    },
+    CapSpec {
+        name: "school-data",
+        version: "1.0.0",
+        summary: "사용자가 연결한 공통 학급 자료의 제한된 읽기",
+        methods: &[
+            m("status", false, "자기 모듈의 연결 상태"),
+            m("requestAccess", true, "셸에서 학급·항목 선택과 공유 확인"),
+            m("listContexts", false, "연결된 학급·수업 목록"),
+            m("readRoster", false, "선택한 학급의 명부 스냅샷"),
+            m("readTimetable", false, "허용된 수업의 시간표 스냅샷"),
+            m("openPhoto", true, "명부 사진의 인증된 읽기 리소스"),
+            m("closePhoto", false, "사진 읽기 권한 닫기"),
+            m("revokeAccess", false, "자기 모듈의 공유 권한 해제"),
+        ],
+    },
     CapSpec {
         name: "global-shortcut",
         version: "1.0.0",
@@ -132,9 +205,10 @@ pub const REGISTRY: &[CapSpec] = &[
     },
     CapSpec {
         name: "fs",
-        version: "1.2.0",
+        version: "1.3.0",
         summary: "파일 선택과 핸들(경로는 노출하지 않음)",
         methods: &[
+            m("listFiles", true, "선택 폴더의 제한된 파일 목록"),
             m(
                 "pickDestination",
                 true,

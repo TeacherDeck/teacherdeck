@@ -1,5 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
+import type { MessagingConnectArgs } from "./generated/MessagingConnectArgs.ts";
+import type { MessagingConnection } from "./generated/MessagingConnection.ts";
+import type { MessagingRecipientsArgs } from "./generated/MessagingRecipientsArgs.ts";
+import type { MessagingRecipient } from "./generated/MessagingRecipient.ts";
+import type { MessagingPlanArgs } from "./generated/MessagingPlanArgs.ts";
+import type { MessagingPlan } from "./generated/MessagingPlan.ts";
+import type { MessagingStartArgs } from "./generated/MessagingStartArgs.ts";
+import type { MessagingRun } from "./generated/MessagingRun.ts";
+import type { MessagingStatusArgs } from "./generated/MessagingStatusArgs.ts";
+import type { MessagingStatus } from "./generated/MessagingStatus.ts";
+import type { MessagingCancelArgs } from "./generated/MessagingCancelArgs.ts";
+import type { MessagingCancelResult } from "./generated/MessagingCancelResult.ts";
 import type { DisplayInfo } from "./generated/DisplayInfo.ts";
 import type { CaptureArgs } from "./generated/CaptureArgs.ts";
 import type { CaptureResult } from "./generated/CaptureResult.ts";
@@ -20,6 +32,45 @@ import type { DestinationGrant } from "./generated/DestinationGrant.ts";
 import type { PickDestinationArgs } from "./generated/PickDestinationArgs.ts";
 import type { DestinationStatusArgs } from "./generated/DestinationStatusArgs.ts";
 import type { DestinationArgs } from "./generated/DestinationArgs.ts";
+import type { ListFilesArgs } from "./generated/ListFilesArgs.ts";
+import type { FilesPage } from "./generated/FilesPage.ts";
+import type { PlanRenameArgs } from "./generated/PlanRenameArgs.ts";
+import type { RenamePlan } from "./generated/RenamePlan.ts";
+import type { ExecuteRenameArgs } from "./generated/ExecuteRenameArgs.ts";
+import type { RenameResult } from "./generated/RenameResult.ts";
+import type { ListHistoryArgs } from "./generated/ListHistoryArgs.ts";
+import type { RenameHistoryPage } from "./generated/RenameHistoryPage.ts";
+import type { UndoRenameArgs } from "./generated/UndoRenameArgs.ts";
+import type { UndoRenameResult } from "./generated/UndoRenameResult.ts";
+import type { SchoolContextSummary } from "./generated/SchoolContextSummary.ts";
+import type { SchoolRequestedAccess } from "./generated/SchoolRequestedAccess.ts";
+import type { SchoolAccessGrant } from "./generated/SchoolAccessGrant.ts";
+import type { SchoolAccessStatus } from "./generated/SchoolAccessStatus.ts";
+import type { SchoolGrantArgs } from "./generated/SchoolGrantArgs.ts";
+import type { SchoolReadRosterArgs } from "./generated/SchoolReadRosterArgs.ts";
+import type { SchoolReadTimetableArgs } from "./generated/SchoolReadTimetableArgs.ts";
+import type { SchoolRosterSnapshot } from "./generated/SchoolRosterSnapshot.ts";
+import type { SchoolTimetableSnapshot } from "./generated/SchoolTimetableSnapshot.ts";
+import type { SchoolOpenPhotoArgs } from "./generated/SchoolOpenPhotoArgs.ts";
+import type { SchoolPhotoResource } from "./generated/SchoolPhotoResource.ts";
+import type { SchoolClosePhotoArgs } from "./generated/SchoolClosePhotoArgs.ts";
+import type { OfficeAvailability } from "./generated/OfficeAvailability.ts";
+import type { OfficeConvertArgs } from "./generated/OfficeConvertArgs.ts";
+import type { OfficeConvertResult } from "./generated/OfficeConvertResult.ts";
+import type { OfficeCancelResult } from "./generated/OfficeCancelResult.ts";
+import type { AdapterInfo } from "./generated/AdapterInfo.ts";
+import type { NetworkInspectArgs } from "./generated/NetworkInspectArgs.ts";
+import type { NetworkSnapshot } from "./generated/NetworkSnapshot.ts";
+import type { NetworkSaveProfileArgs } from "./generated/NetworkSaveProfileArgs.ts";
+import type { NetworkProfileRef } from "./generated/NetworkProfileRef.ts";
+import type { NetworkConfigureArgs } from "./generated/NetworkConfigureArgs.ts";
+import type { NetworkConfigureResult } from "./generated/NetworkConfigureResult.ts";
+import type { NetworkStatusArgs } from "./generated/NetworkStatusArgs.ts";
+import type { RoutineStatus } from "./generated/RoutineStatus.ts";
+import type { NetworkRoutineArgs } from "./generated/NetworkRoutineArgs.ts";
+import type { NetworkApplyArgs } from "./generated/NetworkApplyArgs.ts";
+import type { NetworkApplyResult } from "./generated/NetworkApplyResult.ts";
+import type { NetworkStopResult } from "./generated/NetworkStopResult.ts";
 // Bridge client used by every module (packages/sdk/AGENTS.md). Framework-agnostic.
 import type { ClipboardWriteTextArgs } from "./generated/ClipboardWriteTextArgs.ts";
 import type { ClipboardWriteRichTextArgs } from "./generated/ClipboardWriteRichTextArgs.ts";
@@ -113,6 +164,45 @@ export interface Deck {
   on<T extends EventTopic>(topic: T, listener: Listener<T>): () => void;
   /** Detaches from the bridge and rejects pending calls. */
   dispose(): void;
+  readonly messaging: {
+    connect(args: MessagingConnectArgs): Promise<MessagingConnection>;
+    recipients(args: MessagingRecipientsArgs): Promise<MessagingRecipient[]>;
+    plan(args: MessagingPlanArgs): Promise<MessagingPlan>;
+    start(args: MessagingStartArgs): Promise<MessagingRun>;
+    status(args: MessagingStatusArgs): Promise<MessagingStatus>;
+    cancel(args: MessagingCancelArgs): Promise<MessagingCancelResult>;
+  };
+  readonly office: {
+    availability(): Promise<OfficeAvailability>;
+    convert(args: OfficeConvertArgs): Promise<OfficeConvertResult>;
+    cancel(): Promise<OfficeCancelResult>;
+  };
+  readonly network: {
+    adapters(): Promise<AdapterInfo[]>;
+    inspect(args: NetworkInspectArgs): Promise<NetworkSnapshot>;
+    saveProfile(args: NetworkSaveProfileArgs): Promise<NetworkProfileRef>;
+    configureRoutine(args: NetworkConfigureArgs): Promise<NetworkConfigureResult>;
+    status(args?: NetworkStatusArgs): Promise<RoutineStatus | null>;
+    evaluate(args: NetworkRoutineArgs): Promise<RoutineStatus>;
+    apply(args: NetworkApplyArgs): Promise<NetworkApplyResult>;
+    stopRoutine(args: NetworkRoutineArgs): Promise<NetworkStopResult>;
+  };
+  readonly fileOps: {
+    planRename(args: PlanRenameArgs): Promise<RenamePlan>;
+    executeRename(args: ExecuteRenameArgs): Promise<RenameResult>;
+    listHistory(args?: ListHistoryArgs): Promise<RenameHistoryPage>;
+    undoRename(args: UndoRenameArgs): Promise<UndoRenameResult>;
+  };
+  readonly schoolData: {
+    status(): Promise<SchoolAccessStatus>;
+    requestAccess(args: SchoolRequestedAccess): Promise<SchoolAccessGrant | null>;
+    listContexts(args: SchoolGrantArgs): Promise<SchoolContextSummary[]>;
+    readRoster(args: SchoolReadRosterArgs): Promise<SchoolRosterSnapshot>;
+    readTimetable(args: SchoolReadTimetableArgs): Promise<SchoolTimetableSnapshot>;
+    openPhoto(args: SchoolOpenPhotoArgs): Promise<SchoolPhotoResource>;
+    closePhoto(args: SchoolClosePhotoArgs): Promise<void>;
+    revokeAccess(args: SchoolGrantArgs): Promise<void>;
+  };
   readonly capture: {
     displays(): Promise<DisplayInfo[]>;
     capture(args: CaptureArgs): Promise<CaptureResult>;
@@ -149,6 +239,7 @@ export interface Deck {
     keys(): Promise<string[]>;
   };
   readonly fs: {
+    listFiles(args: ListFilesArgs): Promise<FilesPage>;
     pickDestination(args: PickDestinationArgs): Promise<DestinationGrant | null>;
     destinationStatus(args: DestinationStatusArgs): Promise<DestinationGrant | null>;
     revealDestination(args: DestinationArgs): Promise<void>;
@@ -347,6 +438,45 @@ export function connect(options: ConnectOptions = {}): Promise<Deck> {
         }
         pending.clear();
       },
+      messaging: {
+        connect: (args) => call<MessagingConnection>("messaging", "connect", args),
+        recipients: (args) => call<MessagingRecipient[]>("messaging", "recipients", args),
+        plan: (args) => call<MessagingPlan>("messaging", "plan", args),
+        start: (args) => call<MessagingRun>("messaging", "start", args),
+        status: (args) => call<MessagingStatus>("messaging", "status", args),
+        cancel: (args) => call<MessagingCancelResult>("messaging", "cancel", args),
+      },
+      office: {
+        availability: () => call<OfficeAvailability>("office", "availability", {}),
+        convert: (args) => call<OfficeConvertResult>("office", "convert", args),
+        cancel: () => call<OfficeCancelResult>("office", "cancel", {}),
+      },
+      network: {
+        adapters: () => call<AdapterInfo[]>("network", "adapters", {}),
+        inspect: (args) => call<NetworkSnapshot>("network", "inspect", args),
+        saveProfile: (args) => call<NetworkProfileRef>("network", "saveProfile", args),
+        configureRoutine: (args) => call<NetworkConfigureResult>("network", "configureRoutine", args),
+        status: (args = {}) => call<RoutineStatus | null>("network", "status", args),
+        evaluate: (args) => call<RoutineStatus>("network", "evaluate", args),
+        apply: (args) => call<NetworkApplyResult>("network", "apply", args),
+        stopRoutine: (args) => call<NetworkStopResult>("network", "stopRoutine", args),
+      },
+      fileOps: {
+        planRename: (args) => call<RenamePlan>("file-ops", "planRename", args),
+        executeRename: (args) => call<RenameResult>("file-ops", "executeRename", args),
+        listHistory: (args = {}) => call<RenameHistoryPage>("file-ops", "listHistory", args),
+        undoRename: (args) => call<UndoRenameResult>("file-ops", "undoRename", args),
+      },
+      schoolData: {
+        status: () => call<SchoolAccessStatus>("school-data", "status", {}),
+        requestAccess: (args) => call<SchoolAccessGrant | null>("school-data", "requestAccess", args),
+        listContexts: (args) => call<SchoolContextSummary[]>("school-data", "listContexts", args),
+        readRoster: (args) => call<SchoolRosterSnapshot>("school-data", "readRoster", args),
+        readTimetable: (args) => call<SchoolTimetableSnapshot>("school-data", "readTimetable", args),
+        openPhoto: (args) => call<SchoolPhotoResource>("school-data", "openPhoto", args),
+        closePhoto: (args) => call<null>("school-data", "closePhoto", args).then(() => undefined),
+        revokeAccess: (args) => call<null>("school-data", "revokeAccess", args).then(() => undefined),
+      },
       capture: {
         displays: () => call<DisplayInfo[]>("capture", "displays", {}),
         capture: (args) => call<CaptureResult>("capture", "capture", args),
@@ -383,6 +513,14 @@ export function connect(options: ConnectOptions = {}): Promise<Deck> {
         keys: () => call<string[]>("storage", "keys"),
       },
       fs: {
+        listFiles: (args) => {
+          const version = /^1\.(\d+)\.\d+$/.exec(requireInit().host.caps["fs"] ?? "");
+          if (requireInit().granted.includes("fs") && (!version || Number(version[1]) < 3))
+            return Promise.reject(
+              new DeckCallError("VERSION_MISMATCH", "폴더 목록은 fs 1.3 이상 앱에서 사용할 수 있어요."),
+            );
+          return call<FilesPage>("fs", "listFiles", args);
+        },
         pickDestination: (args) => call<DestinationGrant | null>("fs", "pickDestination", args),
         destinationStatus: (args) => call<DestinationGrant | null>("fs", "destinationStatus", args),
         revealDestination: (args) => call("fs", "revealDestination", args).then(() => undefined),

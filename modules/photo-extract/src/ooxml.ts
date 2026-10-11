@@ -2,7 +2,7 @@
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import type { Parts } from "./archive.ts";
 import { inspectPhoto } from "./photo.ts";
-import { collectStudents, type Anchor, type Cell, type Student } from "./roster.ts";
+import { collectStudents, ambiguousAnchorCoordinates, type Anchor, type Cell, type Student } from "./roster.ts";
 export interface Photo {
   key: string;
   bytes: Uint8Array<ArrayBuffer>;
@@ -34,18 +34,22 @@ export function resolvePart(source: string, target: string): string {
     !target ||
     /[\\:%?#]/.test(target) ||
     Array.from(target).some((char) => char.charCodeAt(0) < 32) ||
-    target.startsWith("/")
+    target.startsWith("//")
   )
     throw new Error("INVALID_RELATIONSHIP");
-  const path = source.split("/");
-  path.pop();
-  for (const part of target.split("/")) {
+  // OPC root-relative references still name members inside the selected ZIP.
+  // They are never filesystem paths or URLs.
+  const rootRelative = target.startsWith("/");
+  const path = rootRelative ? [] : source.split("/");
+  if (!rootRelative) path.pop();
+  for (const part of (rootRelative ? target.slice(1) : target).split("/")) {
     if (part === "..") {
       if (!path.length) throw new Error("INVALID_RELATIONSHIP");
       path.pop();
     } else if (part !== "." && part) path.push(part);
     else if (!part) throw new Error("INVALID_RELATIONSHIP");
   }
+  if (!path.length) throw new Error("INVALID_RELATIONSHIP");
   return path.join("/");
 }
 function xml(bytes: Uint8Array): Document {
@@ -107,7 +111,7 @@ export async function parseParts(parts: Parts, signal?: AbortSignal, deferCollec
   if (!sources.length || sources.length > 100 || sources.some((s) => !s.path || !parts[s.path]))
     throw new Error("INVALID_WORKBOOK");
   const sheets: Sheet[] = [];
-  for (const [index, source] of sources.entries()) {
+  for (const source of sources) {
     if (signal?.aborted) throw new Error("CANCELLED");
     const bytes = parts[source.path];
     if (!bytes) throw new Error("INVALID_WORKBOOK");
@@ -149,11 +153,11 @@ export async function parseParts(parts: Parts, signal?: AbortSignal, deferCollec
     if (collected.missingHeader)
       warnings.push(`${collected.missingHeader}개 번호·이름 셀에서 학년·반 머리글을 찾지 못했어요.`);
     const rels = readRelationships(parts, source.path);
-    let drawings = elements(doc, "drawing")
+    const drawings = elements(doc, "drawing")
       .map((d) => rels.get(attr(d, "id")) ?? "")
       .filter(Boolean);
-    // Original TimeAlert regression fixtures omit sheet drawing relationships.
-    if (!drawings.length && !index && parts["xl/drawings/drawing1.xml"]) drawings = ["xl/drawings/drawing1.xml"];
+    // Only the sheet's actual relationship proves ownership. An unreferenced drawing1
+    // may belong to a different sheet; its original image bytes remain in photos below.
     const anchors: Anchor[] = [];
     for (const path of drawings) {
       const drawing = parts[path];
@@ -185,6 +189,11 @@ export async function parseParts(parts: Parts, signal?: AbortSignal, deferCollec
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
     }
     if (anchors.length > 1000) throw new Error("ROSTER_LIMIT");
+    if (!deferCollection) {
+      const ambiguous = ambiguousAnchorCoordinates(anchors).size;
+      if (ambiguous)
+        warnings.push(`${ambiguous}개 사진 위치에 서로 다른 이미지가 겹쳐 있어요. 모두 미확인 이름으로 저장해요.`);
+    }
     sheets.push({ name: source.name, students: collected.students, anchors, cells });
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
   }

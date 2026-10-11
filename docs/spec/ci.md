@@ -16,6 +16,7 @@ CI는 로컬과 같은 명령을 쓴다(CI-005). 모든 검사기는 다음 형�
 | `lint` | ESLint flat config + `tools/eslint-plugin-deck`. modules·packages에 `linterOptions.noInlineConfig: true` | MOD-005, MOD-009, MOD-010, UI-001~003, GEN-003 |
 | `typecheck` | `tsc -b` strict | — |
 | `test` | vitest (sdk, ui, shell, modules, tools/checks 자체 테스트) | MOD-015, BRG-001~009 |
+| `prepare native resources` | Windows에서 승인된 관리 실행 환경과 원작 코어를 준비하고 해시 검증. 새 체크아웃에서도 Rust 빌드 전에 실행 | GEN-003, GEN-004 |
 | `cargo` | `fmt --check`, `clippy --workspace -- -D warnings`, `test --workspace` | GEN-003, CAP-009 |
 | `cargo deny check` | licenses, bans, advisories, sources | SEC-011, GEN-004 |
 | `check-modules` | 스키마, 호스트와 같은 Rust 매니페스트 검증, 필수 파일, id = 디렉터리명, authors, CHANGELOG, 테스트 존재 | MOD-001~004, MOD-012, MOD-013, MOD-015 |

@@ -29,6 +29,10 @@ pub struct AppState {
     pub handles: Mutex<HandleTable<FileHandleTarget, OsRng>>,
     /// File transfer grants, distinct from picked-file/folder handles.
     pub transfers: Mutex<FileTransfers>,
+    /// Bounded owner/session folder snapshots for fs 1.3.
+    pub folder_listings: Mutex<crate::file_listing::FolderListings>,
+    /// Owner-private protected rename plans and journal.
+    pub file_ops: Mutex<crate::file_ops::FileOpsService>,
     /// Append-new-only persistent destination permissions.
     pub destinations: Mutex<crate::destination::DestinationService>,
     /// Module storage (PRV-007).
@@ -54,7 +58,7 @@ pub struct AppState {
 pub enum FileHandleKind {
     /// Read the selected file; no writes.
     ReadFile,
-    /// Create a new output directory; no enumeration or existing child writes.
+    /// Create a new output directory or list children; no existing child writes.
     OutputParent,
 }
 

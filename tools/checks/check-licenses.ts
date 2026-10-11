@@ -5,6 +5,17 @@
 import { spawnSync } from "node:child_process";
 import { exists, isRecord, read, readJson } from "./lib/files.ts";
 import type { Violation } from "./lib/report.ts";
+import { collectPdfResources, PDF_MODULES, PDF_ASSET_ALLOWLIST } from "./lib/pdf-assets.ts";
+import {
+  loadRuntimeApproval,
+  loadSourceApproval,
+  MESSAGING_RUNTIME_LOCK,
+  MESSAGING_RUNTIME_DIR,
+  MESSAGING_SOURCE_LOCK,
+  MESSAGING_SOURCE_DIR,
+  verifyManagedAssets,
+} from "./lib/messaging-assets.ts";
+import path from "node:path";
 
 export const ALLOWLIST = "tools/checks/licenses.allow.json";
 
@@ -30,7 +41,10 @@ export function loadAllowlist(root: string): Allowlist {
 
 /** Evaluates a simple SPDX expression: `A OR B` needs one allowed branch, `A AND B` needs all. */
 export function isAllowedExpression(expr: string, allowed: ReadonlySet<string>): boolean {
-  const e = expr.trim().replace(/^\((.*)\)$/, "$1").trim();
+  const e = expr
+    .trim()
+    .replace(/^\((.*)\)$/, "$1")
+    .trim();
   if (/\sOR\s/.test(e)) return e.split(/\s+OR\s+/).some((p) => isAllowedExpression(p, allowed));
   if (/\sAND\s/.test(e)) return e.split(/\s+AND\s+/).every((p) => isAllowedExpression(p, allowed));
   return allowed.has(e);
@@ -80,6 +94,44 @@ export function checkDenyTomlSync(root: string, allow: Allowlist): Violation[] {
 
 export function checkLicenses(root: string): Violation[] {
   const allow = loadAllowlist(root);
+  const assets: Violation[] = [];
+  if (exists(root, MESSAGING_RUNTIME_LOCK)) {
+    try {
+      const runtime = loadRuntimeApproval(root);
+      if (exists(root, MESSAGING_RUNTIME_DIR))
+        verifyManagedAssets(path.join(root, MESSAGING_RUNTIME_DIR), runtime.files);
+    } catch {
+      assets.push({
+        rule: "SEC-011",
+        file: MESSAGING_RUNTIME_LOCK,
+        message: "승인된 Python·의존성과 원래 라이선스 고지의 정확한 해시를 확인하세요(ADR-0023).",
+      });
+    }
+  }
+  if (exists(root, MESSAGING_SOURCE_LOCK)) {
+    try {
+      const source = loadSourceApproval(root);
+      if (exists(root, MESSAGING_SOURCE_DIR)) verifyManagedAssets(path.join(root, MESSAGING_SOURCE_DIR), source.files);
+    } catch {
+      assets.push({
+        rule: "SEC-011",
+        file: MESSAGING_SOURCE_LOCK,
+        message: "CoolReserve 원작 산출물과 MIT 저작자 고지를 확인하세요(ADR-0023).",
+      });
+    }
+  }
+  for (const id of PDF_MODULES) {
+    if (!exists(root, `modules/${id}/package.json`)) continue;
+    try {
+      collectPdfResources(root, id);
+    } catch {
+      assets.push({
+        rule: "SEC-011",
+        file: PDF_ASSET_ALLOWLIST,
+        message: `${id}: PDF 자산·버전·원문 고지를 확인하세요. 승인된 네 글꼴의 해시와 일치해야 해요(ADR-0018).`,
+      });
+    }
+  }
   // pnpm is a shim (.cmd/.ps1) on Windows, so run through the shell. The command is a constant
   // string with no user input (passing an args array with `shell: true` is deprecated, DEP0190).
   const res = spawnSync("pnpm licenses list --json", {
@@ -89,7 +141,9 @@ export function checkLicenses(root: string): Violation[] {
     maxBuffer: 64 * 1024 * 1024,
   });
   if (res.status !== 0) {
-    return [{ rule: "SEC-011", message: `pnpm licenses list 실행에 실패했어요: ${res.stderr.trim().split("\n")[0] ?? ""}` }];
+    return [
+      { rule: "SEC-011", message: `pnpm licenses list 실행에 실패했어요: ${res.stderr.trim().split("\n")[0] ?? ""}` },
+    ];
   }
-  return [...checkLicenseList(parsePnpmLicenses(res.stdout), allow), ...checkDenyTomlSync(root, allow)];
+  return [...checkLicenseList(parsePnpmLicenses(res.stdout), allow), ...checkDenyTomlSync(root, allow), ...assets];
 }

@@ -13,7 +13,8 @@ import { loadFavorites, saveFavorites, takeFreshModules, withFavoriteToggled } f
 import type { Category } from "./generated/Category.ts";
 import type { ModuleEntry } from "./generated/ModuleEntry.ts";
 import type { ShellInfo } from "./generated/ShellInfo.ts";
-import { host, windowControls } from "./host.ts";
+import { host, schoolDataHost, messagingConfirmationHost, windowControls } from "./host.ts";
+import { MessagingConfirmation } from "./messaging-confirmation/MessagingConfirmation.tsx";
 import { CATEGORY_LABELS } from "./labels.ts";
 import { LaunchScreen } from "./LaunchScreen.tsx";
 import { loadMotionPreference, playMotion, saveMotionPreference, useOsReducedMotion } from "./motion.ts";
@@ -22,6 +23,8 @@ import { Gallery } from "./pages/Gallery.tsx";
 import { Home } from "./pages/Home.tsx";
 import { ModuleHost } from "./pages/ModuleHost.tsx";
 import { Settings } from "./pages/Settings.tsx";
+import { SchoolData } from "./pages/SchoolData.tsx";
+import { SchoolDataAccess } from "./pages/SchoolDataAccess.tsx";
 import { type ThemePreference, loadPreference, micaFor, savePreference, useColorMode } from "./theme.ts";
 import { TitleBar } from "./TitleBar.tsx";
 
@@ -30,6 +33,7 @@ type Page =
   | { kind: "category"; category: Category }
   | { kind: "module"; id: string }
   | { kind: "settings" }
+  | { kind: "schoolData" }
   | { kind: "about" }
   | { kind: "gallery" };
 
@@ -40,6 +44,8 @@ function railKey(page: Page): string | null {
       return null;
     case "category":
       return `category:${page.category}`;
+    case "schoolData":
+      return "settings";
     default:
       return page.kind;
   }
@@ -377,6 +383,8 @@ export function App() {
 
   const activeModule = page.kind === "module" ? page.id : null;
   const currentRail = railKey(page);
+  // Each page remounts (and plays its entrance) on its own key, even when two share a rail item.
+  const pageKey = page.kind === "category" ? `category:${page.category}` : page.kind;
   const usedCategories = CATEGORY_ORDER.filter((c) => modules.some((m) => m.manifest?.category === c));
   const shellReady = info !== null && launch !== "loading";
 
@@ -531,7 +539,7 @@ export function App() {
                 />
               </div>
               {currentRail !== null && (
-                <div key={currentRail} className={motion ? s.pageEnter : undefined}>
+                <div key={pageKey} className={motion ? s.pageEnter : undefined}>
                   {page.kind === "home" && <Home {...homeProps} />}
                   {page.kind === "category" && <Home {...homeProps} category={page.category} />}
                   {page.kind === "settings" && (
@@ -544,8 +552,10 @@ export function App() {
                       checkUpdate={host.checkUpdate}
                       installUpdate={host.installUpdate}
                       restart={host.restartApp}
+                      onSchoolData={() => navigate({ kind: "schoolData" })}
                     />
                   )}
+                  {page.kind === "schoolData" && <SchoolData host={schoolDataHost} />}
                   {page.kind === "about" && <About appVersion={info.appVersion} modules={modules} />}
                   {page.kind === "gallery" && info.dev && <Gallery />}
                 </div>
@@ -556,6 +566,8 @@ export function App() {
         </div>
       </div>
       {info.secProbe && <SecProbe origin={info.moduleOrigin} modules={modules} />}
+      <SchoolDataAccess host={schoolDataHost} />
+      <MessagingConfirmation host={messagingConfirmationHost} />
     </DeckProvider>
   );
 }

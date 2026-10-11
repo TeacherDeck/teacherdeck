@@ -38,6 +38,56 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn native_worker_preflight_rejects_foreign_expired_and_unloaded_batches() {
+    let fixture = Fixture::new();
+    let mut store = FileTransfers::default();
+    let (batch, output) = store
+        .create_output("sample-tool", 0, fixture.path(), "results")
+        .unwrap();
+    assert!(
+        store
+            .validate_output_batch("sample-tool", 0, &batch)
+            .is_ok()
+    );
+    assert_eq!(
+        store
+            .validate_output_batch("other-tool", 0, &batch)
+            .unwrap_err()
+            .code,
+        ErrorCode::PermissionDenied
+    );
+    assert_eq!(fs::read_dir(&output).unwrap().count(), 0);
+    assert!(store.writes.is_empty());
+    store.batches.get_mut(&batch).unwrap().touched =
+        Instant::now() - IDLE_LIMIT - Duration::from_secs(1);
+    assert_eq!(
+        store
+            .validate_output_batch("sample-tool", 0, &batch)
+            .unwrap_err()
+            .code,
+        ErrorCode::NotFound
+    );
+    let (next, _) = store
+        .create_output("sample-tool", 0, fixture.path(), "next")
+        .unwrap();
+    store.unload("sample-tool");
+    assert_eq!(
+        store
+            .validate_output_batch("sample-tool", 0, &next)
+            .unwrap_err()
+            .code,
+        ErrorCode::PermissionDenied
+    );
+    assert_eq!(
+        store
+            .validate_output_batch("sample-tool", 1, &next)
+            .unwrap_err()
+            .code,
+        ErrorCode::NotFound
+    );
+}
+
+#[test]
 fn read_tokens_are_owner_bound_and_unload_invalidates_generation() {
     let fixture = Fixture::new();
     let mut store = FileTransfers::default();

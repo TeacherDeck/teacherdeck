@@ -4,9 +4,10 @@
 // No inline scripts: the module CSP allows script-src 'self' only (catalog.md §3).
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { pdfAssets } from "./pdf-assets.plugin.ts";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), pdfAssets(import.meta.url)],
   base: "./",
   build: { outDir: "dist", emptyOutDir: true, target: "es2022", assetsInlineLimit: 0, chunkSizeWarningLimit: 1500 },
 });

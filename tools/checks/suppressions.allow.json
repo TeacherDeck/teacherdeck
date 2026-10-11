@@ -1,4 +1,25 @@
 {
   "$comment": "GEN-003 억제 allowlist. 보호 파일이에요. 항목 추가는 사람 승인이 필요해요. 형식: { file, pattern, reason }",
-  "entries": []
+  "entries": [
+    {
+      "file": "apps/desktop/src-tauri/src/file_ops/native.rs",
+      "pattern": "#![allow(unsafe_code)]",
+      "reason": "ADR-0022: 2026-10-11 사용자 승인. 열린 파일 ID·덮어쓰기 없는 핸들 이름 변경의 격리된 Windows FFI."
+    },
+    {
+      "file": "apps/desktop/src-tauri/src/native_automation.rs",
+      "pattern": "#![allow(unsafe_code)]",
+      "reason": "ADR-0022: 2026-10-11 사용자 승인. 새 Office 인스턴스의 COM 객체·VARIANT 수명 관리만 담당하는 FFI."
+    },
+    {
+      "file": "apps/desktop/src-tauri/src/network_native.rs",
+      "pattern": "#![allow(unsafe_code)]",
+      "reason": "ADR-0022: 2026-10-11 사용자 승인. 고정 WLAN·WMI·TaskScheduler 인터페이스 경계만 허용."
+    },
+    {
+      "file": "apps/desktop/src-tauri/src/native_workers.rs",
+      "pattern": "#![allow(unsafe_code)]",
+      "reason": "ADR-0022: 2026-10-11 사용자 승인. 고정 자기 실행파일 UAC 및 자기 작업 프로세스 소유권·시간 제한."
+    }
+  ]
 }
