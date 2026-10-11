@@ -5,9 +5,10 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { pdfAssets } from "./pdf-assets.plugin.ts";
+import { ocrAssets } from "./ocr-assets.plugin.ts";
 
 export default defineConfig({
-  plugins: [react(), pdfAssets(import.meta.url)],
+  plugins: [react(), pdfAssets(import.meta.url), ocrAssets(import.meta.url)],
   base: "./",
   build: { outDir: "dist", emptyOutDir: true, target: "es2022", assetsInlineLimit: 0, chunkSizeWarningLimit: 1500 },
 });

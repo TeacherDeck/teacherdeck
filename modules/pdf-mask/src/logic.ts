@@ -16,6 +16,9 @@ export interface PageInfo {
   height: number;
   boxes: TextBox[];
   number: number;
+  sourceBoxes?: TextBox[];
+  ocr?: "read" | "empty";
+  ocrConfidence?: number;
 }
 export const TYPES = ["전화번호", "주민번호", "계좌번호", "생년월일", "주소", "학번", "이름", "검색어"] as const;
 export type Kind = (typeof TYPES)[number];
@@ -33,6 +36,19 @@ export const MAX_PAGES = 100;
 export const MAX_PIXELS = 24_000_000;
 export const MAX_OUTPUT = 128 * 1024 * 1024;
 export const MAX_CANDIDATES = 4000;
+/** Re-scanning must preserve manual regions and unchanged opt-outs without exceeding limits. */
+export function mergeCandidates(found: Candidate[], previous: Candidate[]): Candidate[] {
+  const key = (candidate: Candidate) => JSON.stringify([candidate.page, candidate.kind, candidate.rect]);
+  const choices = new Map(
+    previous.filter((candidate) => !candidate.manual).map((candidate) => [key(candidate), candidate.selected]),
+  );
+  const manual = previous.filter((candidate) => candidate.manual);
+  if (found.length + manual.length > MAX_CANDIDATES) throw new Error("TOO_MANY_CANDIDATES");
+  return [
+    ...found.map((candidate) => ({ ...candidate, selected: choices.get(key(candidate)) ?? candidate.selected })),
+    ...manual,
+  ];
+}
 export function boundRect(rect: Rect, width: number, height: number): Rect {
   if (![rect.x, rect.y, rect.width, rect.height, width, height].every(Number.isFinite) || width <= 0 || height <= 0)
     throw new Error("INVALID_RECT");
