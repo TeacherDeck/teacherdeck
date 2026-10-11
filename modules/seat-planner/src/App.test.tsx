@@ -218,7 +218,9 @@ describe("complete seat planning screen", () => {
     expect(seats.every((button) => !button.hasAttribute("role") && !isInaccessible(button))).toBe(true);
     f.view.unmount();
     f.deck.dispose();
-  }, 5000);
+    // Rendering 1,000 seats takes about 2s alone but 5-6s on the 4-vCPU CI runner while other DOM
+    // suites run in parallel, so 5s made main CI pass or fail by chance. Assertions are unchanged.
+  }, 15000);
   it("opens and searches independent condition controls in a 1000-student class", async () => {
     const f = await setup(largeClassroom());
     const conditions = screen.getByLabelText("학생별 고정·제외·앞줄 조건");
