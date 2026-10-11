@@ -396,6 +396,17 @@ pub(crate) struct Gate {
     _cleanup: RegistrationCleanup,
 }
 impl Gate {
+    /// Read-only registration and image-load policy diagnostics for this exact owned job.
+    /// Only booleans and bit fields leave this boundary; paths and identities stay private.
+    pub(crate) fn registration_diagnostics(&self) -> Result<(bool, u32, u32), DeckError> {
+        let process = owned_hancom(
+            &format!("Local\\TeacherDeck-Office-{}", self.endpoint.token),
+            self.hancom_pid,
+        )?;
+        let intact = registered_dll_matches(&self.module_name, &self._dll)?;
+        let (signature, image) = image_load_policy(handle(&process))?;
+        Ok((intact, signature, image))
+    }
     /// Read-only machine identifiers for the exact job-owned process, never its path.
     pub(crate) fn process_machines(&self) -> Result<(u16, u16), DeckError> {
         #[link(name = "kernel32")]
@@ -418,6 +429,43 @@ impl Gate {
         }
         Ok((machine, native))
     }
+}
+fn registered_dll_matches(name: &str, dll: &File) -> Result<bool, DeckError> {
+    let expected = final_path(dll)?;
+    Ok(existing_key()?
+        .map(|key| read_value(&key, name))
+        .transpose()?
+        .flatten()
+        .is_some_and(|value| value.eq_ignore_ascii_case(&expected)))
+}
+fn image_load_policy(process: HANDLE) -> Result<(u32, u32), DeckError> {
+    use windows::Win32::System::Threading::{
+        GetProcessMitigationPolicy, ProcessImageLoadPolicy, ProcessSignaturePolicy,
+    };
+    let mut signature = 0u32;
+    let mut image = 0u32;
+    // SAFETY: caller keeps the process handle alive. Both policies have a DWORD flags
+    // layout; these read-only queries cannot set or relax process/OS policy.
+    unsafe {
+        GetProcessMitigationPolicy(
+            process,
+            ProcessSignaturePolicy,
+            (&mut signature as *mut u32).cast(),
+            4,
+        )
+    }
+    .map_err(|_| unavailable_stage("process-load-policy"))?;
+    // SAFETY: same live handle, separate writable DWORD, read-only image policy query.
+    unsafe {
+        GetProcessMitigationPolicy(
+            process,
+            ProcessImageLoadPolicy,
+            (&mut image as *mut u32).cast(),
+            4,
+        )
+    }
+    .map_err(|_| unavailable_stage("process-load-policy"))?;
+    Ok((signature, image))
 }
 /// Registration must precede COM activation: Hancom can cache module names on startup.
 /// No pipe exists until binding, so loading this DLL early grants no file access.
@@ -919,6 +967,7 @@ mod tests {
         let _test_value = TestValue(name.clone());
         let prepared = PreparedRegistration::new(&job, None, &output).unwrap();
         assert!(read_value(&key, &name).unwrap().is_some());
+        assert!(registered_dll_matches(&name, &prepared.dll).unwrap());
         assert_eq!(
             request(&endpoint, &encode_path(output.to_str().unwrap()).unwrap()),
             None,
@@ -955,12 +1004,21 @@ mod tests {
         std::fs::create_dir(&nested).unwrap();
         let prepared =
             PreparedRegistration::new(&job, None, &nested.join("converted.hwpx")).unwrap();
+        assert!(registered_dll_matches(&name, &prepared.dll).unwrap());
         set_sentinel();
+        assert!(!registered_dll_matches(&name, &prepared.dll).unwrap());
         drop(prepared);
         assert_eq!(
             read_value(&key, &name).unwrap().as_deref(),
             Some(sentinel),
             "cleanup must preserve a changed registration value"
         );
+    }
+    #[test]
+    fn image_policy_diagnostics_are_read_only_and_reject_invalid_handles() {
+        use windows::Win32::System::Threading::GetCurrentProcess;
+        // SAFETY: pseudo-handle reads this synthetic test process only and is not closed.
+        assert!(image_load_policy(unsafe { GetCurrentProcess() }).is_ok());
+        assert!(image_load_policy(HANDLE::default()).is_err());
     }
 }

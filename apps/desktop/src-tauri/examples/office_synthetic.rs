@@ -343,6 +343,16 @@ fn fixture_worker(kind: OfficeProvider, id: &str) -> Result<(), DeckError> {
                             serde_json::json!({"processMachine": machine, "nativeMachine": native}),
                         );
                     }
+                    if let Ok((intact, signature, image)) = gate.registration_diagnostics()
+                        && let Some(details) = error
+                            .details
+                            .as_mut()
+                            .and_then(|value| value.as_object_mut())
+                    {
+                        details.insert("registrationIntact".into(), intact.into());
+                        details.insert("signaturePolicy".into(), signature.into());
+                        details.insert("imageLoadPolicy".into(), image.into());
+                    }
                     return Err(error);
                 }
                 _hancom_gate = Some(gate);
@@ -630,6 +640,16 @@ fn run(selected: Option<&str>) -> Result<(), DeckError> {
         let machines = result.as_ref().err().and_then(|e| e.details.as_ref()).map(|details| {
             serde_json::json!({"processMachine": details.get("processMachine"), "nativeMachine": details.get("nativeMachine")})
         });
+        let load_diagnostics =
+            result
+                .as_ref()
+                .err()
+                .and_then(|e| e.details.as_ref())
+                .map(|details| {
+                    serde_json::json!({"registrationIntact": details.get("registrationIntact"),
+                "signaturePolicy": details.get("signaturePolicy"),
+                "imageLoadPolicy": details.get("imageLoadPolicy")})
+                });
         let fixture_stage = if stage == "fixture" {
             std::fs::File::open(directory.join("fixture-stages.log"))
                 .ok()
@@ -644,7 +664,7 @@ fn run(selected: Option<&str>) -> Result<(), DeckError> {
         } else {
             None
         };
-        report.push(serde_json::json!({ "provider": name, "success": result.is_ok(), "stage": stage, "fixtureStage": fixture_stage, "detail":detail, "automationHresult": hresult, "machines":machines, "errorCode": result.err().map(|e| e.code) }));
+        report.push(serde_json::json!({ "provider": name, "success": result.is_ok(), "stage": stage, "fixtureStage": fixture_stage, "detail":detail, "automationHresult": hresult, "machines":machines, "loadDiagnostics":load_diagnostics, "errorCode": result.err().map(|e| e.code) }));
     }
     let report = serde_json::to_vec_pretty(&report).map_err(|_| failure())?;
     std::fs::OpenOptions::new()

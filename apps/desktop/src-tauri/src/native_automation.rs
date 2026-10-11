@@ -832,7 +832,8 @@ pub(crate) fn convert_with_progress(
                         Ok(true) => "loaded-registration-rejected",
                         Ok(false) => "module-not-loaded",
                         Err(_) => "module-load-unknown",
-                    }, "processMachines": gate.process_machines().ok()}),
+                    }, "processMachines": gate.process_machines().ok(),
+                    "registrationLoadDiagnostics": gate.registration_diagnostics().ok()}),
                 );
                 return Err(error);
             }

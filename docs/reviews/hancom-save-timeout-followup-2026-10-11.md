@@ -72,3 +72,16 @@ TIMEOUT 시 fixture와 생산 작업자는 자기 child를 종료하고, `KILL_O
 모듈 0.2.0은 등록 실패를 설치 오류와 구분해 **한글에서 직접 변환**을 안내하고 저장을 시작하지 않는다. 정상 경로는 숨긴 소유 COM 작업이며 승인창 클릭에 의존하지 않는다. 120초 제한도 자기 작업 창을 정리한 후 직접 변환 안내를 표시한다. 사용자 원본·기존 Office·보안창은 조작하지 않았다.
 
 이번 개선으로 기존 승인창에서 120초 기다리는 경로는 등록 실패에서 조기에 안전하게 종료된다. **HWP→HWPX 자동 변환의 실제 성공과 본문·서식 보존은 해결 완료가 아니며 남은 한컴 호환성 제한이다.** 같은 실패 실행을 반복하거나 미검증 산출물을 성공으로 보고하지 않는다.
+
+## 2026-10-11 재시도: 설치 로더 경로와 정적 CRT 후보
+
+사용자의 재시도 지시에 따라 COM·제한된 독립 DLL 경로만 검증했다. 컴퓨터 유즈, 승인창 대리 클릭, 기존 사용자 문서·프로세스 조작, 전역 보안 설정 변경은 수행하지 않았다.
+
+- 설치된 `HwpAutomation.dll` 13.0.0.3189와 `HncFoundation.dll`의 읽기 전용 PE/import/disassembly 진단에서, `HKCU\Software\HNC\HwpAutomation\Modules`의 문자열 값을 읽고 `LoadLibraryW`와 정확한 `IsAccessiblePath` export를 확인하는 순서를 확인했다. 레지스트리 읽기는 KEY_READ이며 추가 WOW64 강제 플래그가 없다. 등록 이름·추가 export를 임의로 바꿀 근거는 발견하지 못했다. 고정 바이너리 진단 자료는 `target/hancom-retry/automation-disasm.txt`, `foundation-disasm.txt`, `automation-strings.json`, `import-map.py`에 있다.
+- 외부 CRT DLL 해결 차이를 확인하기 위해 [Rust 공식 정적 CRT 옵션](https://doc.rust-lang.org/stable/reference/linkage.html#static-and-dynamic-c-runtimes) `-C target-feature=+crt-static`으로 동일 callback을 진단 전용 빌드했다. `target/hancom-retry/static-crt-build.log`, `static-crt-imports.txt`에 빌드·import 자료를 보존했다. 해당 후보의 합성 COM 검증도 등록 FALSE로 실패했다(`static-crt-native.log`, fixture `cd6e3951b60fbe1b3fe49ed26a18e764`). 따라서 정적 CRT를 변환 해결로 채택하거나 생산 빌드·동봉 리소스를 변경하지 않았다.
+- 추가 고정 진단은 정확히 소유한 Hwp 작업의 등록값과 잠긴 DLL의 canonical 경로 일치 여부, `GetProcessMitigationPolicy`의 서명·이미지 로드 DWORD만 읽는다. 경로·사용자 계정·본문은 오류나 로그에 담지 않으며 정책을 설정하는 API를 쓰지 않는다. 실제 결과는 `registrationIntact=true`, `signaturePolicy=0`, `imageLoadPolicy=0`, Hwp x86 `332`, OS `34404`이다. 자료는 `target/hancom-retry/registration-policy-native.log`와 `target/next-tools/office-qa/82368caaaf151ebeb39126ff7895b13b/report.json`, `fixture-stages.log`에 있다.
+- 마지막 단계는 `gate-begin`, 실패는 `synthetic-gate-not-loaded`다. 새 HWP 생성 전이므로 HWP→HWPX 저장·재열기·본문/서식 보존은 여전히 입증되지 않았다. 이 실행은 이전 SaveAs 120초 대기의 반복이 아니다. 직후 module snapshot은 DLL이 남지 않았다는 관측이며, 일시 로드·해제나 한글 내부 거부 단계를 확정하지 않는다. 정책 DWORD가 0이라고 Defender/조직 정책 등 다른 차단까지 배제하지 않는다.
+- 고유 등록값이 일치할 때만 참이며 바뀌면 거짓인 회귀, 자기 테스트 프로세스의 정책 읽기와 잘못된 핸들 거부 회귀를 보강했다. 직접 Rust 합성 경계 검사 8개가 3.30초에 통과했다(`target/hancom-retry/diagnostic-gate-tests.log`). 단독 경계 컴파일의 unused 경고는 생산 호출자를 포함하지 않는 검사 구성 때문이며, 제품 Cargo/clippy 전체 검사는 주 작업자가 수행한다.
+- 마지막 읽기 확인 `target/hancom-retry/cleanup.json`은 소유 proof 프로세스 0, Hwp 0, 32·64비트 뷰의 TeacherDeck 고유 등록값 0을 확인했다. 원래 있던 `FilePathCheckerModule`은 유지했고 Uses 키를 추가하지 않았다. 합성 HWP/HWPX 결과 파일은 없다.
+
+[한컴의 동일 증상 답변](https://forum.developer.hancom.com/t/ai/3242)은 별도 내부 오류 로그나 알려진 수정 버전을 제공하지 않으며, 정확한 로드 실패를 추가 진단할 것을 안내한다. 이번 증거에서 등록값 조기 정리와 기본 process mitigation 가설은 지지되지 않지만 내부 실패 원인은 아직 미확정이다. 전역 보안 완화나 무조건 허용 샘플로 해결을 주장하지 않는다.
