@@ -60,6 +60,7 @@ export function App({ deck }: { deck: Deck }) {
   currentOverlay.current = overlay;
   const [message, setMessage] = useState("");
   const [problem, setProblem] = useState("");
+  const [settingsProblem, setSettingsProblem] = useState("");
   const [shortcutProblem, setShortcutProblem] = useState("");
   const [activeShortcut, setActiveShortcut] = useState<ShortcutInfo | null>(null);
   const [recording, setRecording] = useState(false);
@@ -293,6 +294,10 @@ export function App({ deck }: { deck: Deck }) {
     setOverlay(started.overlay);
     setSession(started.session);
     setProblem("");
+    setSettingsProblem("");
+    setShortcutProblem("");
+    blocked.current = "";
+    blockedShortcut.current = "";
     changed({ rect: started.overlay.rect });
     setMessage(`${shortcutLabel(prefs.shortcut)} 또는 영역 안을 더블클릭하면 자동 저장해요.`);
   }
@@ -316,6 +321,7 @@ export function App({ deck }: { deck: Deck }) {
     setSession(updated.session);
     setOverlay(updated.overlay);
     setActiveShortcut(updated.shortcut);
+    setSettingsProblem("");
   }
   useEffect(() => {
     if (!ready || !session || !overlay || session.busy || busy || pendingDestination || !visible.current) return;
@@ -356,7 +362,7 @@ export function App({ deck }: { deck: Deck }) {
           } else {
             blocked.current = target;
             await refresh().catch(() => undefined);
-            setProblem("설정을 적용하지 못했어요. 입력과 화면 상태를 확인해 주세요.");
+            setSettingsProblem("설정을 적용하지 못했어요. 입력과 화면 상태를 확인해 주세요.");
           }
         })
         .finally(() => {
@@ -441,6 +447,7 @@ export function App({ deck }: { deck: Deck }) {
         </Button>
       </div>
       {problem && <InfoBar severity="error" message={problem} />}
+      {settingsProblem && <InfoBar severity="error" message={settingsProblem} />}
       {shortcutProblem && <InfoBar severity="warning" message={shortcutProblem} />}
       {destination && !destination.available && (
         <InfoBar severity="warning" message="저장 폴더 연결이 끊겼어요. 폴더를 다시 선택해 주세요." />

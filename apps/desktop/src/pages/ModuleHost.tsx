@@ -4,8 +4,10 @@
 // SEC-002: modules load from the module origin with sandbox="allow-scripts allow-same-origin".
 import { Badge, Body1, Caption1, MessageBar, MessageBarBody, makeStyles, tokens } from "@fluentui/react-components";
 import { deckTokens } from "@deck/ui";
-import { useEffect, useRef } from "react";
+import { AppsRegular } from "@fluentui/react-icons";
+import { useEffect, useRef, useState } from "react";
 import { type ModuleBridge, moduleEntryOrigin } from "../bridge/ModuleBridge.ts";
+import { CATEGORY_ICONS } from "../categories.tsx";
 import type { ModuleEntry } from "../generated/ModuleEntry.ts";
 import { STATE_BADGES } from "../labels.ts";
 
@@ -19,7 +21,16 @@ const useStyles = makeStyles({
     gap: tokens.spacingHorizontalS,
     padding: `${tokens.spacingVerticalXS} ${deckTokens.pagePadding}`,
   },
-  icon: { width: tokens.fontSizeBase500, height: tokens.fontSizeBase500, flexShrink: 0 },
+  icon: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: tokens.fontSizeBase500,
+    height: tokens.fontSizeBase500,
+    fontSize: tokens.fontSizeBase500,
+    flexShrink: 0,
+  },
+  iconImage: { width: "100%", height: "100%" },
   name: { minWidth: 0, overflowWrap: "anywhere" },
   frames: { flexGrow: 1, minHeight: 0, position: "relative" },
   frame: {
@@ -40,6 +51,23 @@ export interface ModuleHostProps {
   mounted: string[];
   active: string | null;
   loadErrors: ReadonlySet<string>;
+}
+
+function ModuleIcon({ entry }: { entry: ModuleEntry }) {
+  const s = useStyles();
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const category = entry.manifest?.category;
+  return (
+    <span className={s.icon} aria-hidden>
+      {entry.iconUrl !== null && failedUrl !== entry.iconUrl ? (
+        <img className={s.iconImage} src={entry.iconUrl} alt="" onError={() => setFailedUrl(entry.iconUrl)} />
+      ) : category === undefined ? (
+        <AppsRegular />
+      ) : (
+        CATEGORY_ICONS[category]
+      )}
+    </span>
+  );
 }
 
 function Frame({ bridge, entry, visible }: { bridge: ModuleBridge; entry: ModuleEntry; visible: boolean }) {
@@ -74,7 +102,7 @@ export function ModuleHost({ bridge, modules, mounted, active, loadErrors }: Mod
     <div className={s.wrap}>
       {current !== undefined && (
         <header className={s.header} aria-label="도구 정보">
-          {current.iconUrl !== null && <img className={s.icon} src={current.iconUrl} alt="" />}
+          <ModuleIcon key={current.resolution.id} entry={current} />
           <Body1 className={s.name}>{current.manifest?.name ?? current.resolution.id}</Body1>
           <Caption1>v{current.resolution.picked?.version ?? "?"}</Caption1>
           {STATE_BADGES[current.resolution.state] !== null && (

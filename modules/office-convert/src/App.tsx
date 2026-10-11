@@ -48,7 +48,8 @@ export function App({ deck }: { deck: Deck }) {
     [message, setMessage] = useState("");
   const locked = useRef(false),
     stopped = useRef(false),
-    mounted = useRef(true);
+    mounted = useRef(true),
+    selectedFiles = useRef<FileHandleInfo[]>([]);
   useEffect(() => {
     mounted.current = true;
     void deck.office
@@ -64,11 +65,17 @@ export function App({ deck }: { deck: Deck }) {
   function addFiles(incoming: FileHandleInfo[]) {
     if (locked.current) return;
     const valid = incoming.filter((file) => providerFor(file) !== null);
-    setFiles((previous) => [
-      ...previous,
-      ...valid.filter((file) => !previous.some((existing) => existing.handle === file.handle)),
-    ]);
-    setRows([]);
+    const known = new Set(selectedFiles.current.map((file) => file.handle));
+    const additions = valid.filter((file) => {
+      if (known.has(file.handle)) return false;
+      known.add(file.handle);
+      return true;
+    });
+    if (additions.length) {
+      selectedFiles.current = [...selectedFiles.current, ...additions];
+      setFiles(selectedFiles.current);
+      setRows([]);
+    }
     if (valid.length !== incoming.length) setMessage("한글·Excel·PowerPoint·Word 문서만 선택해 주세요.");
   }
   useEffect(() => deck.on("fs.dropped", ({ files: incoming }) => addFiles(incoming)), [deck]);
@@ -210,6 +217,7 @@ export function App({ deck }: { deck: Deck }) {
           <Button
             disabled={busy || files.length === 0}
             onClick={() => {
+              selectedFiles.current = [];
               setFiles([]);
               setRows([]);
               setFolder(null);

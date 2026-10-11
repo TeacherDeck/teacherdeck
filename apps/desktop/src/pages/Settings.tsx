@@ -9,7 +9,18 @@ import type { UpdateStatus } from "../generated/UpdateStatus.ts";
 import type { ThemePreference } from "../theme.ts";
 
 const useStyles = makeStyles({
-  page: { display: "flex", flexDirection: "column", gap: deckTokens.itemGap, padding: deckTokens.pagePadding },
+  page: {
+    display: "flex",
+    flexDirection: "column",
+    gap: deckTokens.itemGap,
+    padding: deckTokens.pagePadding,
+    containerType: "inline-size",
+    "@container (max-width: 480px)": {
+      "& > div": { flexWrap: "wrap" },
+      "& > div > div:last-child": { flexBasis: "100%", minWidth: 0, maxWidth: "100%" },
+    },
+  },
+  theme: { minWidth: 0, width: "240px", maxWidth: "100%" },
 });
 
 const THEME_LABELS: Record<ThemePreference, string> = { system: "시스템 설정", light: "라이트", dark: "다크" };
@@ -55,40 +66,61 @@ export function Settings({
 }: SettingsProps) {
   const s = useStyles();
   const [status, setStatus] = useState<UpdateStatus | null>(null);
-  const [phase, setPhase] = useState<"idle" | "checking" | "installing" | "installed">("idle");
+  const [phase, setPhase] = useState<"idle" | "checking" | "installing" | "installed" | "restarting">("idle");
   const [error, setError] = useState<string | null>(null);
 
   const check = async () => {
+    setError(null);
     setPhase("checking");
-    setStatus(await checkUpdate());
-    setPhase("idle");
+    try {
+      setStatus(await checkUpdate());
+    } catch {
+      setError("업데이트를 확인하지 못했어요. 잠시 후 다시 확인해 주세요.");
+    } finally {
+      setPhase("idle");
+    }
   };
   const install = async () => {
+    setError(null);
     setPhase("installing");
     try {
       await installUpdate();
       setPhase("installed");
-    } catch (e) {
-      setError(String(e));
+    } catch {
+      setError("업데이트를 설치하지 못했어요. 잠시 후 다시 설치해 주세요.");
       setPhase("idle");
+    }
+  };
+  const restartInstalled = async () => {
+    setError(null);
+    setPhase("restarting");
+    try {
+      await restart();
+    } catch {
+      setError("앱을 다시 시작하지 못했어요. 앱을 닫고 다시 열어 주세요.");
+    } finally {
+      setPhase("installed");
     }
   };
 
   return (
     <div className={s.page}>
       <Subtitle as="h1">설정</Subtitle>
-      {onSchoolData !== undefined && <SettingsCard
-        icon={<BookContactsRegular />}
-        header="우리 반·수업 자료"
-        description="명부와 시간표를 한 번 등록하고 필요한 도구에서 불러와요."
-        action={<Button onClick={onSchoolData}>자료 관리</Button>}
-      />}
+      {onSchoolData !== undefined && (
+        <SettingsCard
+          icon={<BookContactsRegular />}
+          header="우리 반·수업 자료"
+          description="명부와 시간표를 한 번 등록하고 필요한 도구에서 불러와요."
+          action={<Button onClick={onSchoolData}>자료 관리</Button>}
+        />
+      )}
       <SettingsCard
         icon={<DarkThemeRegular />}
         header="테마"
         description="앱과 도구의 색 모드를 골라요."
         action={
           <Dropdown
+            className={s.theme}
             aria-label="테마"
             value={THEME_LABELS[theme]}
             selectedOptions={[theme]}
@@ -117,8 +149,8 @@ export function Settings({
         header="업데이트"
         description={error ?? (phase === "installed" ? "설치했어요. 다시 시작하면 적용돼요." : describe(status))}
         action={
-          phase === "installed" ? (
-            <Button appearance="primary" onClick={() => void restart()}>
+          phase === "installed" || phase === "restarting" ? (
+            <Button appearance="primary" disabled={phase === "restarting"} onClick={() => void restartInstalled()}>
               다시 시작
             </Button>
           ) : status?.status === "available" ? (

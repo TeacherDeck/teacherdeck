@@ -35,6 +35,7 @@ async function open(
     : null;
   let destinationError = options.destinationError;
   let shortcutSucceeds = options.shortcutSucceeds ?? false;
+  let failOverlay = options.failOverlay ?? false;
   let currentShortcut = { shortcutHandle: "shortcut", modifiers: ["alt"] as ("alt" | "control" | "shift")[], key: "G" };
   const save = vi.fn(),
     stop = vi.fn(() => {
@@ -54,6 +55,36 @@ async function open(
           ? null
           : { grantHandle: "new-grant", label: "새 합성 폴더", persistent: true, available: true },
       "capture.status": () => session,
+      "capture.displays": () => [
+        {
+          id: "display",
+          name: "합성 화면",
+          primary: true,
+          bounds: { x: -1000, y: 0, width: 2000, height: 1000 },
+          scaleFactor: 1,
+        },
+      ],
+      "overlay.create": (args) => ({
+        overlayHandle: "overlay",
+        ...(args as { rect: typeof rect; style: typeof prefs.style; alwaysOnTop: boolean }),
+        visible: true,
+      }),
+      "global-shortcut.register": (args) => {
+        currentShortcut = {
+          shortcutHandle: "shortcut",
+          ...(args as { modifiers: typeof currentShortcut.modifiers; key: string }),
+        };
+        return currentShortcut;
+      },
+      "capture.arm": (args) => {
+        session = {
+          ...(args as Omit<CaptureSession, "sessionHandle" | "sequence" | "busy">),
+          sessionHandle: "session",
+          sequence: 0,
+          busy: false,
+        };
+        return session;
+      },
       "overlay.status": () => ({
         overlayHandle: "overlay",
         rect,
@@ -87,7 +118,7 @@ async function open(
         return session;
       },
       "overlay.update": (args) => {
-        if (options.failOverlay) throw { code: "INTERNAL", message: "합성 영역 실패" };
+        if (failOverlay) throw { code: "INTERNAL", message: "합성 영역 실패" };
         return {
           overlayHandle: "overlay",
           rect,
@@ -126,6 +157,9 @@ async function open(
     nativeSession: () => session,
     allowShortcut: () => {
       shortcutSucceeds = true;
+    },
+    recoverOverlay: () => {
+      failOverlay = false;
     },
     endBusy: () => {
       if (session) session = { ...session, busy: false };
@@ -336,6 +370,42 @@ it("does not trigger manual capture when applying the latest settings fails", as
   fireEvent.click(screen.getByRole("button", { name: "지금 캡처" }));
   await screen.findByText(/작업하지 못했어요/);
   expect(host.requests.some((r) => r.cap === "capture" && r.method === "trigger")).toBe(false);
+  view.unmount();
+  deck.dispose();
+});
+it("clears a recovered automatic settings error while retaining an unrelated capture failure", async () => {
+  const { deck, host, view, recoverOverlay } = await open(true, false, { failOverlay: true });
+  fireEvent.click(screen.getByRole("button", { name: "저장·영역 설정" }));
+  fireEvent.input(screen.getByLabelText("테두리 색"), {
+    target: { value: createDeckTheme("dark").colorPaletteRedBorderActive },
+  });
+  await screen.findByText(/설정을 적용하지 못했어요/);
+  host.emit("capture.failed", { sessionHandle: "session", error: { code: "INTERNAL", message: "합성 실패" } });
+  await screen.findByText(/캡처를 저장하지 못했어요/);
+  recoverOverlay();
+  fireEvent.input(screen.getByLabelText("테두리 색"), {
+    target: { value: createDeckTheme("dark").colorPaletteGreenBorderActive },
+  });
+  await waitFor(() => expect(screen.queryByText(/설정을 적용하지 못했어요/)).toBeNull());
+  expect(screen.getByText(/캡처를 저장하지 못했어요/)).toBeTruthy();
+  view.unmount();
+  deck.dispose();
+});
+
+it("clears a failed automatic settings warning when a fresh session starts with those preferences", async () => {
+  const { deck, host, view } = await open(true, false, { failOverlay: true });
+  fireEvent.click(screen.getByRole("button", { name: "저장·영역 설정" }));
+  const color = createDeckTheme("dark").colorPaletteRedBorderActive;
+  fireEvent.input(screen.getByLabelText("테두리 색"), { target: { value: color } });
+  await screen.findByText(/설정을 적용하지 못했어요/);
+  fireEvent.click(screen.getByRole("button", { name: "캡처 종료" }));
+  await screen.findByRole("button", { name: "영역 띄우고 시작" });
+  fireEvent.click(screen.getByRole("button", { name: "영역 띄우고 시작" }));
+  await screen.findByRole("button", { name: "지금 캡처" });
+  await waitFor(() => expect(screen.queryByText(/설정을 적용하지 못했어요/)).toBeNull());
+  expect(host.requests.find((r) => r.cap === "overlay" && r.method === "create")?.args).toMatchObject({
+    style: { borderColor: color },
+  });
   view.unmount();
   deck.dispose();
 });

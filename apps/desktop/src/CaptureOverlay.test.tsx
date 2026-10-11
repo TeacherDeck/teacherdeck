@@ -49,11 +49,39 @@ describe("capture overlay shell", () => {
     const { controls } = setup();
     render(<CaptureOverlay controls={controls} />);
     const region = await screen.findByRole("button", { name: /캡처 영역/ });
-    fireEvent.doubleClick(region);
-    fireEvent.keyDown(region, { key: "Enter" });
+    await act(async () => fireEvent.doubleClick(region));
+    await act(async () => fireEvent.keyDown(region, { key: "Enter" }));
     expect(controls.action).toHaveBeenNthCalledWith(1, "capture");
     expect(controls.action).toHaveBeenNthCalledWith(2, "capture");
     expect(controls.drag).not.toHaveBeenCalled();
+  });
+  it("guards pending capture before busy arrives and releases the guard after completion or failure", async () => {
+    const { controls } = setup(true);
+    let finish: () => void = () => undefined;
+    let fail: () => void = () => undefined;
+    vi.mocked(controls.action).mockImplementation((action) =>
+      action === "capture"
+        ? new Promise<undefined>((resolve, reject) => {
+            finish = () => resolve(undefined);
+            fail = () => reject(new Error("synthetic capture failure"));
+          })
+        : Promise.resolve(undefined),
+    );
+    render(<CaptureOverlay controls={controls} />);
+    const region = await screen.findByRole("button", { name: /캡처 영역/ });
+    fireEvent.doubleClick(region);
+    fireEvent.keyDown(region, { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: "지금 캡처" }));
+    expect(controls.action).toHaveBeenCalledExactlyOnceWith("capture");
+    fireEvent.click(screen.getByRole("button", { name: "설정 열기" }));
+    expect(controls.action).toHaveBeenCalledWith("show-settings");
+    await act(async () => finish());
+    fireEvent.keyDown(region, { key: "Enter" });
+    expect(vi.mocked(controls.action).mock.calls.filter(([action]) => action === "capture")).toHaveLength(2);
+    await act(async () => fail());
+    fireEvent.doubleClick(region);
+    expect(vi.mocked(controls.action).mock.calls.filter(([action]) => action === "capture")).toHaveLength(3);
+    await act(async () => finish());
   });
   it("single window keeps five toolbar actions and the capture region and disables capture while the host is busy", async () => {
     const { controls, emit } = setup(true);
@@ -69,6 +97,28 @@ describe("capture overlay shell", () => {
     emit({ ...state, toolbar: true, session: { ...state.session, busy: true } });
     expect((capture as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/캡처 중/)).toBeTruthy();
+  });
+  it("ignores region capture gestures while busy or unarmed, then resumes when ready", async () => {
+    const { controls, emit } = setup();
+    render(<CaptureOverlay controls={controls} />);
+    const region = await screen.findByRole("button", { name: /캡처 영역/ });
+    if (!state.session) throw new Error("Missing synthetic session");
+    emit({ ...state, session: { ...state.session, busy: true } });
+    expect(region.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.doubleClick(region);
+    fireEvent.keyDown(region, { key: "Enter" });
+    fireEvent.keyDown(region, { key: " " });
+    expect(controls.action).not.toHaveBeenCalled();
+    emit({ toolbar: state.toolbar, overlay: state.overlay });
+    fireEvent.doubleClick(region);
+    fireEvent.keyDown(region, { key: "Enter" });
+    expect(controls.action).not.toHaveBeenCalled();
+    emit(state);
+    expect(region.getAttribute("aria-disabled")).toBe("false");
+    fireEvent.keyDown(region, { key: "Enter", repeat: true });
+    expect(controls.action).not.toHaveBeenCalled();
+    fireEvent.keyDown(region, { key: "Enter" });
+    expect(controls.action).toHaveBeenCalledExactlyOnceWith("capture");
   });
   it("rounds the toolbar inset to the same physical pixel as the host at custom DPI", async () => {
     const previous = window.devicePixelRatio;

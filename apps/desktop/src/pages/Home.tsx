@@ -171,7 +171,20 @@ function CategoryHome({
   const s = useStyles();
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
+  const pendingFavoriteFocus = useRef<{ id: string; preventScroll: boolean } | null>(null);
   const [clock] = useState(() => now ?? new Date());
+
+  // Removing a compact favorite unmounts its focused star. Continue on the same tool in the full list.
+  useEffect(() => {
+    const pending = pendingFavoriteFocus.current;
+    if (pending === null || favorites.includes(pending.id)) return;
+    pendingFavoriteFocus.current = null;
+    const star = Array.from(
+      pageRef.current?.querySelectorAll<HTMLButtonElement>("button[data-favorite-id]") ?? [],
+    ).find((button) => button.dataset["favoriteId"] === pending.id);
+    (star ?? searchRef.current)?.focus({ preventScroll: pending.preventScroll });
+  }, [favorites]);
 
   // Ctrl+F jumps to the search box instead of the WebView find bar.
   useEffect(() => {
@@ -215,7 +228,14 @@ function CategoryHome({
       compact={compact}
       onOpen={onOpen}
       onNeedsUpdate={onNeedsUpdate}
-      {...(onToggleFavorite === undefined ? {} : { onToggleFavorite })}
+      {...(onToggleFavorite === undefined
+        ? {}
+        : {
+            onToggleFavorite: (id: string, keyboard: boolean) => {
+              if (compact && favorites.includes(id)) pendingFavoriteFocus.current = { id, preventScroll: !keyboard };
+              onToggleFavorite(id);
+            },
+          })}
     />
   );
 
@@ -234,7 +254,7 @@ function CategoryHome({
     : [];
 
   return (
-    <div className={s.page}>
+    <div ref={pageRef} className={s.page}>
       <header className={s.header}>
         {category === undefined ? (
           <div className={s.heading}>
@@ -294,7 +314,7 @@ interface ModuleCardProps {
   compact: boolean;
   onOpen(id: string): void;
   onNeedsUpdate(): void;
-  onToggleFavorite?(id: string): void;
+  onToggleFavorite?(id: string, keyboard: boolean): void;
 }
 
 function ModuleCard({
@@ -366,10 +386,11 @@ function ModuleCard({
           appearance="subtle"
           size="small"
           aria-pressed={favorite}
+          data-favorite-id={compact ? undefined : id}
           icon={favorite ? <StarFilled className={s.starOn} /> : <StarRegular className={s.starOff} />}
           aria-label={`${name} 즐겨찾기`}
           title={favorite ? "즐겨찾기에서 빼기" : "즐겨찾기에 추가"}
-          onClick={() => onToggleFavorite(id)}
+          onClick={(event) => onToggleFavorite(id, event.detail === 0)}
         />
       )}
     </div>

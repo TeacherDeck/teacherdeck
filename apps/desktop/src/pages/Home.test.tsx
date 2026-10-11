@@ -173,6 +173,37 @@ describe("Home dashboard", () => {
     ]);
   });
 
+  it("continues focus after removing a compact favorite and preserves pointer scrolling", () => {
+    const props = { ...base, onToggleFavorite: vi.fn() };
+    const page = (favorites: string[]) => (
+      <DeckProvider>
+        <Home {...props} favorites={favorites} />
+      </DeckProvider>
+    );
+    const { rerender } = render(page(["sample-capture"]));
+    const fullStar = within(screen.getByRole("region", { name: "이미지" })).getByRole("button", {
+      name: "합성 캡처 즐겨찾기",
+    });
+    const focus = vi.spyOn(fullStar, "focus");
+    const favorite = within(screen.getByRole("region", { name: "즐겨찾기" })).getByRole("button", {
+      name: "합성 캡처 즐겨찾기",
+    });
+    favorite.focus();
+    fireEvent.click(favorite);
+    expect(props.onToggleFavorite).toHaveBeenCalledExactlyOnceWith("sample-capture");
+    rerender(page([]));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "합성 캡처 즐겨찾기" }));
+    expect(document.activeElement?.getAttribute("aria-pressed")).toBe("false");
+    expect(focus).toHaveBeenLastCalledWith({ preventScroll: false });
+    rerender(page(["sample-capture"]));
+    const pointerStar = within(screen.getByRole("region", { name: "즐겨찾기" })).getByRole("button", {
+      name: "합성 캡처 즐겨찾기",
+    });
+    fireEvent.click(pointerStar, { detail: 1 });
+    rerender(page([]));
+    expect(focus).toHaveBeenLastCalledWith({ preventScroll: true });
+  });
+
   it("badges tools added since the last launch", () => {
     render(
       <DeckProvider>
