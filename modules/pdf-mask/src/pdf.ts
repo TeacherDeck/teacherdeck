@@ -78,6 +78,7 @@ export async function pageInfo(page: PDFPageProxy): Promise<PageInfo> {
     const ys = [y + upY * ascent, y + dy + upY * ascent, y + upY * descent, y + dy + upY * descent];
     boxes.push({
       text: item.str,
+      rotation: (((Math.round(angle / (Math.PI / 2)) * 90) % 360) + 360) % 360,
       x: Math.max(0, Math.min(...xs) - 1),
       y: Math.max(0, Math.min(...ys) - 1),
       width: Math.max(...xs) - Math.min(...xs) + 2,

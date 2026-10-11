@@ -140,6 +140,42 @@ describe("preview before mutation", () => {
     );
     expect(result[0]?.errors.length).toBeGreaterThan(0);
   });
+  it("prefers the exam month over an editing date and preserves the school year", () => {
+    for (const date of ["2026년 3월 1일", "2026.03.01", "2026-03-01", "2026/03/01"]) {
+      expect(metadataFrom(`편집일 ${date}\n2026학년도 9월 고3 모의평가`, "synthetic.pdf", [])).toMatchObject({
+        year: "2026학년도",
+        month: "09",
+      });
+    }
+    expect(metadataFrom("2026년 3월 1일 작성", "synthetic.pdf", []).month).toBe("");
+    expect(metadataFrom("2026.03 안내문", "synthetic.pdf", []).month).toBe("03");
+    expect(metadataFrom("13월 모의평가 / 9월 학력평가", "synthetic.pdf", []).month).toBe("09");
+  });
+  it("labels semester/quarter month guesses and never invents an exam month", () => {
+    expect(metadataFrom("2026학년도 2학기 기말고사", "synthetic.pdf", [])).toMatchObject({
+      month: "12",
+      source: expect.stringContaining("추정"),
+    });
+    expect(metadataFrom("2026년 3분기 보고서", "synthetic.pdf", [])).toMatchObject({
+      month: "09",
+      source: expect.stringContaining("추정"),
+    });
+    expect(metadataFrom("2026학년도 수능특강", "synthetic.pdf", []).month).toBe("");
+  });
+  it("excludes subject noise and prefers detailed bracket subjects with user override", () => {
+    expect(metadataFrom("2026학년도 대학수학능력시험 제3교시", "synthetic.pdf", [])).toMatchObject({
+      subject: "영어",
+      main: "영어",
+    });
+    expect(metadataFrom("2026학년도 대학수학능력시험", "synthetic.pdf", []).main).toBe("");
+    expect(metadataFrom("과학탐구 영역 (물리학 II)", "synthetic.pdf", [])).toMatchObject({
+      subject: "물리학II",
+      main: "과학",
+      sub: "물리학II",
+    });
+    expect(metadataFrom("[지구과학] 탐구보고서", "synthetic.pdf", ["탐구보고서"]).subject).toBe("탐구보고서");
+    expect(metadataFrom("제2교시 회의록", "synthetic.pdf", []).subject).toBe("회의록");
+  });
 });
 
 function required<T>(value: T | undefined): T {

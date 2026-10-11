@@ -332,9 +332,24 @@ export function App({ deck }: { deck: Deck }) {
           ))}
         </div>
         <Body secondary>
-          계좌번호·생년월일·주소·학번·이름은 문서의 항목 이름과 함께 찾아요. 명단·검색어를 추가하면 더 정확하게 찾을 수
-          있어요. 후보와 같은 텍스트 덩어리의 주변 글자도 지워질 수 있어요.
+          계좌번호·생년월일·주소·학번·이름은 항목 이름과 함께 찾아요. 이름은 라벨이 있는 한글·영문 표기를 찾으며, 라벨
+          없는 이름은 명단·검색어로 추가해 주세요. 스캔 이미지의 글자는 자동으로 읽지 못해요. 주소는 가까운 다음 줄도
+          확인하지만 후보가 빠질 수 있어요. 후보와 같은 글자 덩어리의 주변 글자도 지워질 수 있어요.
         </Body>
+        <CheckBox
+          content="명단·검색어도 후보에 포함"
+          checked={enabled.includes("검색어")}
+          disabled={busy}
+          onChange={(value) => {
+            const next = value ? [...enabled, "검색어" as const] : enabled.filter((kind) => kind !== "검색어");
+            setEnabled(next);
+            refresh(terms, next);
+          }}
+        />
+        <Caption>
+          명단·검색어 {terms.length}개 · 찾은 영역{" "}
+          {candidates.filter((candidate) => candidate.kind === "검색어").length}건
+        </Caption>
         <div className={s.actions}>
           <TextBox
             header="제거할 검색어"
