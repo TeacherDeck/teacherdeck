@@ -16,6 +16,14 @@ function listenCurrent<T>(event: string, handler: EventCallback<T>) {
 }
 export const FS_DROPPED_EVENT = "deck://fs-dropped";
 
+/** Restricted local student view; no main-shell commands or module bridge. */
+export const presentationControls = {
+  state: () => invoke<import("@deck/sdk").PresentationViewState>("presentation_ui_state"),
+  close: () => invoke("presentation_ui_close").then(() => undefined),
+  onChanged: (callback: () => void) => listenCurrent<number>("deck://presentation-changed", callback),
+};
+export type PresentationControlsHost = typeof presentationControls;
+
 /** Trusted shell review of immutable recipient, schedule, body and attachment previews. */
 export const messagingConfirmationHost = {
   pending: () => invoke<import("@deck/sdk").MessagingApprovalRequest[]>("messaging_pending_confirmations"),
@@ -25,6 +33,19 @@ export const messagingConfirmationHost = {
 
 /** Trusted main-shell settings only; modules receive narrow school-data projections. */
 export const schoolDataHost = {
+  openTimeAlert: (args: import("./generated/TimeAlertOpenArgs.ts").TimeAlertOpenArgs) =>
+    invoke<import("./generated/TimeAlertPreview.ts").TimeAlertPreview | null>("school_data_open_timealert", { args }),
+  applyTimeAlert: (args: import("./generated/TimeAlertApplyArgs.ts").TimeAlertApplyArgs) =>
+    invoke<import("@deck/sdk").SchoolDataDocument>("school_data_apply_timealert", { args }),
+  exportTimeAlert: (args: import("./generated/TimeAlertExportArgs.ts").TimeAlertExportArgs) =>
+    invoke<boolean>("school_data_export_timealert", { args }),
+  closeTimeAlert: (args: import("./generated/TimeAlertCloseArgs.ts").TimeAlertCloseArgs) =>
+    invoke("school_data_close_timealert", { args }).then(() => undefined),
+  importRosterPhotos: (args: import("./generated/TimeAlertRosterPhotosArgs.ts").TimeAlertRosterPhotosArgs) =>
+    invoke<import("./generated/TimeAlertRosterPhotosPreview.ts").TimeAlertRosterPhotosPreview | null>(
+      "school_data_import_roster_photos",
+      { args },
+    ),
   load: () => invoke<import("@deck/sdk").SchoolDataDocument>("school_data_load"),
   save: (args: import("@deck/sdk").SaveSchoolDataArgs) =>
     invoke<import("@deck/sdk").SchoolDataDocument>("school_data_save", { args }),
@@ -80,7 +101,13 @@ export const windowControls = {
 };
 export type WindowControls = typeof windowControls;
 
-export type NativeTopic = "capture.completed" | "capture.failed" | "overlay.changed" | "shortcut.triggered";
+export type NativeTopic =
+  | "capture.completed"
+  | "capture.failed"
+  | "overlay.changed"
+  | "shortcut.triggered"
+  | "window.presentationClosed"
+  | "window.presentationDisconnected";
 export type NativeModuleEvent = {
   [T in NativeTopic]: { moduleId: string; topic: T; payload: EventPayloads[T] };
 }[NativeTopic];

@@ -44,7 +44,7 @@ export const CAPABILITIES = {
     },
   },
   "school-data": {
-    version: "1.0.0",
+    version: "1.1.0",
     methods: {
       status: { long: false },
       requestAccess: { long: true },
@@ -134,8 +134,12 @@ export const CAPABILITIES = {
     },
   },
   "window": {
-    version: "1.0.0",
+    version: "1.1.0",
     methods: {
+      listDisplays: { long: false },
+      openPresentation: { long: false },
+      updatePresentation: { long: false },
+      closePresentation: { long: false },
       setAlwaysOnTop: { long: false },
       setFullscreen: { long: false },
     },

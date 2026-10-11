@@ -4,6 +4,8 @@
 
 ## 1. 설계 원칙
 
+window1.1의 로컬 학생 화면 추가 계약과 권한 범위는 [학생 화면](presentation.md) 및 [ADR-0025](../adr/0025-public-presentation.md)를 따른다.
+
 1. **범용 프리미티브.** 특정 도구 전용 메서드를 만들지 않는다(CAP-001). 예를 들어 "출석부 PDF 만들기"가 아니라 "파일 선택"과 "결과 저장"을 제공한다.
 2. **먼저 대안을 검토한다.** 새 캡을 만들기 전에 기존 캡 조합이나 모듈 측 WASM/JS로 해결할 수 없는지 확인한다.
 3. **경로 대신 핸들.** 모듈은 파일 경로를 보지 않는다. 호스트가 발급한 불투명 핸들만 다룬다(CAP-002).
@@ -40,7 +42,7 @@
 |  |  | `executeRename` (long) | 호스트 확인 후 변경 묶음 실행 |
 |  |  | `listHistory` (long) | 자기 모듈의 변경 이력 조회 |
 |  |  | `undoRename` (long) | 수정·교체되지 않은 파일만 되돌리기 |
-| `school-data` | 1.0.0 | `status` | 자기 모듈의 연결 상태 |
+| `school-data` | 1.1.0 | `status` | 자기 모듈의 연결 상태 |
 |  |  | `requestAccess` (long) | 셸에서 학급·항목 선택과 공유 확인 |
 |  |  | `listContexts` | 연결된 학급·수업 목록 |
 |  |  | `readRoster` | 선택한 학급의 명부 스냅샷 |
@@ -90,7 +92,11 @@
 |  |  | `commitWrite` (long) | 완성된 결과를 덮어쓰기 없이 게시 |
 |  |  | `abortWrite` | 미완성 파일 쓰기 취소 |
 |  |  | `closeOutputFolder` | 결과 폴더 작업 권한 닫기 |
-| `window` | 1.0.0 | `setAlwaysOnTop` | 항상 위 켜기·끄기 |
+| `window` | 1.1.0 | `listDisplays` | 학생 화면을 표시할 모니터 목록 |
+|  |  | `openPresentation` | 선택한 모니터에 공개 결과 표시 |
+|  |  | `updatePresentation` | 학생 화면의 공개 결과 갱신 |
+|  |  | `closePresentation` | 자기 모듈의 학생 화면 닫기 |
+|  |  | `setAlwaysOnTop` | 항상 위 켜기·끄기 |
 |  |  | `setFullscreen` | 전체화면 켜기·끄기 |
 <!-- cap-registry:end -->
 

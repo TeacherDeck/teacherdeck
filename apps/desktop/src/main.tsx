@@ -5,13 +5,20 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
 import { CaptureOverlay } from "./CaptureOverlay.tsx";
-import { overlayControls } from "./host.ts";
+import { Presentation } from "./Presentation.tsx";
+import { overlayControls, presentationControls } from "./host.ts";
 
 const root = document.getElementById("root");
 if (root !== null) {
   createRoot(root).render(
     <StrictMode>
-      {window.location.pathname === "/overlay" ? <CaptureOverlay controls={overlayControls} /> : <App />}
+      {window.location.pathname === "/overlay" ? (
+        <CaptureOverlay controls={overlayControls} />
+      ) : window.location.pathname === "/presentation" ? (
+        <Presentation controls={presentationControls} />
+      ) : (
+        <App />
+      )}
     </StrictMode>,
   );
 }

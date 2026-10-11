@@ -30,4 +30,8 @@ dayTemplateId: string | null,
 /**
  *Validated `weekly_table_id` value in this school-data contract.
  */
-weeklyTableId: string | null, };
+weeklyTableId: string | null, 
+/**
+ *Validated `from_period` value in this school-data contract.
+ */
+fromPeriod?: number, };

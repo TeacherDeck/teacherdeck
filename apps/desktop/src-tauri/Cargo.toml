@@ -35,6 +35,10 @@ tracing-subscriber.workspace = true
 tracing-appender.workspace = true
 sha2.workspace = true
 zip.workspace = true
+rusqlite.workspace = true
+aes-gcm.workspace = true
+pbkdf2.workspace = true
+sha2_compat.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-version.workspace = true

@@ -27,6 +27,15 @@ fn failure() -> DeckError {
     )
 }
 #[cfg(any(windows, test))]
+fn office_timeout(format: OfficeFormat) -> DeckError {
+    let message = if format == OfficeFormat::Hwpx {
+        "응답 시간이 지나 한글 변환을 중지하고 작업 창을 정리했어요. 한글에서 직접 변환해 주세요."
+    } else {
+        "응답 시간이 지나 변환을 중지했어요. 다시 시도할 때 문서 접근 승인 창을 확인해 주세요."
+    };
+    DeckError::new(ErrorCode::Timeout, message)
+}
+#[cfg(any(windows, test))]
 fn single_office_candidate(candidates: &[u32], owned_pid: Option<u32>) -> Result<u32, DeckError> {
     if candidates.len() != 1 {
         return Err(failure());
@@ -128,6 +137,22 @@ pub(crate) fn run_office_with_timeout(
             let _ = child.wait();
             return Err(error);
         }
+        let _hancom_registration = if job.format == OfficeFormat::Hwpx {
+            match crate::native_automation::HancomRegistrationCleanup::new(
+                &job.job_name,
+                &job.output,
+                child.id(),
+            ) {
+                Ok(cleanup) => Some(cleanup),
+                Err(error) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(error);
+                }
+            }
+        } else {
+            None
+        };
         let bytes = serde_json::to_vec(&job).map_err(|_| failure())?;
         if bytes.len() > 65536 {
             let _ = child.kill();
@@ -162,10 +187,7 @@ pub(crate) fn run_office_with_timeout(
             if Instant::now() >= deadline {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err(DeckError::new(
-                    ErrorCode::Timeout,
-                    "응답 시간이 지나 변환을 중지했어요. 다시 시도할 때 문서 접근 승인 창을 확인해 주세요.",
-                ));
+                return Err(office_timeout(job.format));
             }
             if let Some(status) = child.try_wait().map_err(|_| failure())? {
                 if !status.success() {
@@ -663,6 +685,20 @@ pub(crate) fn current_sid() -> Result<String, DeckError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn office_timeout_advice_distinguishes_cleaned_hancom_job_from_other_office() {
+        let hancom = office_timeout(OfficeFormat::Hwpx);
+        assert_eq!(hancom.code, ErrorCode::Timeout);
+        assert!(hancom.message.contains("한글 변환을 중지"));
+        assert!(hancom.message.contains("작업 창을 정리"));
+        assert!(hancom.message.contains("한글에서 직접 변환"));
+        assert!(!hancom.message.contains("접근 허용"));
+        assert!(!hancom.message.contains("모두 허용"));
+        assert!(!hancom.message.contains("열린 승인 창"));
+        let excel = office_timeout(OfficeFormat::Xlsx);
+        assert_eq!(excel.code, ErrorCode::Timeout);
+        assert!(!excel.message.contains("한글"));
+    }
 
     #[test]
     fn process_candidates_reject_concurrent_server_or_wrong_owned_child() {

@@ -69,9 +69,12 @@ fn fixture_stage(kind: OfficeProvider, events: &str) -> Option<&str> {
         "window-bind-begin",
         "fixture-begin",
         "visible-begin",
+        "hidden-begin",
         "document-check-begin",
         "add-begin",
         "text-begin",
+        "style-begin",
+        "gate-begin",
         "security-begin",
         "presentation-begin",
         "slide-begin",
@@ -162,6 +165,13 @@ fn fixture_worker(kind: OfficeProvider, id: &str) -> Result<(), DeckError> {
     } else {
         None
     };
+    let mut hancom_prepared = if kind == OfficeProvider::Hancom {
+        Some(native_automation::HancomPreparedRegistration::new(
+            &job, None, &path,
+        )?)
+    } else {
+        None
+    };
     record_stage("activation-begin")?;
     let app = Dispatch::create(native_automation::provider_class(kind)).map_err(|error| {
         launched.as_mut().map_or_else(
@@ -207,8 +217,10 @@ fn fixture_worker(kind: OfficeProvider, id: &str) -> Result<(), DeckError> {
         native_workers::bind_office_process(&job, hwnd, &existing)?;
     }
     let text = "SYNTHETIC OFFICE QA";
+    let mut _hancom_gate = None;
     record_stage("fixture-begin")?;
-    let path = path.to_str().ok_or_else(failure)?;
+    let normalized_path = path.to_str().ok_or_else(failure)?.replace('/', "\\");
+    let path = normalized_path.as_str();
     let result = (|| {
         match kind {
             OfficeProvider::Excel => {
@@ -307,10 +319,37 @@ fn fixture_worker(kind: OfficeProvider, id: &str) -> Result<(), DeckError> {
                 presentation.invoke("Close", vec![])?;
             }
             OfficeProvider::Hancom => {
-                record_stage("visible-begin")?;
+                record_stage("gate-begin")?;
+                let hwnd = number(
+                    &app.get_object("XHwpWindows")?
+                        .method_object("Item", vec![0i32.into()])?
+                        .get("WindowHandle")?,
+                )?;
+                let gate = hancom_prepared
+                    .take()
+                    .ok_or_else(failure)?
+                    .bind(&job, hwnd)?;
+                if !boolean(&app.invoke(
+                    "RegisterModule",
+                    vec!["FilePathCheckDLL".into(), gate.module_name.as_str().into()],
+                )?)? {
+                    let mut error = fixture_failure(match gate.module_loaded() {
+                        Ok(true) => "synthetic-gate-loaded-rejected",
+                        Ok(false) => "synthetic-gate-not-loaded",
+                        Err(_) => "synthetic-gate-load-unknown",
+                    });
+                    if let Ok((machine, native)) = gate.process_machines() {
+                        error.details = Some(
+                            serde_json::json!({"processMachine": machine, "nativeMachine": native}),
+                        );
+                    }
+                    return Err(error);
+                }
+                _hancom_gate = Some(gate);
+                record_stage("hidden-begin")?;
                 app.get_object("XHwpWindows")?
                     .method_object("Item", vec![0i32.into()])?
-                    .put("Visible", true.into())?;
+                    .put("Visible", false.into())?;
                 // HwpObject already supplies an empty document. Add(false) creates a
                 // different edit window than the one verified and made visible above.
                 // Keep the fixture in that single verified window instead.
@@ -319,11 +358,32 @@ fn fixture_worker(kind: OfficeProvider, id: &str) -> Result<(), DeckError> {
                     return Err(fixture_failure("synthetic-document"));
                 }
                 record_stage("text-begin")?;
-                if !boolean(
-                    &app.invoke("SetTextFile", vec![text.into(), "TEXT".into(), "".into()])?,
-                )? {
+                if !boolean(&app.invoke(
+                    "SetTextFile",
+                    vec![
+                            format!("{text}\nSYNTHETIC SECOND PARAGRAPH")
+                                .as_str()
+                                .into(),
+                            "TEXT".into(),
+                            "".into(),
+                        ],
+                )?)? {
                     return Err(fixture_failure("synthetic-insert"));
                 }
+                record_stage("style-begin")?;
+                let action = app.get_object("HAction")?;
+                if !boolean(&action.invoke("Run", vec!["SelectAll".into()])?)? {
+                    return Err(fixture_failure("synthetic-select"));
+                }
+                let shape = app.get_object("HParameterSet")?.get_object("HCharShape")?;
+                let parameters = shape.get("HSet")?;
+                action.invoke("GetDefault", vec!["CharShape".into(), parameters.clone()])?;
+                shape.put("Bold", true.into())?;
+                shape.put("Height", 1800i32.into())?;
+                if !boolean(&action.invoke("Execute", vec!["CharShape".into(), parameters])?)? {
+                    return Err(fixture_failure("synthetic-style"));
+                }
+                action.invoke("Run", vec!["Cancel".into()])?;
                 record_stage("save-begin")?;
                 if !boolean(&app.invoke("SaveAs", vec![path.into(), "HWP".into(), "".into()])?)? {
                     return Err(fixture_failure("synthetic-save"));
@@ -344,7 +404,6 @@ fn fixture_worker(_: OfficeProvider, _: &str) -> Result<(), DeckError> {
 #[cfg(windows)]
 fn generate(kind: OfficeProvider, name: &str, id: &str) -> Result<(), DeckError> {
     use std::os::windows::process::CommandExt;
-    let _ = kind;
     let group = native_workers::OfficeProcessGroup::new()?;
     let mut child = std::process::Command::new(std::env::current_exe().map_err(|_| failure())?)
         .args(["--fixture-worker", name, id])
@@ -359,6 +418,16 @@ fn generate(kind: OfficeProvider, name: &str, id: &str) -> Result<(), DeckError>
         let _ = child.wait();
         return Err(error);
     }
+    let _hancom_registration = if kind == OfficeProvider::Hancom {
+        let output = root(id)?.join("synthetic.hwp");
+        Some(native_automation::HancomRegistrationCleanup::new(
+            &group.name,
+            &output,
+            child.id(),
+        )?)
+    } else {
+        None
+    };
     let mut pipe = child.stdin.take().ok_or_else(failure)?;
     pipe.write_all(group.name.as_bytes())
         .map_err(|_| failure())?;
@@ -385,7 +454,11 @@ fn generate(kind: OfficeProvider, name: &str, id: &str) -> Result<(), DeckError>
             let _ = child.wait();
             return Err(DeckError::new(
                 ErrorCode::Timeout,
-                "응답 시간이 지나 합성 문서 작업을 중지했어요. 다시 시도할 때 한글 창의 문서 접근 승인을 확인해 주세요.",
+                if kind == OfficeProvider::Hancom {
+                    "응답 시간이 지나 합성 한글 작업을 중지하고 작업 창을 정리했어요. 한글에서 직접 변환해 주세요."
+                } else {
+                    "응답 시간이 지나 합성 문서 작업을 중지했어요. 다시 시도할 때 문서 접근 승인을 확인해 주세요."
+                },
             ));
         }
         std::thread::sleep(Duration::from_millis(50));
@@ -539,6 +612,11 @@ fn run(selected: Option<&str>) -> Result<(), DeckError> {
                 "synthetic-insert"
                 | "synthetic-document"
                 | "synthetic-save"
+                | "synthetic-gate-loaded-rejected"
+                | "synthetic-gate-not-loaded"
+                | "synthetic-gate-load-unknown"
+                | "synthetic-select"
+                | "synthetic-style"
                 | "timeout-not-observed"
                 | "timeout-cleanup" => Some(e.message.clone()),
                 _ => None,
@@ -549,6 +627,9 @@ fn run(selected: Option<&str>) -> Result<(), DeckError> {
             .and_then(|error| error.details.as_ref())
             .and_then(|details| details.get("automationHresult"))
             .and_then(serde_json::Value::as_i64);
+        let machines = result.as_ref().err().and_then(|e| e.details.as_ref()).map(|details| {
+            serde_json::json!({"processMachine": details.get("processMachine"), "nativeMachine": details.get("nativeMachine")})
+        });
         let fixture_stage = if stage == "fixture" {
             std::fs::File::open(directory.join("fixture-stages.log"))
                 .ok()
@@ -563,7 +644,7 @@ fn run(selected: Option<&str>) -> Result<(), DeckError> {
         } else {
             None
         };
-        report.push(serde_json::json!({ "provider": name, "success": result.is_ok(), "stage": stage, "fixtureStage": fixture_stage, "detail":detail, "automationHresult": hresult, "errorCode": result.err().map(|e| e.code) }));
+        report.push(serde_json::json!({ "provider": name, "success": result.is_ok(), "stage": stage, "fixtureStage": fixture_stage, "detail":detail, "automationHresult": hresult, "machines":machines, "errorCode": result.err().map(|e| e.code) }));
     }
     let report = serde_json::to_vec_pretty(&report).map_err(|_| failure())?;
     std::fs::OpenOptions::new()

@@ -34,11 +34,13 @@ mod network_host;
 mod network_native;
 pub mod origins;
 pub mod platform;
+mod presentation_host;
 mod probe;
 mod protocol;
 mod school_data;
 pub mod state;
 pub mod storage;
+mod timealert;
 
 use crate::modules::ModuleStore;
 use crate::origins::{MAIN_WINDOW, MODULE_SCHEME};
@@ -134,6 +136,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     );
 
     app.manage(capture_host::CaptureService::default());
+    app.manage(presentation_host::PresentationService::default());
     app.manage(caps::office::OfficeService::default());
     app.manage(
         messaging_host::MessagingService::open(
@@ -154,6 +157,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         school_data::SchoolDataService::open(paths.app_data_dir()?.join("school-data"))
             .map_err(|_| std::io::Error::other("school data unavailable"))?,
     );
+    app.manage(timealert::TimeAlertService::default());
     app.manage(AppState {
         app_version,
         host_caps,
@@ -181,6 +185,13 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let cleanup_app = app.handle().clone();
+    let presentation_app = app.handle().clone();
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            presentation_host::refresh_monitors(&presentation_app);
+        }
+    });
     std::thread::spawn(move || {
         loop {
             std::thread::sleep(std::time::Duration::from_secs(30));
@@ -228,6 +239,9 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     let handle = app.handle().clone();
     window.on_window_event(move |event| {
+        if matches!(event, WindowEvent::Destroyed) {
+            presentation_host::shutdown(&handle);
+        }
         if let WindowEvent::CloseRequested { api, .. } = event
             && capture_host::background_active(&handle)
         {
@@ -297,8 +311,15 @@ pub fn run() {
             commands::restart_app,
             commands::sec_probe_report,
             capture_host::overlay_ui_state,
+            presentation_host::presentation_ui_state,
+            presentation_host::presentation_ui_close,
             capture_host::overlay_ui_action,
             caps::school_data::school_data_load,
+            caps::school_data::school_data_open_timealert,
+            caps::school_data::school_data_apply_timealert,
+            caps::school_data::school_data_export_timealert,
+            caps::school_data::school_data_close_timealert,
+            caps::school_data::school_data_import_roster_photos,
             caps::school_data::school_data_save,
             caps::school_data::school_data_pending,
             caps::school_data::school_data_resolve_access,

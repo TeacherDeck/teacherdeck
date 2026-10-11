@@ -3,6 +3,14 @@
 //! Approved Windows COM boundary. Automation objects never cross a COM thread.
 #![allow(unsafe_code)]
 use deck_core::{DeckError, ErrorCode};
+#[cfg(windows)]
+#[path = "hancom_gate.rs"]
+mod hancom_gate;
+#[cfg(windows)]
+pub(crate) use hancom_gate::{
+    PreparedRegistration as HancomPreparedRegistration,
+    RegistrationCleanup as HancomRegistrationCleanup,
+};
 
 /// A privacy-safe installed-provider failure.
 pub(crate) fn failed() -> DeckError {
@@ -563,6 +571,16 @@ pub(crate) fn convert_with_progress(
     } else {
         None
     };
+    let mut hancom_prepared = if request.format.provider() == OfficeProvider::Hancom {
+        progress("hancom-registration-begin");
+        Some(HancomPreparedRegistration::new(
+            &request.job_name,
+            Some(&request.source),
+            &request.output,
+        )?)
+    } else {
+        None
+    };
     progress("activation-begin");
     let app = Dispatch::create(provider_class(request.format.provider())).map_err(|error| {
         launched.as_mut().map_or_else(
@@ -615,6 +633,8 @@ pub(crate) fn convert_with_progress(
         // A reused pre-existing process is never entered, Quit, or terminated.
         crate::native_workers::bind_office_process(&request.job_name, hwnd, &existing)?;
     }
+    // Declared first: the gate remains live while this owned application's Quit runs.
+    let mut _hancom_gate = None;
     let instance = OfficeInstance {
         app,
         provider: request.format.provider(),
@@ -783,14 +803,48 @@ pub(crate) fn convert_with_progress(
             check.invoke("Close", vec![])?;
         }
         OfficeProvider::Hancom => {
-            // Ownership was verified above. Show only this worker's edit window so the
-            // normal file-access approval dialog can be handled by the user.
-            progress("hancom-visible-begin");
+            progress("hancom-gate-begin");
+            let hwnd = number(
+                &instance
+                    .app
+                    .get_object("XHwpWindows")?
+                    .method_object("Item", vec![0i32.into()])?
+                    .get("WindowHandle")?,
+            )?;
+            let gate = hancom_prepared
+                .take()
+                .ok_or_else(failed)?
+                .bind(&request.job_name, hwnd)?;
+            let source_path = gate.source_path.clone().ok_or_else(failed)?;
+            let output_path = gate.output_path.clone();
+            let source = source_path.as_str();
+            let output = output_path.as_str();
+            if !boolean(&instance.app.invoke(
+                "RegisterModule",
+                vec!["FilePathCheckDLL".into(), gate.module_name.as_str().into()],
+            )?)? {
+                let mut error = DeckError::new(
+                    ErrorCode::CapabilityUnavailable,
+                    "한글의 작업용 파일 접근을 안전하게 연결하지 못했어요. 한글에서 직접 변환해 주세요.",
+                );
+                error.details = Some(
+                    serde_json::json!({"hancomGateStage": match gate.module_loaded() {
+                        Ok(true) => "loaded-registration-rejected",
+                        Ok(false) => "module-not-loaded",
+                        Err(_) => "module-load-unknown",
+                    }, "processMachines": gate.process_machines().ok()}),
+                );
+                return Err(error);
+            }
+            _hancom_gate = Some(gate);
+            // The scoped callback handles only our staging files. A failed registration
+            // already returned above; never expose a normal flow that relies on modal clicks.
+            progress("hancom-hidden-begin");
             instance
                 .app
                 .get_object("XHwpWindows")?
                 .method_object("Item", vec![0i32.into()])?
-                .put("Visible", true.into())?;
+                .put("Visible", false.into())?;
             progress("hancom-open-begin");
             if !boolean(&instance.app.invoke(
                 "Open",
@@ -802,6 +856,15 @@ pub(crate) fn convert_with_progress(
             )?)? {
                 return Err(failed());
             }
+            use sha2::{Digest, Sha256};
+            let source_digest = Sha256::digest(
+                string(
+                    &instance
+                        .app
+                        .invoke("GetTextFile", vec!["TEXT".into(), "".into()])?,
+                )?
+                .as_bytes(),
+            );
             progress("hancom-save-begin");
             if !boolean(
                 &instance
@@ -817,6 +880,20 @@ pub(crate) fn convert_with_progress(
                 vec![output.into(), "HWPX".into(), "readonly:true".into()],
             )?)? {
                 return Err(failed());
+            }
+            let output_digest = Sha256::digest(
+                string(
+                    &instance
+                        .app
+                        .invoke("GetTextFile", vec!["TEXT".into(), "".into()])?,
+                )?
+                .as_bytes(),
+            );
+            if source_digest != output_digest {
+                return Err(DeckError::new(
+                    ErrorCode::Internal,
+                    "한글 변환 결과의 본문이 원본과 달라요. 원본 문서는 그대로 보존했어요.",
+                ));
             }
             instance.app.invoke("Clear", vec![1i32.into()])?;
         }

@@ -31,6 +31,8 @@ if (deck.has("fs")) await deck.fs.pickFiles(); // optional 캡 (MOD-007)
 
 ## 작업 체크리스트
 
+학생 화면은 window 1.1 typed API와 소유자 전용 종료·연결 변경 이벤트를 따른다([계약](../../docs/spec/presentation.md)). 이전 window 1.0 호스트에는 호출 전에 버전 오류를 반환한다.
+
 - [ ] mock host 계약 테스트가 BRG-001~009를 커버한다
 - [ ] 생성 타입이 바뀌었다면 `pnpm gen` 결과를 커밋했다
 - [ ] 공개 API 변경을 SDK CHANGELOG에 적었다

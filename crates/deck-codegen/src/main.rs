@@ -30,9 +30,11 @@ use deck_core::caps::messaging::*;
 use deck_core::caps::network::*;
 use deck_core::caps::office::*;
 use deck_core::caps::overlay::*;
+use deck_core::caps::presentation::*;
 use deck_core::caps::school_data::*;
 use deck_core::caps::storage::{KeyArgs, SetArgs};
 use deck_core::caps::system::{OsInfo, SystemInfo};
+use deck_core::caps::timealert::*;
 use deck_core::caps::window::ToggleArgs;
 use deck_core::caps::{NoArgs, REGISTRY};
 use deck_core::catalog::{CatalogIndex, IndexEntry};
@@ -329,6 +331,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         ts::<FolderHandleInfo>(SDK_DIR, &cfg)?,
         ts::<DroppedFiles>(SDK_DIR, &cfg)?,
         ts::<ToggleArgs>(SDK_DIR, &cfg)?,
+        ts::<PresentationKind>(SDK_DIR, &cfg)?,
+        ts::<PresentationItem>(SDK_DIR, &cfg)?,
+        ts::<PresentationPayload>(SDK_DIR, &cfg)?,
+        ts::<PresentationDisplay>(SDK_DIR, &cfg)?,
+        ts::<OpenPresentationArgs>(SDK_DIR, &cfg)?,
+        ts::<PresentationSession>(SDK_DIR, &cfg)?,
+        ts::<UpdatePresentationArgs>(SDK_DIR, &cfg)?,
+        ts::<ClosePresentationArgs>(SDK_DIR, &cfg)?,
+        ts::<PresentationViewState>(SDK_DIR, &cfg)?,
         ts::<ClipboardWriteTextArgs>(SDK_DIR, &cfg)?,
         ts::<ClipboardWriteRichTextArgs>(SDK_DIR, &cfg)?,
         ts::<ClipboardBlock>(SDK_DIR, &cfg)?,
@@ -384,6 +395,34 @@ fn main() -> Result<(), Box<dyn Error>> {
         ts::<IndexEntry>(SHELL_DIR, &cfg)?,
         ts::<ShellInfo>(SHELL_DIR, &cfg)?,
         ts::<SchoolTimetableImageArgs>(SHELL_DIR, &cfg)?,
+        ts::<TimeAlertOpenArgs>(SHELL_DIR, &cfg)?,
+        ts::<TimeAlertTableSummary>(SHELL_DIR, &cfg)?,
+        ts::<TimeAlertPreview>(SHELL_DIR, &cfg)?,
+        ts::<TimeAlertStudentLink>(SHELL_DIR, &cfg)?,
+        ts::<TimeAlertApplyArgs>(SHELL_DIR, &cfg)?,
+        ts::<TimeAlertExportArgs>(SHELL_DIR, &cfg)?,
+        ts::<TimeAlertCloseArgs>(SHELL_DIR, &cfg)?,
+        ts::<TimeAlertRosterPhotoMatch>(SHELL_DIR, &cfg)?,
+        ts::<TimeAlertRosterPhotoKey>(SHELL_DIR, &cfg)?,
+        ts::<TimeAlertRosterPhotosArgs>(SHELL_DIR, &cfg)?,
+        ts::<TimeAlertRosterPhotosPreview>(SHELL_DIR, &cfg)?,
+        ts::<SchoolContextKind>(SHELL_DIR, &cfg)?,
+        ts::<SchoolEnrollmentStatus>(SHELL_DIR, &cfg)?,
+        ts::<SchoolDateChangeKind>(SHELL_DIR, &cfg)?,
+        ts::<SchoolSemester>(SHELL_DIR, &cfg)?,
+        ts::<SchoolStudent>(SHELL_DIR, &cfg)?,
+        ts::<SchoolEnrollment>(SHELL_DIR, &cfg)?,
+        ts::<SchoolContext>(SHELL_DIR, &cfg)?,
+        ts::<SchoolDaySlot>(SHELL_DIR, &cfg)?,
+        ts::<SchoolDayTemplate>(SHELL_DIR, &cfg)?,
+        ts::<SchoolWeeklySlot>(SHELL_DIR, &cfg)?,
+        ts::<SchoolWeeklyTable>(SHELL_DIR, &cfg)?,
+        ts::<SchoolDayOverride>(SHELL_DIR, &cfg)?,
+        ts::<SchoolDateChange>(SHELL_DIR, &cfg)?,
+        ts::<SchoolTimetable>(SHELL_DIR, &cfg)?,
+        ts::<SchoolPhotoInfo>(SHELL_DIR, &cfg)?,
+        ts::<SchoolDataDocument>(SHELL_DIR, &cfg)?,
+        ts::<SchoolWorkbookInput>(SHELL_DIR, &cfg)?,
         ts::<ModuleEntry>(SHELL_DIR, &cfg)?,
         ts::<FsDroppedEvent>(SHELL_DIR, &cfg)?,
         ts::<UpdateStatus>(SHELL_DIR, &cfg)?,

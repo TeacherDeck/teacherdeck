@@ -49,6 +49,26 @@ describe("real Office format planning", () => {
     expect(advice).toContain("앞서 저장한 결과는 유지");
     expect(advice).not.toContain("열린 승인 창");
     expect(advice).not.toContain("private");
+    const hancom = conversionError(
+      "TIMEOUT",
+      "응답 시간이 지나 한글 변환을 중지하고 작업 창을 정리했어요. 한글에서 직접 변환해 주세요.",
+    );
+    expect(hancom).toContain("한글 변환을 중지");
+    expect(hancom).toContain("작업 창을 정리");
+    expect(hancom).toContain("한글에서 직접 변환");
+    expect(hancom).toContain("앞서 저장한 결과는 유지");
+    expect(hancom).not.toContain("모두 허용");
+  });
+  it("distinguishes fixed Hancom registration failure from installation and private errors", () => {
+    const advice = conversionError(
+      "CAPABILITY_UNAVAILABLE",
+      "한글의 작업용 파일 접근을 안전하게 연결하지 못했어요. 한글에서 직접 변환해 주세요.",
+    );
+    expect(advice).toContain("작업용 파일 접근을 안전하게 연결하지 못했어요");
+    expect(advice).toContain("한글에서 직접 변환");
+    expect(advice).toContain("원본과 앞서 저장한 결과는 유지");
+    expect(advice).not.toContain("설치되어 있는지");
+    expect(conversionError("CAPABILITY_UNAVAILABLE", "private synthetic exception")).not.toContain("private");
   });
   it("retains published results while replanning failed macro documents with collision-safe names", () => {
     const input = [file("a", "합성.xls"), file("b", "합성.xlsx"), file("c", "결과.doc")];

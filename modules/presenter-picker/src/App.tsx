@@ -15,6 +15,7 @@ import {
   InfoBar,
   ListView,
   PageHeader,
+  PresentationControls,
   ProgressRing,
   SettingsExpander,
   TextBox,
@@ -41,6 +42,7 @@ import { loadState, readBackup, saveState, writeBackup } from "./state.ts";
 import { SchoolRoster } from "./SchoolRoster.tsx";
 import { StudentPage } from "./StudentPage.tsx";
 
+import { presentationPayload } from "./presentation.ts";
 const useStyles = makeStyles({
   page: {
     display: "flex",
@@ -280,6 +282,13 @@ export function App({ deck }: { deck: Deck }) {
   if (publicView)
     return (
       <div className={s.page}>
+        <PresentationControls
+          key="presentation"
+          deck={deck}
+          payload={presentationPayload(state)}
+          hidden={publicView}
+          disabled={disabled}
+        />
         {result}
         <div className={s.row}>
           <Button
@@ -299,6 +308,13 @@ export function App({ deck }: { deck: Deck }) {
       <PageHeader
         title="발표자 뽑기"
         description="지정·제외 조건을 먼저 지키고, 실제 발표 완료 횟수로 균등하게 뽑아요."
+      />
+      <PresentationControls
+        key="presentation"
+        deck={deck}
+        payload={presentationPayload(state)}
+        hidden={publicView}
+        disabled={disabled}
       />
       <SchoolRoster
         deck={deck}

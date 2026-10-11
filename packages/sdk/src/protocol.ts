@@ -12,7 +12,7 @@ import type { ErrorCode } from "./generated/ErrorCode.ts";
 /** Integer protocol version carried in every message (BRG-008). */
 export const PROTOCOL_VERSION = 1;
 /** SDK semver (VER-006). */
-export const SDK_VERSION = "0.5.0";
+export const SDK_VERSION = "0.6.0";
 /** Default request timeout; `long` registry methods are exempt (BRG-004). */
 export const DEFAULT_TIMEOUT_MS = 30_000;
 /** A module must say hello within this time after loading (BRG-003). */
@@ -34,6 +34,8 @@ export const EVENT_TOPICS = [
   "capture.failed",
   "overlay.changed",
   "shortcut.triggered",
+  "window.presentationClosed",
+  "window.presentationDisconnected",
 ] as const;
 export type EventTopic = (typeof EVENT_TOPICS)[number];
 
@@ -45,6 +47,8 @@ export interface ThemePayload {
 }
 
 export interface EventPayloads {
+  "window.presentationClosed": { presentationHandle: string };
+  "window.presentationDisconnected": { presentationHandle: string };
   "capture.completed": CaptureCompletedEvent;
   "capture.failed": CaptureFailedEvent;
   "overlay.changed": OverlayInfo;

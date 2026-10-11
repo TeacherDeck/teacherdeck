@@ -361,6 +361,8 @@ export function App() {
         "capture.failed": "capture",
         "overlay.changed": "overlay",
         "shortcut.triggered": "global-shortcut",
+        "window.presentationClosed": "window",
+        "window.presentationDisconnected": "window",
       } as const;
       if (!Object.hasOwn(caps, event.topic)) return;
       const cap = caps[event.topic];

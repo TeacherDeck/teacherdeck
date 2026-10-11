@@ -27,7 +27,7 @@
       },
       "devCsp": null,
       "freezePrototype": true,
-      "capabilities": ["main", "capture-overlay"]
+      "capabilities": ["main", "capture-overlay", "presentation"]
     }
   },
   "bundle": {

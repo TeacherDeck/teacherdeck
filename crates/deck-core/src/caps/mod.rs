@@ -24,9 +24,11 @@ pub mod messaging;
 pub mod network;
 pub mod office;
 pub mod overlay;
+pub mod presentation;
 pub mod school_data;
 pub mod storage;
 pub mod system;
+pub mod timealert;
 pub mod window;
 
 /// Capability name → version provided by the running host (`init.host.caps`).
@@ -121,7 +123,7 @@ pub const REGISTRY: &[CapSpec] = &[
     },
     CapSpec {
         name: "school-data",
-        version: "1.0.0",
+        version: "1.1.0",
         summary: "사용자가 연결한 공통 학급 자료의 제한된 읽기",
         methods: &[
             m("status", false, "자기 모듈의 연결 상태"),
@@ -237,9 +239,13 @@ pub const REGISTRY: &[CapSpec] = &[
     },
     CapSpec {
         name: "window",
-        version: "1.0.0",
+        version: "1.1.0",
         summary: "창 상태(모듈이 숨겨지면 원래대로 복원)",
         methods: &[
+            m("listDisplays", false, "학생 화면을 표시할 모니터 목록"),
+            m("openPresentation", false, "선택한 모니터에 공개 결과 표시"),
+            m("updatePresentation", false, "학생 화면의 공개 결과 갱신"),
+            m("closePresentation", false, "자기 모듈의 학생 화면 닫기"),
             m("setAlwaysOnTop", false, "항상 위 켜기·끄기"),
             m("setFullscreen", false, "전체화면 켜기·끄기"),
         ],

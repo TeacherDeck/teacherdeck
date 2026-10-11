@@ -16,6 +16,14 @@ use crate::state::AppState;
 /// window methods.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Op {
+    /// Enumerate owner-scoped display choices.
+    ListDisplays,
+    /// Open a public-only local window.
+    OpenPresentation,
+    /// Update an owned public result.
+    UpdatePresentation,
+    /// Close an owned public window.
+    ClosePresentation,
     /// `setAlwaysOnTop`
     AlwaysOnTop,
     /// `setFullscreen`
@@ -26,6 +34,10 @@ impl Op {
     /// Maps a method name.
     pub fn parse(method: &str) -> Option<Self> {
         Some(match method {
+            "listDisplays" => Self::ListDisplays,
+            "openPresentation" => Self::OpenPresentation,
+            "updatePresentation" => Self::UpdatePresentation,
+            "closePresentation" => Self::ClosePresentation,
             "setAlwaysOnTop" => Self::AlwaysOnTop,
             "setFullscreen" => Self::Fullscreen,
             _ => return None,
@@ -41,6 +53,31 @@ pub fn call(
     op: Op,
     args: Value,
 ) -> Result<Value, DeckError> {
+    match op {
+        Op::ListDisplays => {
+            let _: deck_core::caps::NoArgs = parse_args(args)?;
+            return super::to_value(&crate::presentation_host::list_displays(app, module_id)?);
+        }
+        Op::OpenPresentation => {
+            return super::to_value(&crate::presentation_host::open(
+                app,
+                module_id,
+                parse_args(args)?,
+            )?);
+        }
+        Op::UpdatePresentation => {
+            return super::to_value(&crate::presentation_host::update(
+                app,
+                module_id,
+                parse_args(args)?,
+            )?);
+        }
+        Op::ClosePresentation => {
+            crate::presentation_host::close(app, module_id, parse_args(args)?)?;
+            return Ok(Value::Null);
+        }
+        Op::AlwaysOnTop | Op::Fullscreen => {}
+    }
     let ToggleArgs { value } = parse_args(args)?;
     let window = app.get_webview_window(MAIN_WINDOW).ok_or_else(internal)?;
     let mut overrides = state.overrides.lock().map_err(|_| internal())?;
@@ -54,6 +91,7 @@ pub fn call(
             entry.note_fullscreen(window.is_fullscreen().unwrap_or(false));
             window.set_fullscreen(value).map_err(|_| internal())?;
         }
+        _ => return Err(internal()),
     }
     Ok(Value::Null)
 }
