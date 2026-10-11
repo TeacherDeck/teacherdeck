@@ -14,7 +14,7 @@
 
 TimeAlert 전체 암호화 백업 B와 별도 확장 화면 C는 아직 승인 범위 밖이에요. CoolReserve의 Python 3.14.8·원본 의존성 네 개와 정확한 585개 파일·라이선스 고지는 추가 승인받았어요. 원작 실행 코어와 모듈 소스를 원작 저장소에서 함께 관리하고, 티처덱은 검토한 커밋의 파일·해시를 고정해 가져와요. 실제 PC 네트워크 전환·메시지 발송은 이번 개발 검증에서 실행하지 않아요. [이번 통합 검수 기록](reviews/native-foundations-qa-2026-10-11.md)에 검증 범위와 남은 한계를 구분해 두었어요.
 
-0.3.0 최종 `pnpm verify` 15단계가 모두 통과했어요. JavaScript 1,088개와 Rust 191개, 총 1,279개 테스트예요. 실제 Excel·Word 변환과 PowerPoint의 새 실행부터 변환·재열기·원본 보존까지 확인했어요. PowerPoint는 두 번 연속 통과했고, 한글은 합성 문서 SaveAs 단계의 120초 시간 초과가 남아 있어요.
+공동작업자의 PR #8까지 병합한 0.3.0 최종 `pnpm verify` 15단계가 모두 통과했어요. JavaScript 1,091개와 Rust 191개, 총 1,282개 테스트예요. 실제 Excel·Word 변환과 PowerPoint의 새 실행부터 변환·재열기·원본 보존까지 확인했어요. PowerPoint는 두 번 연속 통과했고, 한글은 합성 문서 SaveAs 단계의 120초 시간 초과가 남아 있어요.
 
 0.3.0 Windows 설치본 빌드도 통과했어요. `target/release/bundle/nsis/TeacherDeck_0.3.0_x64-setup.exe`는 24.50MiB예요. 모듈 17개와 관리 실행 환경의 파일·해시가 일치하고, 빌드한 앱에서 17개 모듈 모두 준비 상태인 것과 메인 창 생성·정상 응답을 확인했어요. 설치·제거와 개별 네이티브 조작 검증은 별도예요.
 
@@ -51,7 +51,7 @@ Windows 릴리스 빌드도 성공했어요. `target/release/teacherdeck.exe`는
 
 ## 공동작업자와 승인 상태
 
-이번 원격 확인에서 `main`의 `b43ce4e`까지 읽고 `3c9bc5a`에서 통합했어요. [PR #7](https://github.com/TeacherDeck/teacherdeck/pull/7)의 타이머 0.3.0·개발 포트 8265·120% 배율·이동 기록·다크 스크롤바·보호 경로 훅 제거가 반영됐어요. 공동작업자가 요청한 개발 origin과 훅 제거를 검토했으며, 문서의 사람 승인 조건과 CODEOWNERS는 유지돼요. [PR #5](https://github.com/TeacherDeck/teacherdeck/pull/5)의 제목 표시줄 권한 요청은 앞선 변경에서 적용했어요.
+`main`의 `b43ce4e`를 `3c9bc5a`에서 통합한 뒤, 업로드 직전 도착한 `ed35a1c`도 `24116df`에서 병합했어요. [PR #7](https://github.com/TeacherDeck/teacherdeck/pull/7)의 타이머 0.3.0·개발 포트 8265·120% 배율·이동 기록·보호 경로 훅 제거와 [PR #8](https://github.com/TeacherDeck/teacherdeck/pull/8)의 가는 테마 스크롤바·투명 배경 수정까지 반영됐어요. 갤러리를 닫은 뒤 다른 테마의 스크롤바 색이 남는 회귀도 찾아 보완했어요. 공동작업자가 요청한 개발 origin과 훅 제거를 검토했으며, 문서의 사람 승인 조건과 CODEOWNERS는 유지돼요. [PR #5](https://github.com/TeacherDeck/teacherdeck/pull/5)의 제목 표시줄 권한 요청은 앞선 변경에서 적용했어요.
 
 [클립보드 출력](proposals/clipboard-output.md), [퀵캡처](proposals/quick-capture.md), [한정 라이선스 예외·로컬 시각](proposals/clipboard-license-followup.md)은 이미 승인받은 범위예요. 새 캡처 파일만 저장하고 기존 결과를 덮어쓰거나 삭제하지 않아요. 모듈은 경로 대신 핸들만 받아요. 위 캡처·클립보드 작업에서는 사용자 파일과 개인정보를 외부로 보내지 않아요.
 
