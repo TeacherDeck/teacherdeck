@@ -36,6 +36,11 @@ describe("real Office format planning", () => {
     expect(conversionError("TIMEOUT")).toContain("시간");
     expect(conversionError("INVALID_ARGS")).toContain("매크로");
     expect(conversionError("CANCELLED")).toContain("결과는 유지");
+    expect(conversionError("BUSY", "열려 있는 PowerPoint를 닫은 뒤 다시 변환해 주세요.")).toContain(
+      "PowerPoint를 닫은",
+    );
+    expect(conversionError("BUSY")).toContain("다른 문서 변환");
+    expect(conversionError("BUSY", "private synthetic exception")).not.toContain("private");
   });
   it("retains published results while replanning failed macro documents with collision-safe names", () => {
     const input = [file("a", "합성.xls"), file("b", "합성.xlsx"), file("c", "결과.doc")];

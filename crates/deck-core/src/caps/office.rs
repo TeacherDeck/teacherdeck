@@ -7,6 +7,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+#[path = "office_excel.rs"]
+mod excel_preflight;
+pub use excel_preflight::validate_excel_source;
+
 /// Fixed installed providers. Modules cannot select arbitrary COM classes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(rename_all = "lowercase")]

@@ -207,7 +207,7 @@ describe("manual override and apply planning", () => {
     expect(reconcilePlan(value, manual, decision, null).action).toBe("manual");
     const next = currentDecisionInfo(value, "2026-07-06T20:00:00", wifi);
     expect(clearStaleManualOverride(manual, next.segment_id).manual_override_segment_id).toBe("");
-    expect(reconcilePlan(value, manual, next, null).action).toBe("matched");
+    expect(reconcilePlan(value, manual, next, null).action).toBe("apply");
     expect(manual.manual_override_segment_id).toBe(decision.segment_id);
   });
   it("does not mark a proposed or failed apply as handled", () => {
@@ -238,7 +238,11 @@ describe("manual override and apply planning", () => {
     expect(
       modeMatchesCurrentState(value, emptyRoutineState(), "internal", { ...actual, dns: [...actual.dns].reverse() }),
     ).toBe(false);
-    expect(modeMatchesCurrentState(value, emptyRoutineState(), "external", actual)).toBe(true);
+    expect(modeMatchesCurrentState(value, emptyRoutineState(), "external", actual)).toBe(false);
+    value.internal.ip = "192.0.2.20";
+    value.internal.mask = "255.255.255.0";
+    value.internal.gateway = "192.0.2.1";
+    expect(modeMatchesCurrentState(value, emptyRoutineState(), "internal", actual)).toBe(false);
   });
   it("resets decision history only when relevant profile/rule settings change", () => {
     const value = settings(),

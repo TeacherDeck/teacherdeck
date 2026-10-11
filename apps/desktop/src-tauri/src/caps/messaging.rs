@@ -134,7 +134,8 @@ pub async fn route(app: &AppHandle, owner: &str, op: Op, args: Value) -> Result<
             )
         })
         .await
-        .map_err(|_| failure())??;
+        .map_err(|_| failure())?
+        .map_err(expired_start_plan)?;
         let confirmed = if let Some(wait) = pending {
             let id = wait.id;
             let answer = tauri::async_runtime::spawn_blocking(move || {
@@ -143,12 +144,7 @@ pub async fn route(app: &AppHandle, owner: &str, op: Op, args: Value) -> Result<
             .await
             .map_err(|_| failure())?;
             app.state::<MessagingService>().cancel_confirmation(&id);
-            let accepted = answer.map_err(|_| {
-                DeckError::new(
-                    ErrorCode::Timeout,
-                    "등록 확인 시간이 지났어요. 미리보기를 다시 확인해 주세요.",
-                )
-            })?;
+            let accepted = approval_answer(answer)?;
             if !accepted {
                 return Err(DeckError::new(
                     ErrorCode::Cancelled,
@@ -172,7 +168,8 @@ pub async fn route(app: &AppHandle, owner: &str, op: Op, args: Value) -> Result<
             )
         })
         .await
-        .map_err(|_| failure())??;
+        .map_err(|_| failure())?
+        .map_err(expired_start_plan)?;
         let guard_app = app.clone();
         let guard_owner = owner.to_owned();
         let stop = started.stop;
@@ -273,9 +270,52 @@ fn reject_module_confirmation(args: &MessagingStartArgs) -> Result<(), DeckError
     }
     Ok(())
 }
+fn approval_cancelled() -> DeckError {
+    DeckError::new(
+        ErrorCode::Cancelled,
+        "등록 확인이 만료되거나 닫혔어요. 등록하지 않았어요. 미리보기를 다시 확인해 주세요.",
+    )
+}
+fn approval_answer(
+    answer: Result<bool, std::sync::mpsc::RecvTimeoutError>,
+) -> Result<bool, DeckError> {
+    // No worker start has occurred while awaiting approval. Execution timeouts remain distinct.
+    answer.map_err(|_| approval_cancelled())
+}
+fn expired_start_plan(error: DeckError) -> DeckError {
+    // Start NotFound means an invalid/expired plan or attachment before Runner.start.
+    // Private PLAN_EXPIRED/INVALID_HANDLE are likewise rejected before the original runner starts.
+    if error.code == ErrorCode::NotFound {
+        approval_cancelled()
+    } else {
+        error
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn approval_timeout_and_closed_dialog_are_cancelled_before_execution() {
+        for error in [
+            std::sync::mpsc::RecvTimeoutError::Timeout,
+            std::sync::mpsc::RecvTimeoutError::Disconnected,
+        ] {
+            assert_eq!(
+                approval_answer(Err(error)).unwrap_err().code,
+                ErrorCode::Cancelled
+            );
+        }
+        assert!(!approval_answer(Ok(false)).unwrap());
+        assert!(approval_answer(Ok(true)).unwrap());
+        assert_eq!(
+            expired_start_plan(DeckError::new(ErrorCode::NotFound, "합성 만료")).code,
+            ErrorCode::Cancelled
+        );
+        assert_eq!(
+            expired_start_plan(DeckError::new(ErrorCode::Timeout, "합성 실행 응답 손실")).code,
+            ErrorCode::Timeout
+        );
+    }
     #[test]
     fn arbitrary_provider_commands_and_iframe_confirmation_are_rejected() {
         assert!(Op::parse("executePython").is_none());

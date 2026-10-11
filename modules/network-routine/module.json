@@ -4,7 +4,7 @@
   "id": "network-routine",
   "name": "네트워크 루틴",
   "description": "내부망·외부망 전환과 시간표·Wi-Fi 이름에 따른 자동 네트워크 루틴을 관리해요.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "category": "utility",
   "icon": "icon.svg",
   "entry": "index.html",

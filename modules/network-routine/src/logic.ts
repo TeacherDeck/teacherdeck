@@ -365,17 +365,17 @@ export function clearStaleManualOverride(state: RoutineState, segmentId: string)
 }
 export function modeMatchesCurrentState(
   settings: Settings,
-  state: RoutineState,
+  _state: RoutineState,
   desired: Mode,
   actual: NetworkSnapshot | null,
 ): boolean {
-  if (actual === null) return state.last_applied_mode === desired;
-  if (desired === "external") return actual.dhcp.toLowerCase() === "enabled";
+  // This observation has no DNS source, subnet mask or gateway. Never infer them.
+  if (actual === null || desired === "external") return false;
   const ip = settings.internal.ip.trim(),
     dns = [settings.internal.dns1.trim(), settings.internal.dns2.trim()].filter(Boolean);
-  if (ip && !actual.ips.includes(ip)) return false;
-  if (dns.some((value, index) => value !== actual.dns[index])) return false;
-  return ip !== "" || dns.length > 0 ? true : state.last_applied_mode === desired;
+  if (ip) return false;
+  if (dns.length !== actual.dns.length || dns.some((value, index) => value !== actual.dns[index])) return false;
+  return dns.length > 0;
 }
 export function reconcilePlan(
   settings: Settings,

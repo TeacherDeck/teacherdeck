@@ -152,7 +152,11 @@ export function App({ deck }: { deck: Deck }) {
         } catch (error) {
           const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : undefined;
           row.state = code === "CANCELLED" ? "cancelled" : "failed";
-          row.message = conversionError(code);
+          const advice =
+            typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
+              ? error.message
+              : undefined;
+          row.message = conversionError(code, advice);
           if (code === "CANCELLED") stopped.current = true;
         }
         update(next);
@@ -251,7 +255,18 @@ export function App({ deck }: { deck: Deck }) {
                   {row.message && <Caption>{row.message}</Caption>}
                 </div>
                 <Caption>{stateLabels[row.state]}</Caption>
-                {row.result && <Button disabled={busy} onClick={() => void deck.fs.reveal(row.result?.handle ?? "").catch(() => setMessage("저장한 결과를 열지 못했어요. 출력 폴더에서 확인해 주세요."))}>결과 확인</Button>}
+                {row.result && (
+                  <Button
+                    disabled={busy}
+                    onClick={() =>
+                      void deck.fs
+                        .reveal(row.result?.handle ?? "")
+                        .catch(() => setMessage("저장한 결과를 열지 못했어요. 출력 폴더에서 확인해 주세요."))
+                    }
+                  >
+                    결과 확인
+                  </Button>
+                )}
               </div>
             )}
           />

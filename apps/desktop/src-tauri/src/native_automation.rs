@@ -527,6 +527,18 @@ pub(crate) fn convert_with_progress(
     mut progress: impl FnMut(&'static str),
 ) -> Result<(), DeckError> {
     use deck_core::caps::office::{OfficeFormat, OfficeProvider};
+    if request.format.provider() == OfficeProvider::Excel {
+        progress("excel-preflight-begin");
+        let mut file = std::fs::File::open(&request.source).map_err(|_| failed())?;
+        let length = file.metadata().map_err(|_| failed())?.len();
+        let extension = request
+            .source
+            .extension()
+            .and_then(|value| value.to_str())
+            .ok_or_else(failed)?
+            .to_ascii_lowercase();
+        deck_core::caps::office::validate_excel_source(&mut file, length, &extension)?;
+    }
     progress("apartment-begin");
     let _apartment = Apartment::enter()?;
     progress("snapshot-begin");
@@ -771,6 +783,15 @@ pub(crate) fn convert_with_progress(
             check.invoke("Close", vec![])?;
         }
         OfficeProvider::Hancom => {
+            // Ownership was verified above. Show only this worker's edit window so the
+            // normal file-access approval dialog can be handled by the user.
+            progress("hancom-visible-begin");
+            instance
+                .app
+                .get_object("XHwpWindows")?
+                .method_object("Item", vec![0i32.into()])?
+                .put("Visible", true.into())?;
+            progress("hancom-open-begin");
             if !boolean(&instance.app.invoke(
                 "Open",
                 vec![
@@ -781,6 +802,7 @@ pub(crate) fn convert_with_progress(
             )?)? {
                 return Err(failed());
             }
+            progress("hancom-save-begin");
             if !boolean(
                 &instance
                     .app
@@ -789,6 +811,7 @@ pub(crate) fn convert_with_progress(
                 return Err(failed());
             }
             instance.app.invoke("Clear", vec![1i32.into()])?;
+            progress("hancom-reopen-begin");
             if !boolean(&instance.app.invoke(
                 "Open",
                 vec![output.into(), "HWPX".into(), "readonly:true".into()],

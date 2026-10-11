@@ -56,6 +56,34 @@ fn failure() -> DeckError {
 fn fixture_failure(stage: &'static str) -> DeckError {
     DeckError::new(ErrorCode::Internal, stage)
 }
+fn fixture_stage(kind: OfficeProvider, events: &str) -> Option<&str> {
+    let prefix = format!("{kind:?} ");
+    let stage = events.lines().last()?.strip_prefix(&prefix)?;
+    // A corrupt or foreign log never becomes diagnostic text in the report.
+    [
+        "apartment-begin",
+        "snapshot-begin",
+        "activation-begin",
+        "guards-begin",
+        "image-bind-begin",
+        "window-bind-begin",
+        "fixture-begin",
+        "visible-begin",
+        "document-check-begin",
+        "add-begin",
+        "text-begin",
+        "security-begin",
+        "presentation-begin",
+        "slide-begin",
+        "textbox-begin",
+        "table-begin",
+        "save-begin",
+        "close-begin",
+        "saved",
+    ]
+    .contains(&stage)
+    .then_some(stage)
+}
 fn root(id: &str) -> Result<PathBuf, DeckError> {
     if id.len() != 32 || !id.bytes().all(|c| c.is_ascii_hexdigit()) {
         return Err(failure());
@@ -279,9 +307,17 @@ fn fixture_worker(kind: OfficeProvider, id: &str) -> Result<(), DeckError> {
                 presentation.invoke("Close", vec![])?;
             }
             OfficeProvider::Hancom => {
-                record_stage("add-begin")?;
-                app.get_object("XHwpDocuments")?
-                    .method_object("Add", vec![false.into()])?;
+                record_stage("visible-begin")?;
+                app.get_object("XHwpWindows")?
+                    .method_object("Item", vec![0i32.into()])?
+                    .put("Visible", true.into())?;
+                // HwpObject already supplies an empty document. Add(false) creates a
+                // different edit window than the one verified and made visible above.
+                // Keep the fixture in that single verified window instead.
+                record_stage("document-check-begin")?;
+                if number(&app.get_object("XHwpDocuments")?.get("Count")?)? != 1 {
+                    return Err(fixture_failure("synthetic-document"));
+                }
                 record_stage("text-begin")?;
                 if !boolean(
                     &app.invoke("SetTextFile", vec![text.into(), "TEXT".into(), "".into()])?,
@@ -349,7 +385,7 @@ fn generate(kind: OfficeProvider, name: &str, id: &str) -> Result<(), DeckError>
             let _ = child.wait();
             return Err(DeckError::new(
                 ErrorCode::Timeout,
-                "합성 문서 접근 승인 시간이 지났어요.",
+                "합성 문서 작업 응답 시간이 지났어요. 열린 승인 창은 직접 확인해 주세요.",
             ));
         }
         std::thread::sleep(Duration::from_millis(50));
@@ -501,6 +537,7 @@ fn run(selected: Option<&str>) -> Result<(), DeckError> {
             .err()
             .and_then(|e| match e.message.as_str() {
                 "synthetic-insert"
+                | "synthetic-document"
                 | "synthetic-save"
                 | "timeout-not-observed"
                 | "timeout-cleanup" => Some(e.message.clone()),
@@ -512,7 +549,21 @@ fn run(selected: Option<&str>) -> Result<(), DeckError> {
             .and_then(|error| error.details.as_ref())
             .and_then(|details| details.get("automationHresult"))
             .and_then(serde_json::Value::as_i64);
-        report.push(serde_json::json!({ "provider": name, "success": result.is_ok(), "stage": stage, "detail":detail, "automationHresult": hresult, "errorCode": result.err().map(|e| e.code) }));
+        let fixture_stage = if stage == "fixture" {
+            std::fs::File::open(directory.join("fixture-stages.log"))
+                .ok()
+                .and_then(|file| {
+                    let mut events = String::new();
+                    file.take(4097).read_to_string(&mut events).ok()?;
+                    if events.len() > 4096 {
+                        return None;
+                    }
+                    fixture_stage(kind, &events).map(str::to_owned)
+                })
+        } else {
+            None
+        };
+        report.push(serde_json::json!({ "provider": name, "success": result.is_ok(), "stage": stage, "fixtureStage": fixture_stage, "detail":detail, "automationHresult": hresult, "errorCode": result.err().map(|e| e.code) }));
     }
     let report = serde_json::to_vec_pretty(&report).map_err(|_| failure())?;
     std::fs::OpenOptions::new()
@@ -572,5 +623,32 @@ fn main() {
     }
     if result.is_err() {
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn reports_only_known_final_fixture_stage_for_the_selected_provider() {
+        assert_eq!(
+            fixture_stage(
+                OfficeProvider::Hancom,
+                "Hancom visible-begin\nHancom save-begin\n"
+            ),
+            Some("save-begin")
+        );
+        assert_eq!(
+            fixture_stage(OfficeProvider::Hancom, "Hancom document-check-begin\n"),
+            Some("document-check-begin")
+        );
+        for events in [
+            "",
+            "Excel save-begin",
+            "Hancom synthetic-user-value",
+            "Hancom save-begin\nforeign text",
+        ] {
+            assert_eq!(fixture_stage(OfficeProvider::Hancom, events), None);
+        }
     }
 }

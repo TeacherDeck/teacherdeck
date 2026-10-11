@@ -111,7 +111,7 @@ pub(crate) fn task_xml(
     let exe = escape(exe.to_str().ok_or_else(failed)?);
     let arguments = escape(&format!("--deck-native-worker network-routine {argument}"));
     Ok(format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-16\"?><Task version=\"1.4\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\"><RegistrationInfo><Description>TeacherDeck network 1.0 owned recipe</Description></RegistrationInfo><Triggers>{trigger}</Triggers><Principals><Principal id=\"Owner\"><UserId>{user}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>HighestAvailable</RunLevel></Principal></Principals><Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><StartWhenAvailable>true</StartWhenAvailable><AllowStartOnDemand>true</AllowStartOnDemand><Enabled>true</Enabled><ExecutionTimeLimit>PT2M</ExecutionTimeLimit></Settings><Actions Context=\"Owner\"><Exec><Command>{exe}</Command><Arguments>{arguments}</Arguments></Exec></Actions></Task>"
+        "<?xml version=\"1.0\" encoding=\"UTF-16\"?><Task version=\"1.4\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\"><RegistrationInfo><Description>TeacherDeck network 1.0 owned recipe</Description></RegistrationInfo><Triggers>{trigger}</Triggers><Principals><Principal id=\"Owner\"><UserId>{user}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>HighestAvailable</RunLevel></Principal></Principals><Settings><MultipleInstancesPolicy>Queue</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><StartWhenAvailable>true</StartWhenAvailable><AllowStartOnDemand>true</AllowStartOnDemand><Enabled>true</Enabled><ExecutionTimeLimit>PT2M</ExecutionTimeLimit></Settings><Actions Context=\"Owner\"><Exec><Command>{exe}</Command><Arguments>{arguments}</Arguments></Exec></Actions></Task>"
     ))
 }
 
@@ -121,6 +121,7 @@ mod win {
     use crate::native_automation::{
         Apartment, Dispatch, Value, boolean, null, number, read_strings, string, strings,
     };
+    use deck_core::caps::network::verifies_applied;
     use windows::Win32::Foundation::HANDLE;
     use windows::Win32::NetworkManagement::WiFi::*;
     struct WlanHandle(HANDLE);
@@ -370,9 +371,84 @@ mod win {
             }
         }
         drop(item);
-        drop(service);
-        drop(_sta);
-        inspect(guid, false)
+        // WMI can publish the updated configuration asynchronously. Re-read the selected
+        // interface for a bounded period; a reboot-required result is not reported as applied.
+        for _ in 0..20 {
+            let actual = config(&service, guid)?;
+            let addresses = read_strings(&actual.get("IPAddress")?)?;
+            let masks = read_strings(&actual.get("IPSubnet")?)?;
+            let address_masks: Vec<_> = addresses.into_iter().zip(masks).collect();
+            let gateways = read_strings(&actual.get("DefaultIPGateway")?)?;
+            let snapshot = NetworkSnapshot {
+                dhcp: boolean(&actual.get("DHCPEnabled")?)?,
+                ips: address_masks
+                    .iter()
+                    .filter(|(ip, _)| ip.parse::<std::net::Ipv4Addr>().is_ok())
+                    .map(|(ip, _)| ip.clone())
+                    .collect(),
+                dns: read_strings(&actual.get("DNSServerSearchOrder")?)?
+                    .into_iter()
+                    .filter(|ip| ip.parse::<std::net::Ipv4Addr>().is_ok())
+                    .collect(),
+                ..Default::default()
+            };
+            if verifies_applied(
+                patch,
+                mode,
+                &snapshot,
+                &address_masks,
+                &gateways,
+                dns_automatic(guid)?,
+            ) {
+                return Ok(snapshot);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+        Err(failed())
+    }
+
+    fn dns_automatic(guid: &str) -> Result<bool, DeckError> {
+        use windows::Win32::Foundation::ERROR_FILE_NOT_FOUND;
+        use windows::Win32::System::Registry::{HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ, RegGetValueW};
+        use windows::core::PCWSTR;
+        if !valid_guid(guid) {
+            return Err(failed());
+        }
+        let key: Vec<u16> = format!(
+            "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\{{{guid}}}"
+        )
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
+        let name: Vec<u16> = "NameServer".encode_utf16().chain(Some(0)).collect();
+        let mut data = vec![0u16; 2048];
+        let mut bytes = 4096u32;
+        // SAFETY: read-only fixed interface/value lookup after GUID validation. Aligned output
+        // buffer and its byte length stay live; no registry settings are changed.
+        let status = unsafe {
+            RegGetValueW(
+                HKEY_LOCAL_MACHINE,
+                PCWSTR(key.as_ptr()),
+                PCWSTR(name.as_ptr()),
+                RRF_RT_REG_SZ,
+                None,
+                Some(data.as_mut_ptr().cast()),
+                Some(&mut bytes),
+            )
+        };
+        if status == ERROR_FILE_NOT_FOUND {
+            return Ok(true);
+        }
+        status.ok().map_err(|_| failed())?;
+        if !bytes.is_multiple_of(2) {
+            return Err(failed());
+        }
+        let value = data
+            .get(..usize::try_from(bytes / 2).map_err(|_| failed())?)
+            .ok_or_else(failed)?;
+        let text = String::from_utf16(value.split(|c| *c == 0).next().unwrap_or_default())
+            .map_err(|_| failed())?;
+        Ok(text.trim().is_empty())
     }
     fn task_root() -> Result<Dispatch, DeckError> {
         let service = Dispatch::create("Schedule.Service")?;
@@ -404,7 +480,7 @@ mod win {
         }
         let settings = definition.get_object("Settings")?;
         if !boolean(&settings.get("Enabled")?)?
-            || number(&settings.get("MultipleInstances")?)? != 2
+            || number(&settings.get("MultipleInstances")?)? != 1
             || boolean(&settings.get("DisallowStartIfOnBatteries")?)?
             || boolean(&settings.get("StopIfGoingOnBatteries")?)?
             || !boolean(&settings.get("StartWhenAvailable")?)?
@@ -678,6 +754,8 @@ mod tests {
             assert!(xml.contains("network-routine sample-tool~"));
             assert!(xml.contains("Synthetic &amp; Test"));
             assert!(!xml.contains("powershell"));
+            assert!(xml.contains("<MultipleInstancesPolicy>Queue</MultipleInstancesPolicy>"));
+            assert!(!xml.contains("IgnoreNew"));
             if kind == "schedule" {
                 assert!(xml.contains("<Tuesday/>"));
                 assert!(xml.contains("2026-07-07T06:00:00"));

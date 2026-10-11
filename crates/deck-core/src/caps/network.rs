@@ -611,34 +611,70 @@ pub enum ReconcileAction {
     /// OS application is needed.
     Apply,
 }
-/// Original matching: DNS-only profiles do not require a static address.
+/// A no-op is safe only when the public observation proves every selected field.
+/// DNS source, mask and gateway are private OS observations and cannot be inferred here.
 pub fn matches_snapshot(
     patch: &Ipv4Patch,
-    state: &NetworkRoutineState,
+    _state: &NetworkRoutineState,
     mode: NetworkMode,
     snapshot: &NetworkSnapshot,
 ) -> bool {
-    if mode == NetworkMode::External {
-        return snapshot.dhcp;
-    }
-    if patch
-        .address
-        .as_ref()
-        .is_some_and(|ip| !snapshot.ips.contains(ip))
-    {
+    if mode == NetworkMode::External || patch.address.is_some() {
         return false;
     }
-    if patch
-        .dns
-        .iter()
-        .zip(&snapshot.dns)
-        .any(|(wanted, actual)| wanted != actual)
-        || patch.dns.len() > snapshot.dns.len()
-    {
+    if patch.dns != snapshot.dns {
         return false;
     }
-    patch.address.is_some() || !patch.dns.is_empty() || state.last_applied_mode == Some(mode)
+    !patch.dns.is_empty()
 }
+/// Verify selected IPv4 settings using host-private observations after OS application.
+pub fn verifies_applied(
+    patch: &Ipv4Patch,
+    mode: NetworkMode,
+    snapshot: &NetworkSnapshot,
+    address_masks: &[(String, String)],
+    gateways: &[String],
+    dns_automatic: bool,
+) -> bool {
+    if mode == NetworkMode::External {
+        return snapshot.dhcp && dns_automatic;
+    }
+    if let Some(address) = &patch.address {
+        if snapshot.dhcp
+            || !address_masks
+                .iter()
+                .any(|(ip, mask)| ip == address && patch.mask.as_ref() == Some(mask))
+        {
+            return false;
+        }
+        if patch
+            .gateway
+            .as_ref()
+            .is_some_and(|value| gateways.first() != Some(value))
+        {
+            return false;
+        }
+    }
+    patch.dns.is_empty() || (!dns_automatic && snapshot.dns == patch.dns)
+}
+
+/// Retry only contention. The caller supplies a bounded wait and reads current state after success.
+pub fn retry_contention<T>(
+    mut attempt: impl FnMut() -> Result<T, DeckError>,
+    mut wait: impl FnMut() -> bool,
+) -> Result<T, DeckError> {
+    loop {
+        match attempt() {
+            Err(error) if error.code == ErrorCode::Busy => {
+                if !wait() {
+                    return Err(error);
+                }
+            }
+            result => return result,
+        }
+    }
+}
+
 /// Clears stale manual holds and decides whether applying is necessary.
 pub fn reconcile(
     enabled: bool,
@@ -735,6 +771,161 @@ mod source;
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn dhcp_address_does_not_prove_automatic_dns() {
+        let patch = Ipv4Patch {
+            address: None,
+            mask: None,
+            gateway: None,
+            dns: vec!["192.0.2.53".into()],
+        };
+        let snapshot = NetworkSnapshot {
+            dhcp: true,
+            dns: patch.dns.clone(),
+            ..Default::default()
+        };
+        assert!(!matches_snapshot(
+            &patch,
+            &NetworkRoutineState::default(),
+            NetworkMode::External,
+            &snapshot
+        ));
+        assert!(!verifies_applied(
+            &patch,
+            NetworkMode::External,
+            &snapshot,
+            &[],
+            &[],
+            false
+        ));
+        assert!(verifies_applied(
+            &patch,
+            NetworkMode::External,
+            &snapshot,
+            &[],
+            &[],
+            true
+        ));
+    }
+    #[test]
+    fn applied_address_requires_paired_mask_and_selected_gateway() {
+        let patch = Ipv4Patch {
+            address: Some("192.0.2.20".into()),
+            mask: Some("255.255.255.0".into()),
+            gateway: Some("192.0.2.1".into()),
+            dns: vec![],
+        };
+        let snapshot = NetworkSnapshot {
+            ips: vec!["192.0.2.20".into()],
+            ..Default::default()
+        };
+        assert!(!matches_snapshot(
+            &patch,
+            &NetworkRoutineState::default(),
+            NetworkMode::Internal,
+            &snapshot
+        ));
+        let masks = vec![("192.0.2.20".into(), "255.255.255.0".into())];
+        assert!(!verifies_applied(
+            &patch,
+            NetworkMode::Internal,
+            &snapshot,
+            &[("192.0.2.20".into(), "255.255.0.0".into())],
+            &["192.0.2.1".into()],
+            true
+        ));
+        assert!(!verifies_applied(
+            &patch,
+            NetworkMode::Internal,
+            &snapshot,
+            &masks,
+            &["192.0.2.2".into()],
+            true
+        ));
+        assert!(verifies_applied(
+            &patch,
+            NetworkMode::Internal,
+            &snapshot,
+            &masks,
+            &["192.0.2.1".into()],
+            true
+        ));
+    }
+    #[test]
+    fn dns_only_verification_keeps_unspecified_address_and_gateway() {
+        let patch = Ipv4Patch {
+            address: None,
+            mask: None,
+            gateway: None,
+            dns: vec!["192.0.2.53".into(), "192.0.2.54".into()],
+        };
+        let mut snapshot = NetworkSnapshot {
+            dhcp: true,
+            dns: patch.dns.clone(),
+            ..Default::default()
+        };
+        assert!(verifies_applied(
+            &patch,
+            NetworkMode::Internal,
+            &snapshot,
+            &[],
+            &[],
+            false
+        ));
+        assert!(!verifies_applied(
+            &patch,
+            NetworkMode::Internal,
+            &snapshot,
+            &[],
+            &[],
+            true
+        ));
+        snapshot.dns.reverse();
+        assert!(!verifies_applied(
+            &patch,
+            NetworkMode::Internal,
+            &snapshot,
+            &[],
+            &[],
+            false
+        ));
+    }
+    #[test]
+    fn boundary_contention_retries_but_is_bounded_and_denial_is_not_retried() {
+        let mut attempts = 0;
+        let mut waits = 0;
+        let value = retry_contention(
+            || {
+                attempts += 1;
+                if attempts < 3 {
+                    Err(DeckError::new(ErrorCode::Busy, "busy"))
+                } else {
+                    Ok("fresh state")
+                }
+            },
+            || {
+                waits += 1;
+                true
+            },
+        )
+        .unwrap();
+        assert_eq!((value, attempts, waits), ("fresh state", 3, 2));
+        assert_eq!(
+            retry_contention::<()>(|| Err(DeckError::new(ErrorCode::Busy, "busy")), || false)
+                .unwrap_err()
+                .code,
+            ErrorCode::Busy
+        );
+        assert_eq!(
+            retry_contention::<()>(
+                || Err(DeckError::new(ErrorCode::PermissionDenied, "denied")),
+                || panic!("must not wait")
+            )
+            .unwrap_err()
+            .code,
+            ErrorCode::PermissionDenied
+        );
+    }
     fn rules(value: &serde_json::Value) -> NetworkRules {
         let keys = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
         NetworkRules {

@@ -791,9 +791,7 @@ fn apply_record(record: &mut Record, mode: NetworkMode, manual: bool) -> Result<
         }
     }
     let verified = crate::network_native::apply(&record.adapter_guid, mode, &record.internal)?;
-    if !matches_snapshot(&record.internal, &record.state, mode, &verified) {
-        return Err(failure());
-    }
+    // The native adapter returns only after verifying DNS source, paired mask and gateway.
     if manual {
         record.state.manual_override_segment_id = decision.segment_id.clone();
         record.state.manual_override_mode = Some(mode);
@@ -897,7 +895,20 @@ pub(crate) fn run_saved_routine(argument: &str) -> Result<(), DeckError> {
         return Err(denied());
     }
     let root = worker_root()?.join("native-network");
-    let _lock = lock_record(&root, owner)?;
+    // A different trigger family can arrive while another worker owns the record. Wait
+    // within the task's two-minute lifetime, then read revision, permission, time and Wi-Fi
+    // afresh. UI transactions retain their immediate Busy behavior.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(90);
+    let _lock = retry_contention(
+        || lock_record(&root, owner),
+        || {
+            if std::time::Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            true
+        },
+    )?;
     let mut record = read_record(&root, owner)?.ok_or_else(denied)?;
     if !record.enabled || record.routine_handle != routine {
         return Err(denied());
