@@ -5,6 +5,7 @@ import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { exists, isRecord, listFiles, read, readJson } from "./lib/files.ts";
 import type { Violation } from "./lib/report.ts";
+import { checkHancomAssets } from "./lib/hancom-assets.ts";
 
 export const TAURI_DIR = "apps/desktop/src-tauri";
 export const MAIN_WINDOW = "main";
@@ -16,6 +17,12 @@ const OVERLAY_PERMISSIONS = [
   "core:window:allow-start-resize-dragging",
   "allow-overlay-ui-state",
   "allow-overlay-ui-action",
+];
+const PRESENTATION_PERMISSIONS = [
+  "core:event:allow-listen",
+  "core:event:allow-unlisten",
+  "allow-presentation-ui-state",
+  "allow-presentation-ui-close",
 ];
 const sameStrings = (value: unknown, expected: string[]): boolean =>
   Array.isArray(value) && value.length === expected.length && expected.every((item) => value.includes(item));
@@ -53,13 +60,14 @@ function checkTauri(root: string, v: Violation[]): void {
     if (
       enabledCaps !== undefined &&
       !sameStrings(enabledCaps, ["main"]) &&
-      !sameStrings(enabledCaps, ["main", "capture-overlay"])
+      !sameStrings(enabledCaps, ["main", "capture-overlay"]) &&
+      !sameStrings(enabledCaps, ["main", "capture-overlay", "presentation"])
     ) {
       v.push({
         rule: "SEC-003",
         file: confPath,
         message:
-          "활성 ACL은 main과 승인된 capture-overlay 식별자만 허용해요. 인라인 권한이나 다른 창 ACL은 허용하지 않아요.",
+          "활성 ACL은 main과 승인된 capture-overlay·presentation 식별자만 허용해요. 인라인 권한은 허용하지 않아요.",
       });
     }
     const csp = security["csp"];
@@ -115,7 +123,20 @@ function checkTauri(root: string, v: Violation[]): void {
     const windows = cap["windows"];
     // ADR-0017: the one approved local overlay ACL is an exact contract, never a broad exception.
     const overlay = f === `${TAURI_DIR}/capabilities/overlay.json` && cap["identifier"] === "capture-overlay";
-    if (overlay) {
+    const presentation = f === `${TAURI_DIR}/capabilities/presentation.json` && cap["identifier"] === "presentation";
+    if (presentation) {
+      if (
+        !sameStrings(windows, ["presentation-*"]) ||
+        cap["local"] !== true ||
+        !sameStrings(cap["permissions"], PRESENTATION_PERMISSIONS)
+      ) {
+        v.push({
+          rule: "SEC-003",
+          file: f,
+          message: "학생 화면은 presentation-*·local:true와 이벤트/상태/닫기의 정확한 네 권한만 허용해요.",
+        });
+      }
+    } else if (overlay) {
       if (
         !sameStrings(windows, OVERLAY_LABELS) ||
         cap["local"] !== true ||
@@ -130,7 +151,9 @@ function checkTauri(root: string, v: Violation[]): void {
     } else if (
       !sameStrings(windows, [MAIN_WINDOW]) ||
       cap["identifier"] === "capture-overlay" ||
-      f.endsWith("/overlay.json")
+      cap["identifier"] === "presentation" ||
+      f.endsWith("/overlay.json") ||
+      f.endsWith("/presentation.json")
     ) {
       v.push({
         rule: "SEC-003",
@@ -240,6 +263,7 @@ function checkWorkflow(f: string, src: string, v: Violation[]): void {
 export function checkSecurity(root: string): Violation[] {
   const v: Violation[] = [];
   checkTauri(root, v);
+  v.push(...checkHancomAssets(root));
   for (const f of listFiles(root)) {
     if (f.startsWith(".github/workflows/") && [".yml", ".yaml"].includes(path.posix.extname(f))) {
       checkWorkflow(f, read(root, f), v);

@@ -1,4 +1,4 @@
-# 학교 공통자료 (school-data 1.0)
+# 학교 공통자료 (school-data 1.1)
 
 [ADR-0020](../adr/0020-school-data.md), [승인 제안서 A](../proposals/classroom-foundation-next.md)에 따른 셸 소유 자료다. PRV-007의 예외는 이 명세의 명시적 grant를 가진 읽기에 한정한다. 일반 모듈 storage·사용자 파일·다른 도구 기록을 공유하지 않는다.
 
@@ -28,7 +28,7 @@
 
 자료 관리의 학기·명부·우리 반/수업·일과표·시간표 편집과 권한 확인은 main 창의 셸 origin만 사용한다. module payload의 자기 신고나 module iframe이 보낸 승인 메시지를 신뢰하지 않는다. `school_data_pending/resolve_access/grants/revoke_grant/import_photo`는 native Webview label과 URL을 검사한다. 신뢰 화면에서 도구 이름·학기·대상·읽기 필드·기억 여부를 보여준다. 사진 선택은 네이티브 picker에서 사용자 선택 파일을 읽기만 하며 호스트 소유 사진 저장소에 새 식별자로 복사한다.
 
-trusted 명령은 `load`, `save`, `pending`, `resolve_access`, `grants`, `revoke_grant`, `import_photo`, `read_backup`, `recover`, `read_workbook`, `write_workbook`, `export_backup`, `export_timetable_image`의13개이며 모두 `school_data_` 접두사를 쓴다. JSON 복구와 XLSX picker도 동일 native label/origin 검사를 적용한다. 명부와 허용 context 목록은50개 단위로 표시하며 검색으로 좁힐 수 있다. 학기 추가 이후 관리 패널을 접고 명부 입력을 먼저 보여준다.
+trusted 명령은 `load`, `save`, `pending`, `resolve_access`, `grants`, `revoke_grant`, `import_photo`, `read_backup`, `recover`, `read_workbook`, `write_workbook`, `export_backup`, `export_timetable_image`와 [TimeAlert 백업·사진 이동](timealert-portability.md)의 `open_timealert`, `apply_timealert`, `export_timealert`, `close_timealert`, `import_roster_photos`까지18개이며 모두 `school_data_` 접두사를 쓴다. JSON 복구와 XLSX picker도 동일 native label/origin 검사를 적용한다. 명부와 허용 context 목록은50개 단위로 표시하며 검색으로 좁힐 수 있다. 학기 추가 이후 관리 패널을 접고 명부 입력을 먼저 보여준다.
 
 네 교실 도구는 등록 자료 사용을 기본 선택으로 제시하고 이번 작업에만 사용을 고를 수 있다. 선택한 context를 명시적으로 읽어 새 작업 명단에 적용하며 기존 수행/확정 이력을 보존한다. 공유 미허용이나 미등록 상태가 도구의 임시 명단 사용을 막지 않는다. 요청 거부·취소·조회 실패로 기존 작업을 바꾸지 않는다.
 
@@ -53,4 +53,6 @@ XLSX는 원본의 첫 선언 시트·workbook 관계·sharedStrings·inlineStr·
 
 학생 파일은 원본 표준 학년/반/번호/이름과 머리글 별칭,5자리 학번, 사진명렬표 학생 텍스트를 읽는다. 원본 가로 요일 격자·전치 격자·기존 목록형 시간표와 병합 교시 그룹을 읽는다. 목록형의 분반 열은 원본 Android 파서가 버리던 값이지만 TeacherDeck에서는 별도 수업 이름에 보존한다. 알려진 학급 표기와 일치하는 학생만 연결하며 새 수업의 명부는 교사가 확인한다. 원본 학생·격자 시간표와 같은 열·시트 이름으로 양식과 현재 기본 자료를 XLSX로 내보낸다. inline string으로 써 수식처럼 시작하는 이름도 실행하지 않는다. native 폴더 선택 후 기존 journaled append-new 출력으로 원자 게시하고 같은 이름은 새 번호를 붙여 원본 파일을 보존한다.
 
-XLSX 사진 바이너리는 자동 등록하지 않으며 파일 사진 수와 학생별 사진 선택 안내를 표시한다. XLSX는 기본 주간표만 담으며 학기 전체 구조·일과 시각·날짜 변경·학생 master/수업 연결·사진의 무손실 백업으로 표시하지 않는다. 원본 TimeAlert의 Android DB/.teacherbackup 전체 호환(B), 알림, 별도 확장 창(C)은 이번 구현에 포함하지 않는다.
+일반 XLSX 값 가져오기는 사진 수만 안내한다. [TimeAlert 백업·사진 이동](timealert-portability.md)의 별도 사진명렬표 가져오기는 대응 미리보기와 명시적 확인 후 명부·선택한 사진을 함께 등록한다. 동일 앵커 복수 사진은 자동 확정하지 않으며 기존 학생은 교사가 지정한 master만 연결한다. XLSX 자체를 학기 전체 구조·사진의 무손실 백업으로 표시하지 않는다. 사진·원작 DB7의 미편집 표를 담은 `.teacherbackup` 이동은 해당 계약을 따른다. 별도 공개 확장 창은 [학생 화면 계약](presentation.md)을 따르며 알림·오늘 시간표·출결 구현은 별도 단계다.
+
+school-data1.1은 `SchoolDayOverride.fromPeriod`와 `SchoolDateChange.targetDate`를 선택 필드로 추가한다. 누락된 예전 JSON은 종일 일과·같은 날짜 이동을 뜻한다. fromPeriod는 일과표가 지정된 경우1~64교시만 허용하며, targetDate는 MOVE에만 올바른 ISO 날짜를 허용한다. 다른 날짜로 같은 교시를 옮길 수 있으며 같은 날짜의 같은 교시 이동은 거부한다. 모듈 읽기 형식의 기존 필드를 제거하거나 뜻을 바꾸지 않는다.

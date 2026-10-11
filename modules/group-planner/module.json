@@ -4,7 +4,7 @@
   "id": "group-planner",
   "name": "모둠 만들기",
   "description": "학생·모둠 고정과 제외·분리 조건을 지키며 편성하고 직접 이동해요.",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "category": "classroom",
   "icon": "icon.svg",
   "entry": "index.html",

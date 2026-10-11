@@ -352,6 +352,91 @@ impl SchoolDataService {
         i.disk.document = d.clone();
         Ok(d)
     }
+    /// Atomically publishes a reviewed native import and new host-owned photos.
+    /// Photo files use fresh ids; failed document publication leaves existing data intact.
+    pub fn apply_native_import(
+        &self,
+        args: SaveSchoolDataArgs,
+        photos: &std::collections::BTreeMap<String, Vec<u8>>,
+    ) -> Result<SchoolDataDocument, DeckError> {
+        let mut inner = self.inner.lock().map_err(|_| internal())?;
+        inner.revision(Some(args.expected_revision))?;
+        let mut document = args.document;
+        document.validate()?;
+        protect(&inner.disk.document, &document)?;
+        // The shell cannot alter existing photo metadata or import arbitrary ids.
+        if inner
+            .disk
+            .document
+            .photos
+            .iter()
+            .any(|old| !document.photos.contains(old))
+            || document.photos.iter().any(|photo| {
+                if inner.disk.document.photos.contains(photo) {
+                    return photos.contains_key(&photo.id);
+                }
+                photos.get(&photo.id).is_none_or(|bytes| {
+                    bytes.len() != photo.size as usize
+                        || crate::timealert::projection::photo_mime(bytes).ok()
+                            != Some(photo.mime_type.as_str())
+                })
+            })
+            || photos
+                .keys()
+                .any(|key| !document.photos.iter().any(|photo| photo.id == *key))
+        {
+            return Err(denied());
+        }
+        document.revision = inner
+            .disk
+            .document
+            .revision
+            .checked_add(1)
+            .ok_or_else(invalid)?;
+        for (id, bytes) in photos {
+            let name = format!("{id}.bin");
+            if self.root.join("photos").join(&name).exists() {
+                return Err(denied());
+            }
+            crate::storage::write_atomic(&self.root.join("photos"), &name, bytes)
+                .map_err(|_| internal())?;
+        }
+        self.persist(&inner, &document, &inner.grants)?;
+        inner.disk.document = document.clone();
+        Ok(document)
+    }
+    /// Reads saved photo bytes through retained filesystem guards for a main-only backup.
+    pub fn backup_photos(
+        &self,
+        expected_revision: u32,
+    ) -> Result<
+        (
+            SchoolDataDocument,
+            std::collections::BTreeMap<String, Vec<u8>>,
+        ),
+        DeckError,
+    > {
+        let inner = self.inner.lock().map_err(|_| internal())?;
+        inner.revision(Some(expected_revision))?;
+        let mut photos = std::collections::BTreeMap::new();
+        for photo in &inner.disk.document.photos {
+            let mut read = crate::file_read::FileReadSession::open(
+                &self.root.join("photos").join(format!("{}.bin", photo.id)),
+            )?;
+            if read.size() != u64::from(photo.size) {
+                return Err(invalid());
+            }
+            let mut bytes = Vec::with_capacity(photo.size as usize);
+            while bytes.len() < photo.size as usize {
+                bytes.extend(read.read_chunk(
+                    bytes.len() as u64,
+                    (photo.size as usize - bytes.len()).min(crate::file_read::READ_CHUNK_BYTES),
+                )?);
+            }
+            photos.insert(photo.id.clone(), bytes);
+        }
+        Ok((inner.disk.document.clone(), photos))
+    }
     /// Returns only grants owned by this bridge-authenticated module.
     pub fn status(&self, owner: &str) -> Result<SchoolAccessStatus, DeckError> {
         let i = self.inner.lock().map_err(|_| internal())?;

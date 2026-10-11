@@ -5,10 +5,11 @@
 import type { SchoolDataDocument, SchoolWorkbookInput } from "@deck/sdk";
 import { collectStudents, type Cell } from "./school-roster-ooxml.ts";
 import { appendRoster, newId } from "./school-data-model.ts";
-const elements = (parent: Document | Element, name: string) => Array.from(parent.getElementsByTagNameNS("*", name));
-const attr = (element: Element, name: string) =>
+export const elements = (parent: Document | Element, name: string) =>
+  Array.from(parent.getElementsByTagNameNS("*", name));
+export const attr = (element: Element, name: string) =>
   Array.from(element.attributes).find((a) => a.localName === name)?.value ?? "";
-function xml(text: string): Document {
+export function xml(text: string): Document {
   if (new TextEncoder().encode(text).length > 4 * 1024 * 1024 || /<!\s*(DOCTYPE|ENTITY)/i.test(text))
     throw new Error("엑셀 XML의 형식과 크기를 확인해 주세요.");
   const doc = new DOMParser().parseFromString(text, "application/xml");
@@ -41,7 +42,7 @@ function resolvePart(source: string, target: string) {
   }
   return path.join("/");
 }
-function relationships(parts: Record<string, string>, source: string) {
+export function relationships(parts: Record<string, string>, source: string) {
   const map = new Map<string, string>(),
     text = parts[relationshipPath(source)];
   if (!text) return map;
@@ -65,6 +66,7 @@ function address(ref: string) {
   return { row, col };
 }
 export interface WorkbookSheet {
+  partKey: string;
   name: string;
   rows: string[][];
   cells: Cell[];
@@ -145,6 +147,7 @@ export async function readWorkbook(input: SchoolWorkbookInput): Promise<Workbook
       }
   }
   return {
+    partKey: path,
     name: declared?.getAttribute("name") ?? "첫 시트",
     rows: Array.from({ length: rows.length }, (_, i) =>
       Array.from({ length: rows[i]?.length ?? 0 }, (_, j) => rows[i]?.[j] ?? ""),

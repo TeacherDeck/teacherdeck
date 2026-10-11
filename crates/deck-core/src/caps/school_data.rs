@@ -78,9 +78,9 @@ SchoolWeeklySlot { weekday:u8, period:u8, context_id:String } }
 model! { /// Full weekly table, optionally replacing the base table during a date range.
 SchoolWeeklyTable { id:String, semester_id:String, label:String, start_date:Option<String>, end_date:Option<String>, entries:Vec<SchoolWeeklySlot> } }
 model! { /// Independent date choices for weekday, daily times and weekly lessons.
-SchoolDayOverride { id:String, semester_id:String, date:String, substitute_weekday:Option<u8>, day_template_id:Option<String>, weekly_table_id:Option<String> } }
+SchoolDayOverride { id:String, semester_id:String, date:String, substitute_weekday:Option<u8>, day_template_id:Option<String>, weekly_table_id:Option<String>, #[serde(default, skip_serializing_if="Option::is_none")] #[ts(optional)] from_period:Option<u8> } }
 model! { /// Date lesson change retaining move/cancel/add and swap grouping.
-SchoolDateChange { id:String, semester_id:String, date:String, kind:SchoolDateChangeKind, context_id:String, from_period:Option<u8>, to_period:Option<u8>, change_group_id:Option<String> } }
+SchoolDateChange { id:String, semester_id:String, date:String, kind:SchoolDateChangeKind, context_id:String, from_period:Option<u8>, to_period:Option<u8>, change_group_id:Option<String>, #[serde(default, skip_serializing_if="Option::is_none")] #[ts(optional)] target_date:Option<String> } }
 model! { /// Timetable data has separate time and lesson axes; no alarm settings.
 SchoolTimetable { day_templates:Vec<SchoolDayTemplate>, weekly_tables:Vec<SchoolWeeklyTable>, day_overrides:Vec<SchoolDayOverride>, date_changes:Vec<SchoolDateChange> } }
 model! { /// Host-owned photo metadata. Original filenames and paths never appear.
@@ -382,6 +382,9 @@ impl SchoolDataDocument {
                 || !valid_date(&day.date)
                 || !dates.insert((&day.semester_id, &day.date))
                 || day.substitute_weekday.is_some_and(|d| d == 0 || d > 7)
+                || day
+                    .from_period
+                    .is_some_and(|p| p == 0 || p > 64 || day.day_template_id.is_none())
                 || day.day_template_id.as_ref().is_some_and(|id| {
                     !t.day_templates
                         .iter()
@@ -404,6 +407,9 @@ impl SchoolDataDocument {
                     .is_none_or(|c| c.semester_id != change.semester_id)
                 || change.from_period.is_some_and(|p| p == 0 || p > 64)
                 || change.to_period.is_some_and(|p| p == 0 || p > 64)
+                || change.target_date.as_ref().is_some_and(|date| {
+                    !valid_date(date) || change.kind != SchoolDateChangeKind::Move
+                })
                 || change
                     .change_group_id
                     .as_ref()
@@ -415,7 +421,11 @@ impl SchoolDataDocument {
                 SchoolDateChangeKind::Move => {
                     change.from_period.is_some()
                         && change.to_period.is_some()
-                        && change.from_period != change.to_period
+                        && (change.from_period != change.to_period
+                            || change
+                                .target_date
+                                .as_ref()
+                                .is_some_and(|date| date != &change.date))
                 }
                 SchoolDateChangeKind::Cancel => {
                     change.from_period.is_some() && change.to_period.is_none()
@@ -435,6 +445,86 @@ impl SchoolDataDocument {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn optional_timealert_fields_preserve_old_json_and_validate_new_shapes() {
+        let old_day = serde_json::json!({"id":"override", "semesterId":"sem", "date":"2026-04-01", "substituteWeekday":null, "dayTemplateId":null, "weeklyTableId":null});
+        let day: SchoolDayOverride = serde_json::from_value(old_day).unwrap();
+        assert_eq!(day.from_period, None);
+        assert!(
+            serde_json::to_value(day)
+                .unwrap()
+                .get("fromPeriod")
+                .is_none()
+        );
+        let old_change = serde_json::json!({"id":"change", "semesterId":"sem", "date":"2026-04-01", "kind":"MOVE", "contextId":"context", "fromPeriod":1,"toPeriod":2,"changeGroupId":null});
+        let change: SchoolDateChange = serde_json::from_value(old_change).unwrap();
+        assert_eq!(change.target_date, None);
+        assert!(
+            serde_json::to_value(change)
+                .unwrap()
+                .get("targetDate")
+                .is_none()
+        );
+        let mut document = SchoolDataDocument::default();
+        document.semesters.push(SchoolSemester {
+            id: "sem".into(),
+            academic_year: 2026,
+            term: 1,
+            start_date: "2026-03-01".into(),
+            end_date: "2026-07-31".into(),
+            archived: false,
+            read_only: false,
+        });
+        document.contexts.push(SchoolContext {
+            id: "context".into(),
+            semester_id: "sem".into(),
+            kind: SchoolContextKind::Division,
+            label: "합성 수업".into(),
+            subject: None,
+            room: None,
+            enrollment_ids: vec![],
+            weekly_table_id: None,
+        });
+        document.timetable.date_changes.push(SchoolDateChange {
+            id: "change".into(),
+            semester_id: "sem".into(),
+            date: "2026-04-01".into(),
+            kind: SchoolDateChangeKind::Move,
+            context_id: "context".into(),
+            from_period: Some(1),
+            to_period: Some(1),
+            change_group_id: None,
+            target_date: Some("2026-04-02".into()),
+        });
+        assert!(document.validate().is_ok());
+        document.timetable.date_changes[0].target_date = Some("2026-04-01".into());
+        assert!(document.validate().is_err());
+        document.timetable.date_changes.clear();
+        document.timetable.day_overrides.push(SchoolDayOverride {
+            id: "override".into(),
+            semester_id: "sem".into(),
+            date: "2026-04-01".into(),
+            substitute_weekday: None,
+            day_template_id: None,
+            weekly_table_id: None,
+            from_period: Some(4),
+        });
+        assert!(document.validate().is_err());
+        document.timetable.day_templates.push(SchoolDayTemplate {
+            id: "template".into(),
+            semester_id: "sem".into(),
+            label: "합성 일과".into(),
+            slots: vec![SchoolDaySlot {
+                period: 1,
+                start_minute: 540,
+                end_minute: 590,
+            }],
+        });
+        document.timetable.day_overrides[0].day_template_id = Some("template".into());
+        assert!(document.validate().is_ok());
+        document.timetable.day_overrides[0].from_period = Some(65);
+        assert!(document.validate().is_err());
+    }
     #[test]
     fn dates_and_identifiers_are_bounded() {
         assert!(valid_date("2028-02-29"));

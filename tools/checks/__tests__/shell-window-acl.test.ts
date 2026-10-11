@@ -33,10 +33,10 @@ describe("custom title bar least-privilege ACL", () => {
     expect(identifiers).not.toContain("core:default");
   });
 
-  it("loads main and the separately restricted capture capability", () => {
+  it("loads main and the separately restricted capture and presentation capabilities", () => {
     const configuration = readJson("tauri.conf.json") as {
       app: { security: { capabilities: unknown[] } };
     };
-    expect(configuration.app.security.capabilities).toEqual(["main", "capture-overlay"]);
+    expect(configuration.app.security.capabilities).toEqual(["main", "capture-overlay", "presentation"]);
   });
 });

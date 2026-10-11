@@ -13,6 +13,7 @@ import {
   InfoBar,
   NumberBox,
   PageHeader,
+  PresentationControls,
   ProgressRing,
   SettingsExpander,
   TextBox,
@@ -49,6 +50,7 @@ import {
   readRoster,
   saveState,
 } from "./state.ts";
+import { presentationPayload } from "./presentation.ts";
 const useStyles = makeStyles({
   page: {
     display: "flex",
@@ -376,6 +378,13 @@ export function App({ deck }: { deck: Deck }) {
   if (publicSnapshot)
     return (
       <div className={s.page}>
+        <PresentationControls
+          key="presentation"
+          deck={deck}
+          payload={presentationPayload(chosen)}
+          hidden={!!publicSnapshot}
+          disabled={disabled}
+        />
         <PageHeader title={publicSnapshot.label} description="확정한 자리 배치" />
         {error && <InfoBar severity="error" message="교사 화면으로 돌아가지 못했어요. 다시 눌러 주세요." />}
         {renderBoard(publicSnapshot.layout, null, publicSnapshot)}
@@ -395,6 +404,13 @@ export function App({ deck }: { deck: Deck }) {
   return (
     <div className={s.page}>
       <PageHeader title="자리 배치" description="명단과 조건을 정하고, 미리보기를 살펴본 뒤 확정해요." />
+      <PresentationControls
+        key="presentation"
+        deck={deck}
+        payload={presentationPayload(chosen)}
+        hidden={!!publicSnapshot}
+        disabled={disabled}
+      />
       <SchoolRoster
         deck={deck}
         disabled={disabled}

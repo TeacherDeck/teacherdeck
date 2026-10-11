@@ -46,4 +46,10 @@ if (process.platform === "win32") {
     if (result.status !== 0) throw new Error("승인된 쿨 예약실 구성 파일을 준비하지 못했어요.");
   }
   verifyManagedAssets(runtime, approval.files);
+  const gate = spawnSync(process.execPath, [path.join(root, "tools/scripts/build-hancom-gate.ts")], {
+    cwd: root,
+    stdio: "inherit",
+    windowsHide: true,
+  });
+  if (gate.status !== 0) throw new Error("한글 변환용 제한 보안 모듈을 준비하지 못했어요.");
 }

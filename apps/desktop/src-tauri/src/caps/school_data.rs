@@ -6,6 +6,7 @@ use super::{parse_args, to_value};
 use crate::school_data::{PhotoResource, SchoolDataService, denied, internal};
 use crate::state::AppState;
 use deck_core::caps::school_data::*;
+use deck_core::caps::timealert::*;
 use deck_core::{DeckError, ErrorCode};
 use serde_json::Value;
 use tauri::http::{Request, Response, StatusCode};
@@ -57,6 +58,132 @@ fn trusted_identity(label: &str, origin: &str) -> Result<(), DeckError> {
 fn trusted(webview: &Webview) -> Result<(), DeckError> {
     let url = webview.url().map_err(|_| denied())?;
     trusted_identity(webview.label(), &url.origin().ascii_serialization())
+}
+/// Selects and authenticates a TimeAlert DB7 backup in the trusted main shell only.
+#[tauri::command]
+pub async fn school_data_open_timealert(
+    webview: Webview,
+    app: AppHandle,
+    args: TimeAlertOpenArgs,
+) -> Result<Option<TimeAlertPreview>, DeckError> {
+    trusted(&webview)?;
+    crate::timealert::archive::password(&args.password)?;
+    let dialog = app
+        .dialog()
+        .file()
+        .set_title("TimeAlert 사진 포함 백업 선택")
+        .add_filter("TimeAlert 백업", &["teacherbackup"]);
+    let picked = tauri::async_runtime::spawn_blocking(move || dialog.blocking_pick_file())
+        .await
+        .map_err(|_| internal())?;
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+    let path = picked.into_path().map_err(|_| denied())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let temp = state.file_temp.as_ref().ok_or_else(internal)?;
+        app.state::<crate::timealert::TimeAlertService>()
+            .open(&path, args, temp)
+            .map(Some)
+    })
+    .await
+    .map_err(|_| internal())?
+}
+/// Explicitly applies the reviewed projection; revision and native photo authority are rechecked.
+#[tauri::command]
+pub async fn school_data_apply_timealert(
+    webview: Webview,
+    app: AppHandle,
+    args: TimeAlertApplyArgs,
+) -> Result<SchoolDataDocument, DeckError> {
+    trusted(&webview)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<crate::timealert::TimeAlertService>()
+            .apply(args, &app.state::<SchoolDataService>())
+    })
+    .await
+    .map_err(|_| internal())?
+}
+/// Outputs a new encrypted backup with saved photos; original files remain untouched.
+#[tauri::command]
+pub async fn school_data_export_timealert(
+    webview: Webview,
+    app: AppHandle,
+    args: TimeAlertExportArgs,
+) -> Result<bool, DeckError> {
+    trusted(&webview)?;
+    crate::timealert::archive::password(&args.password)?;
+    let worker_app = app.clone();
+    let bytes = tauri::async_runtime::spawn_blocking(move || {
+        let state = worker_app.state::<AppState>();
+        let temp = state.file_temp.as_ref().ok_or_else(internal)?;
+        worker_app
+            .state::<crate::timealert::TimeAlertService>()
+            .export(&args, &worker_app.state::<SchoolDataService>(), temp)
+    })
+    .await
+    .map_err(|_| internal())??;
+    export_school_file(
+        app,
+        "TimeAlert 사진 포함 백업을 새 파일로 저장",
+        "티처덱_사진포함.teacherbackup",
+        bytes,
+    )
+    .await
+}
+/// Closes only the specified main-owned temporary backup/workbook session.
+#[tauri::command]
+pub async fn school_data_close_timealert(
+    webview: Webview,
+    app: AppHandle,
+    args: TimeAlertCloseArgs,
+) -> Result<(), DeckError> {
+    trusted(&webview)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<crate::timealert::TimeAlertService>()
+            .close(args)
+    })
+    .await
+    .map_err(|_| internal())?
+}
+/// Preview and confirmed XLSX-photo apply share one narrowly scoped main-only command.
+#[tauri::command]
+pub async fn school_data_import_roster_photos(
+    webview: Webview,
+    app: AppHandle,
+    args: TimeAlertRosterPhotosArgs,
+) -> Result<Option<TimeAlertRosterPhotosPreview>, DeckError> {
+    trusted(&webview)?;
+    if args.session_handle.is_some() {
+        return tauri::async_runtime::spawn_blocking(move || {
+            app.state::<crate::timealert::TimeAlertService>()
+                .apply_roster(args, &app.state::<SchoolDataService>())
+                .map(Some)
+        })
+        .await
+        .map_err(|_| internal())?;
+    }
+    let dialog = app
+        .dialog()
+        .file()
+        .set_title("사진명렬표 XLSX 선택 · 대응 검토 후 등록")
+        .add_filter("사진명렬표", &["xlsx"]);
+    let picked = tauri::async_runtime::spawn_blocking(move || dialog.blocking_pick_file())
+        .await
+        .map_err(|_| internal())?;
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+    let path = picked.into_path().map_err(|_| denied())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let bytes = crate::timealert::read_file(&path, 32 * 1024 * 1024)?;
+        app.state::<crate::timealert::TimeAlertService>()
+            .open_roster(bytes, &args, &app.state::<SchoolDataService>())
+            .map(Some)
+    })
+    .await
+    .map_err(|_| internal())?
 }
 /// Dispatch; request approval is awaited away from the UI thread.
 pub async fn call(

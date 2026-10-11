@@ -11,6 +11,8 @@ export { Image } from "./Image.tsx";
 export type { ImageProps } from "./Image.tsx";
 export { DeckProvider } from "./DeckProvider.tsx";
 export type { DeckProviderProps } from "./DeckProvider.tsx";
+export { PresentationControls } from "./PresentationControls.tsx";
+export type { PresentationControlsProps } from "./PresentationControls.tsx";
 export {
   CapabilityGate,
   DropZone,
@@ -84,6 +86,7 @@ export type { ButtonProps, ToggleButtonProps, TooltipProps } from "@fluentui/rea
 /** Component names the gallery must show. */
 export const COMPONENTS = [
   "DeckProvider",
+  "PresentationControls",
   "PageHeader",
   "ToolLayout",
   "SettingsGroup",

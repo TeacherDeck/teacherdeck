@@ -26,6 +26,7 @@ import {
   ListView,
   NumberBox,
   PageHeader,
+  PresentationControls,
   ProgressBar,
   ProgressRing,
   RadioButtons,
@@ -47,6 +48,28 @@ import {
 } from "@deck/ui";
 import { type ReactNode, useState } from "react";
 
+const presentationSampleDeck: import("@deck/ui").PresentationControlsProps["deck"] = {
+  has: () => true,
+  version: () => "1.1.0",
+  on: () => () => undefined,
+  window: {
+    setFullscreen: async () => undefined,
+    setAlwaysOnTop: async () => undefined,
+    listDisplays: async () => [
+      {
+        displayHandle: "synthetic-display",
+        label: "합성 화면",
+        primary: false,
+        width: 1920,
+        height: 1080,
+        scaleFactor: 1,
+      },
+    ],
+    openPresentation: async () => ({ presentationHandle: "synthetic-presentation", revision: 0 }),
+    updatePresentation: async (args) => ({ presentationHandle: args.presentationHandle, revision: args.revision }),
+    closePresentation: async () => undefined,
+  },
+};
 type ComponentName = (typeof COMPONENTS)[number];
 
 const CASES = [
@@ -151,6 +174,17 @@ function ListSample() {
 }
 
 const SAMPLES: Record<ComponentName, () => ReactNode> = {
+  PresentationControls: () => (
+    <PresentationControls
+      deck={presentationSampleDeck}
+      payload={{
+        kind: "picker",
+        title: "합성 학생 화면",
+        columns: null,
+        items: [{ label: "1번 합성가", group: null, row: null, column: null }],
+      }}
+    />
+  ),
   DeckProvider: () => <Body>DeckProvider: 이 미리보기 전체를 감싸고 있어요.</Body>,
   PageHeader: () => <PageHeader title="파일명 일괄 변환" description="여러 파일의 이름을 한 번에 바꿔요." />,
   ToolLayout: () => (

@@ -14,6 +14,7 @@ import {
   InfoBar,
   ListView,
   PageHeader,
+  PresentationControls,
   ProgressRing,
   SettingsExpander,
   TextBox,
@@ -42,6 +43,7 @@ import { loadState, readBackup, saveState, writeBackup } from "./state.ts";
 import { SchoolRoster } from "./SchoolRoster.tsx";
 import { StudentPage } from "./StudentPage.tsx";
 import { generateInWorker } from "./planner-client.ts";
+import { presentationPayload } from "./presentation.ts";
 const useStyles = makeStyles({
   page: {
     display: "flex",
@@ -305,6 +307,13 @@ export function App({ deck }: { deck: Deck }) {
   if (publicView)
     return (
       <div className={s.page}>
+        <PresentationControls
+          key="presentation"
+          deck={deck}
+          payload={presentationPayload(state)}
+          hidden={publicView}
+          disabled={disabled}
+        />
         {publicResult}
         <div className={s.row}>
           <Button
@@ -324,6 +333,13 @@ export function App({ deck }: { deck: Deck }) {
       <PageHeader
         title="역할·당번 나누기"
         description="고정·제외 조건을 먼저 지키고, 필요한 인원만 총 수행횟수가 낮은 대상부터 배정해요."
+      />
+      <PresentationControls
+        key="presentation"
+        deck={deck}
+        payload={presentationPayload(state)}
+        hidden={publicView}
+        disabled={disabled}
       />
       <SchoolRoster
         deck={deck}

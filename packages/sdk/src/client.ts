@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import type { MessagingConnectArgs } from "./generated/MessagingConnectArgs.ts";
+import type { MediaDownloadStartArgs } from "./generated/MediaDownloadStartArgs.ts";
+import type { MediaDownloadJob } from "./generated/MediaDownloadJob.ts";
+import type { MediaDownloadStatus } from "./generated/MediaDownloadStatus.ts";
+import type { MediaDownloadCancelResult } from "./generated/MediaDownloadCancelResult.ts";
 import type { MessagingConnection } from "./generated/MessagingConnection.ts";
 import type { MessagingRecipientsArgs } from "./generated/MessagingRecipientsArgs.ts";
 import type { MessagingRecipient } from "./generated/MessagingRecipient.ts";
@@ -13,6 +17,11 @@ import type { MessagingStatus } from "./generated/MessagingStatus.ts";
 import type { MessagingCancelArgs } from "./generated/MessagingCancelArgs.ts";
 import type { MessagingCancelResult } from "./generated/MessagingCancelResult.ts";
 import type { DisplayInfo } from "./generated/DisplayInfo.ts";
+import type { PresentationDisplay } from "./generated/PresentationDisplay.ts";
+import type { PresentationSession } from "./generated/PresentationSession.ts";
+import type { OpenPresentationArgs } from "./generated/OpenPresentationArgs.ts";
+import type { UpdatePresentationArgs } from "./generated/UpdatePresentationArgs.ts";
+import type { ClosePresentationArgs } from "./generated/ClosePresentationArgs.ts";
 import type { CaptureArgs } from "./generated/CaptureArgs.ts";
 import type { CaptureResult } from "./generated/CaptureResult.ts";
 import type { CaptureArmArgs } from "./generated/CaptureArmArgs.ts";
@@ -172,6 +181,11 @@ export interface Deck {
     status(args: MessagingStatusArgs): Promise<MessagingStatus>;
     cancel(args: MessagingCancelArgs): Promise<MessagingCancelResult>;
   };
+  readonly mediaDownload: {
+    start(args: MediaDownloadStartArgs): Promise<MediaDownloadJob>;
+    status(args: MediaDownloadJob): Promise<MediaDownloadStatus>;
+    cancel(args: MediaDownloadJob): Promise<MediaDownloadCancelResult>;
+  };
   readonly office: {
     availability(): Promise<OfficeAvailability>;
     convert(args: OfficeConvertArgs): Promise<OfficeConvertResult>;
@@ -260,6 +274,10 @@ export interface Deck {
     writeBlob(args: WriteBlobArgs, options?: TransferOptions): Promise<FileHandleInfo>;
   };
   readonly window: {
+    listDisplays(): Promise<PresentationDisplay[]>;
+    openPresentation(args: OpenPresentationArgs): Promise<PresentationSession>;
+    updatePresentation(args: UpdatePresentationArgs): Promise<PresentationSession>;
+    closePresentation(args: ClosePresentationArgs): Promise<void>;
     setAlwaysOnTop(value: boolean): Promise<void>;
     setFullscreen(value: boolean): Promise<void>;
   };
@@ -405,6 +423,16 @@ export function connect(options: ConnectOptions = {}): Promise<Deck> {
         );
       return call<T>("fs", method, args);
     };
+    const callWindow11 = <T>(method: string, args: unknown): Promise<T> => {
+      const { granted, host } = requireInit();
+      if (!granted.includes("window")) return call<T>("window", method, args);
+      const version = /^1\.(\d+)\.\d+$/.exec(host.caps["window"] ?? "");
+      if (!version || Number(version[1]) < 1)
+        return Promise.reject(
+          new DeckCallError("VERSION_MISMATCH", "학생 화면은 window 1.1 이상 앱에서 사용할 수 있어요."),
+        );
+      return call<T>("window", method, args);
+    };
     const deck: Deck = {
       get module() {
         return requireInit().module;
@@ -445,6 +473,11 @@ export function connect(options: ConnectOptions = {}): Promise<Deck> {
         start: (args) => call<MessagingRun>("messaging", "start", args),
         status: (args) => call<MessagingStatus>("messaging", "status", args),
         cancel: (args) => call<MessagingCancelResult>("messaging", "cancel", args),
+      },
+      mediaDownload: {
+        start: (args) => call<MediaDownloadJob>("media-download", "start", args),
+        status: (args) => call<MediaDownloadStatus>("media-download", "status", args),
+        cancel: (args) => call<MediaDownloadCancelResult>("media-download", "cancel", args),
       },
       office: {
         availability: () => call<OfficeAvailability>("office", "availability", {}),
@@ -541,6 +574,10 @@ export function connect(options: ConnectOptions = {}): Promise<Deck> {
         writeBlob: (args, opts) => createFileTransfer(deck.fs, () => win.location?.origin).writeBlob(args, opts),
       },
       window: {
+        listDisplays: () => callWindow11<PresentationDisplay[]>("listDisplays", {}),
+        openPresentation: (args) => callWindow11<PresentationSession>("openPresentation", args),
+        updatePresentation: (args) => callWindow11<PresentationSession>("updatePresentation", args),
+        closePresentation: (args) => callWindow11("closePresentation", args).then(() => undefined),
         setAlwaysOnTop: (value) => call("window", "setAlwaysOnTop", { value }).then(() => undefined),
         setFullscreen: (value) => call("window", "setFullscreen", { value }).then(() => undefined),
       },

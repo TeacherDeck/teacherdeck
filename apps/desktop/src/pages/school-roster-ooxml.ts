@@ -122,10 +122,23 @@ export function collectStudents(
   });
   return { students, missingHeader, duplicates };
 }
-/** Only the proven coordinate rule is confirmed. Fallbacks are displayed as suggestions. */
+export function ambiguousAnchorCoordinates(anchors: Anchor[]): Set<string> {
+  const keys = new Map<string, Set<string>>();
+  for (const anchor of anchors) {
+    const coordinate = `${anchor.row}:${anchor.col}`;
+    const images = keys.get(coordinate) ?? new Set<string>();
+    images.add(anchor.key);
+    keys.set(coordinate, images);
+  }
+  return new Set([...keys].filter(([, images]) => images.size > 1).map(([coordinate]) => coordinate));
+}
+/** Only a unique proven coordinate rule is confirmed. Fallbacks are displayed as suggestions. */
 export function matchPhotos(students: Student[], anchors: Anchor[]): Student[] {
   const result = students.map((s) => ({ ...s }));
-  const photos = [...anchors].sort((a, b) => a.row - b.row || a.col - b.col);
+  const ambiguous = ambiguousAnchorCoordinates(anchors);
+  const photos = anchors
+    .filter((anchor) => !ambiguous.has(`${anchor.row}:${anchor.col}`))
+    .sort((a, b) => a.row - b.row || a.col - b.col);
   const used = new Set<string>();
   for (const photo of photos) {
     const student = result.find((s) => s.row === photo.row + 1 && s.col === photo.col && !s.photoKey);

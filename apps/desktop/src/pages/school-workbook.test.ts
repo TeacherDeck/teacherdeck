@@ -65,6 +65,7 @@ describe("same-file OOXML and TimeAlert table contracts", () => {
     expect(
       rosterFromWorkbook({
         name: "합성",
+        partKey: "xl/worksheets/sheet1.xml",
         rows: [],
         cells: [{ row: 2, col: 1, text: "2학년 3반 1번 합성가" }],
         warnings: [],
@@ -72,7 +73,7 @@ describe("same-file OOXML and TimeAlert table contracts", () => {
     ).toBe("2,3,1,합성가");
   });
   it("parses original grid, transposed grid, legacy list and merged period groups", () => {
-    const base = { name: "합성", cells: [], warnings: [] };
+    const base = { name: "합성", partKey: "xl/worksheets/sheet1.xml", cells: [], warnings: [] };
     const row = timetableFromWorkbook({
       ...base,
       rows: [
@@ -133,6 +134,7 @@ describe("same-file OOXML and TimeAlert table contracts", () => {
     const d = seeded(),
       parsed = timetableFromWorkbook({
         name: "합성",
+        partKey: "xl/worksheets/sheet1.xml",
         cells: [],
         warnings: [],
         rows: [
@@ -150,7 +152,13 @@ describe("same-file OOXML and TimeAlert table contracts", () => {
       ["2", "3", "2", "합성나"],
     ]);
     const rows = timetableRows(next, required(next.timetable.weeklyTables[0]).id),
-      roundtrip = timetableFromWorkbook({ name: "합성", rows, cells: [], warnings: [] });
+      roundtrip = timetableFromWorkbook({
+        name: "합성",
+        partKey: "xl/worksheets/sheet1.xml",
+        rows,
+        cells: [],
+        warnings: [],
+      });
     expect(required(roundtrip.lessons[0]).subject).toBe("수학");
     expect(required(roundtrip.lessons[0]).hint).toBe("2-3");
   });

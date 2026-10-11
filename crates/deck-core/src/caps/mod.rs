@@ -20,13 +20,16 @@ pub mod clipboard;
 pub mod file_ops;
 pub mod fs;
 pub mod global_shortcut;
+pub mod media_download;
 pub mod messaging;
 pub mod network;
 pub mod office;
 pub mod overlay;
+pub mod presentation;
 pub mod school_data;
 pub mod storage;
 pub mod system;
+pub mod timealert;
 pub mod window;
 
 /// Capability name → version provided by the running host (`init.host.caps`).
@@ -66,6 +69,16 @@ const fn m(name: &'static str, long: bool, summary: &'static str) -> MethodSpec 
 
 /// v1 capabilities (capabilities.md §2).
 pub const REGISTRY: &[CapSpec] = &[
+    CapSpec {
+        name: "media-download",
+        version: "1.0.0",
+        summary: "공개 단일 영상의 제한된 새 파일 다운로드",
+        methods: &[
+            m("start", false, "선택 폴더로 영상 다운로드 시작"),
+            m("status", false, "자기 다운로드 진행 상태"),
+            m("cancel", false, "미완성 다운로드 중지"),
+        ],
+    },
     CapSpec {
         name: "messaging",
         version: "1.0.0",
@@ -121,7 +134,7 @@ pub const REGISTRY: &[CapSpec] = &[
     },
     CapSpec {
         name: "school-data",
-        version: "1.0.0",
+        version: "1.1.0",
         summary: "사용자가 연결한 공통 학급 자료의 제한된 읽기",
         methods: &[
             m("status", false, "자기 모듈의 연결 상태"),
@@ -237,9 +250,13 @@ pub const REGISTRY: &[CapSpec] = &[
     },
     CapSpec {
         name: "window",
-        version: "1.0.0",
+        version: "1.1.0",
         summary: "창 상태(모듈이 숨겨지면 원래대로 복원)",
         methods: &[
+            m("listDisplays", false, "학생 화면을 표시할 모니터 목록"),
+            m("openPresentation", false, "선택한 모니터에 공개 결과 표시"),
+            m("updatePresentation", false, "학생 화면의 공개 결과 갱신"),
+            m("closePresentation", false, "자기 모듈의 학생 화면 닫기"),
             m("setAlwaysOnTop", false, "항상 위 켜기·끄기"),
             m("setFullscreen", false, "전체화면 켜기·끄기"),
         ],

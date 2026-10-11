@@ -90,6 +90,7 @@ export function App({ deck }: { deck: Deck }) {
   }
   const plans = planConversions(files, macros),
     shown = rows.length ? rows : plans;
+  const hancomRunning = rows.some((row) => row.state === "converting" && providerFor(row.file) === "hancom");
   const unsupported = plans.some(
     (row) =>
       availability !== null &&
@@ -164,7 +165,9 @@ export function App({ deck }: { deck: Deck }) {
       setMessage(
         stopped.current
           ? "변환을 중지했어요. 저장한 결과는 유지해요."
-          : "변환을 마쳤어요. 새 문서의 표·그림·수식과 서식을 확인해 주세요.",
+          : next.some((row) => row.state === "failed")
+            ? "변환하지 못한 문서가 있어요. 항목별 안내를 확인하고 실패한 문서만 다시 변환해 주세요."
+            : "변환을 마쳤어요. 새 문서의 표·그림·수식과 서식을 확인해 주세요.",
       );
     } catch {
       setMessage("출력 폴더를 준비하지 못했어요. 다른 폴더를 선택해 주세요.");
@@ -296,7 +299,13 @@ export function App({ deck }: { deck: Deck }) {
             header="문서를 변환하고 있어요"
           />
         )}
-        <Caption>문서 접근 승인 창이 열리면 직접 확인해 주세요. 한 문서당 최대 2분 기다려요.</Caption>
+        {hancomRunning && (
+          <InfoBar
+            severity="informational"
+            message="한글에서 작업용 사본을 새 형식으로 저장하고 있어요. 파일 접근은 작업용 사본과 새 결과로 제한해요. 안전하게 연결하지 못하면 변환을 중지해요."
+          />
+        )}
+        <Caption>다른 Office의 문서 접근 승인 창은 직접 확인해 주세요. 한 문서당 최대 2분 기다려요.</Caption>
       </ToolLayout.Section>
       <ToolLayout.Section step="result" title="변환 결과">
         {message && <InfoBar severity="informational" message={message} />}

@@ -17,6 +17,7 @@ use crate::state::AppState;
 pub mod clipboard;
 mod file_ops;
 pub(crate) mod fs;
+pub mod media_download;
 pub mod messaging;
 pub mod network;
 pub mod office;
@@ -31,6 +32,8 @@ pub use fs::serve_file_resource;
 /// Handler selected for a `(cap, method)` pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Route {
+    /// Fixed public video download engine.
+    MediaDownload(media_download::Op),
     /// Fixed CoolReserve worker with trusted final confirmation.
     Messaging(messaging::Op),
     /// Shared school projections through a teacher-selected grant.
@@ -63,6 +66,7 @@ pub enum Route {
 pub fn route(cap: &str, method: &str) -> Option<Route> {
     deck_core::caps::method(cap, method)?;
     Some(match (cap, method) {
+        ("media-download", m) => Route::MediaDownload(media_download::Op::parse(m)?),
         ("messaging", m) => Route::Messaging(messaging::Op::parse(m)?),
         ("school-data", m) => Route::SchoolData(school_data::Op::parse(m)?),
         ("file-ops", m) => Route::FileOps(file_ops::Op::parse(m)?),
@@ -111,6 +115,9 @@ pub async fn dispatch(
     args: Value,
 ) -> Result<Value, DeckError> {
     match route(cap, method) {
+        Some(Route::MediaDownload(op)) => {
+            media_download::call(app, state, module_id, op, args).await
+        }
         Some(Route::Messaging(op)) => messaging::route(app, module_id, op, args).await,
         Some(Route::SchoolData(op)) => school_data::call(app, state, module_id, op, args).await,
         Some(Route::FileOps(op)) => file_ops::call(app, state, module_id, op, args).await,

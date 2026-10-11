@@ -1,0 +1,21 @@
+{
+  "$schema": "../../schema/module.schema.json",
+  "manifestVersion": 1,
+  "id": "dday",
+  "name": "D-day",
+  "description": "날짜를 저장하고 남은 날·지난 날을 이 PC에서 확인해요.",
+  "version": "0.1.0",
+  "category": "utility",
+  "icon": "icon.svg",
+  "entry": "index.html",
+  "authors": [
+    {
+      "name": "rochelobeJYJ"
+    }
+  ],
+  "requires": {
+    "storage": "^1.0",
+    "fs": "^1.1"
+  },
+  "optional": {}
+}

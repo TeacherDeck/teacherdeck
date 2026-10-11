@@ -34,6 +34,11 @@ function host(): SchoolDataHost {
     recover: vi.fn(async (args) => args.document),
     readWorkbook: vi.fn(async () => null),
     writeWorkbook: vi.fn(async () => false),
+    openTimeAlert: vi.fn(async () => null),
+    applyTimeAlert: vi.fn(async () => d),
+    exportTimeAlert: vi.fn(async () => false),
+    closeTimeAlert: vi.fn(async () => {}),
+    importRosterPhotos: vi.fn(async () => null),
   };
 }
 async function focusRegisteredDialog(title: string, inputLabel?: string) {

@@ -2,6 +2,16 @@
   "$comment": "GEN-003 억제 allowlist. 보호 파일이에요. 항목 추가는 사람 승인이 필요해요. 형식: { file, pattern, reason }",
   "entries": [
     {
+      "file": "apps/desktop/src-tauri/src/hancom_gate.rs",
+      "pattern": "#![allow(unsafe_code)]",
+      "reason": "ADR-0027: 2026-10-11 사용자 자동화 승인. 정확한 자기 Hwp PID·작업용 두 파일만 검증하는 한글 COM 보안 모듈의 HKCU 등록·인증된 로컬 pipe·파일 핸들 경계."
+    },
+    {
+      "file": "apps/desktop/src-tauri/hancom-security/src/ffi.rs",
+      "pattern": "#![allow(unsafe_code)]",
+      "reason": "ADR-0027: 2026-10-11 사용자 자동화 승인. 독립 std-only x86 DLL의 공식 IsAccessiblePath ABI·제한된 foreign string 읽기·자기 worker PID 확인만 담당."
+    },
+    {
       "file": "apps/desktop/src-tauri/src/file_ops/native.rs",
       "pattern": "#![allow(unsafe_code)]",
       "reason": "ADR-0022: 2026-10-11 사용자 승인. 열린 파일 ID·덮어쓰기 없는 핸들 이름 변경의 격리된 Windows FFI."

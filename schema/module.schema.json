@@ -131,6 +131,7 @@
       "description": "Optional capabilities and semver ranges (MOD-007).",
       "propertyNames": {
         "enum": [
+          "media-download",
           "messaging",
           "office",
           "network",
@@ -155,6 +156,7 @@
       "description": "Required capabilities and semver ranges.",
       "propertyNames": {
         "enum": [
+          "media-download",
           "messaging",
           "office",
           "network",

@@ -35,7 +35,12 @@ export function App({ deck }: { deck: Deck }) {
   const [total, setTotal] = useState(0);
   const [processed, setProcessed] = useState(0);
   const [message, setMessage] = useState("");
-  const [automatic, setAutomatic] = useState(false);
+  const [automatic, setAutomatic] = useState(true);
+  const latest = useRef({ automatic, options });
+  latest.current = { automatic, options };
+  const parentRef = useRef<FolderHandleInfo | null>(null);
+  const resultsRef = useRef<Result[]>([]);
+  const queued = useRef(new Map<string, FileHandleInfo>());
   const busy = useRef(false);
   const controller = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -53,13 +58,12 @@ export function App({ deck }: { deck: Deck }) {
   useEffect(
     () =>
       deck.on("fs.dropped", (incoming) => {
-        if (busy.current) return;
         void addFiles(incoming.files);
       }),
-    [deck, files, results, automatic, parent, options],
+    [deck],
   );
   async function addFiles(incoming: FileHandleInfo[]) {
-    if (busy.current || !incoming.length) return;
+    if (!incoming.length) return;
     const accepted = [...new Map(incoming.filter(supported).map((file) => [file.handle, file])).values()].filter(
       (file) => !filesRef.current.some((existing) => existing.handle === file.handle),
     );
@@ -76,7 +80,7 @@ export function App({ deck }: { deck: Deck }) {
         ? "JPG, PNG, WebP만 추가해요. 움직이는 이미지와 HEIC는 지원하지 않아요."
         : "",
     );
-    if (automatic && parent) await run(accepted);
+    if (latest.current.automatic) await run(accepted);
   }
   async function pickFiles() {
     try {
@@ -91,57 +95,92 @@ export function App({ deck }: { deck: Deck }) {
     }
   }
   async function pickFolder() {
+    if (busy.current) return;
+    busy.current = true;
+    setRunning(true);
+    const abort = new AbortController();
+    controller.current = abort;
+    let chosen = false;
     try {
       const picked = await deck.fs.pickFolder();
-      if (picked) setParent(picked);
+      if (picked && !abort.signal.aborted) {
+        parentRef.current = picked;
+        setParent(picked);
+        chosen = true;
+      }
     } catch {
       setMessage("폴더를 선택하지 못했어요. 다시 선택해 주세요.");
+    } finally {
+      busy.current = false;
+      setRunning(false);
+      controller.current = null;
+      const waiting = [...queued.current.values()];
+      queued.current.clear();
+      if (chosen && waiting.length) void run(waiting);
     }
   }
   async function run(
-    selected: readonly FileHandleInfo[] = files.filter(
-      (file) => !results.some((result) => result.file.handle === file.handle),
+    selected: readonly FileHandleInfo[] = filesRef.current.filter(
+      (file) => !resultsRef.current.some((result) => result.file.handle === file.handle),
     ),
   ) {
-    if (busy.current || !selected.length) return;
+    for (const file of selected) queued.current.set(file.handle, file);
+    if (busy.current || !queued.current.size) return;
     busy.current = true;
-    let target = parent;
+    const abort = new AbortController();
+    controller.current = abort;
+    setRunning(true);
+    let target = parentRef.current;
     try {
       if (!target) target = await deck.fs.pickFolder();
     } catch {
       setMessage("폴더를 선택하지 못했어요. 다시 선택해 주세요.");
     }
-    if (!target) {
+    if (!target || abort.signal.aborted) {
+      queued.current.clear();
       busy.current = false;
+      controller.current = null;
+      setRunning(false);
+      setMessage(
+        "폴더 선택을 취소했어요. 추가한 파일과 이전 결과는 유지해요. 압축하여 저장으로 다시 시작할 수 있어요.",
+      );
       return;
     }
+    parentRef.current = target;
     setParent(target);
-    const abort = new AbortController();
-    controller.current = abort;
-    setTotal(selected.length);
-    setProcessed(0);
-    setRunning(true);
     setMessage("");
-    void saveOptions(deck, options).catch(() => undefined);
+    const runOptions = latest.current.options;
+    void saveOptions(deck, runOptions).catch(() => undefined);
     try {
-      const mergeResults = (incoming: Result[]) =>
-        setResults((previous) => [
-          ...new Map([...previous, ...incoming].map((result) => [result.file.handle, result])).values(),
-        ]);
-      const output = await runBatch(deck, selected, target.handle, options, abort.signal, encode, (current) => {
-        setProcessed(current.length);
-        mergeResults(current);
-      });
-      if (output.folder) setFolder(output.folder);
-      mergeResults(output.results);
+      const mergeResults = (incoming: Result[]) => {
+        resultsRef.current = [
+          ...new Map([...resultsRef.current, ...incoming].map((result) => [result.file.handle, result])).values(),
+        ];
+        setResults(resultsRef.current);
+      };
+      let completed: Result[] = [];
+      while (queued.current.size && !abort.signal.aborted) {
+        const batch = [...queued.current.values()];
+        queued.current.clear();
+        setTotal(batch.length);
+        setProcessed(0);
+        const output = await runBatch(deck, batch, target.handle, runOptions, abort.signal, encode, (current) => {
+          setProcessed(current.length);
+          mergeResults(current);
+        });
+        if (output.folder) setFolder(output.folder);
+        mergeResults(output.results);
+        completed = [...completed, ...output.results];
+      }
       setMessage(
         abort.signal.aborted
           ? "취소했어요. 저장한 결과와 실패 목록을 유지하고, 아직 처리하지 않은 파일은 다시 압축할 수 있어요."
-          : `${output.results.filter((r) => r.status !== "failed").length}개 이미지를 저장했어요.${output.results.some((r) => r.status === "failed") ? " 실패한 파일은 결과 목록에서 재시도할 수 있어요." : ""}`,
+          : `${completed.filter((r) => r.status !== "failed").length}개 이미지를 저장했어요.${completed.some((r) => r.status === "failed") ? " 실패한 파일은 결과 목록에서 재시도할 수 있어요." : ""}`,
       );
     } catch {
       setMessage("결과 폴더를 사용하지 못했어요. 저장 폴더를 다시 선택해 주세요.");
     } finally {
+      queued.current.clear();
       busy.current = false;
       setRunning(false);
       controller.current = null;
@@ -153,14 +192,12 @@ export function App({ deck }: { deck: Deck }) {
       description="여러 이미지를 한 번에 줄여 새 폴더에 저장해요. 원본은 그대로 남아요."
     >
       <ToolLayout.Section step="input" title="1. 이미지 추가">
-        {!running && (
-          <DropZone
-            onPick={() => {
-              void pickFiles();
-            }}
-            description="JPG · PNG · WebP를 끌어 놓거나 파일을 선택해 주세요."
-          />
-        )}
+        <DropZone
+          onPick={() => {
+            void pickFiles();
+          }}
+          description="JPG · PNG · WebP를 끌어 놓거나 파일을 선택해 주세요."
+        />
         <div className={styles.actions}>
           <Button
             appearance="primary"
@@ -175,12 +212,7 @@ export function App({ deck }: { deck: Deck }) {
             취소
           </Button>
         </div>
-        <CheckBox
-          content="파일 추가 시 바로 압축"
-          checked={automatic}
-          disabled={running || !parent}
-          onChange={setAutomatic}
-        />
+        <CheckBox content="파일 추가 시 바로 압축" checked={automatic} disabled={running} onChange={setAutomatic} />
         <Body secondary>처음에는 저장 폴더를 선택해요. 바로 압축은 이 화면에서만 적용돼요.</Body>
         <Body>
           {files.length}개 · {bytes(files.reduce((sum, file) => sum + file.size, 0))} · 대기{" "}
@@ -192,6 +224,7 @@ export function App({ deck }: { deck: Deck }) {
             filesRef.current = [];
             setFiles([]);
             setResults([]);
+            resultsRef.current = [];
             setFolder(null);
             setMessage("");
           }}
@@ -257,7 +290,7 @@ export function App({ deck }: { deck: Deck }) {
       </ToolLayout.Section>
       <ToolLayout.Section step="run" title="4. 압축">
         <div className={styles.actions}>
-          <Body secondary>위의 압축하여 저장을 누르면 새 폴더에 결과를 저장해요.</Body>
+          <Body secondary>파일을 추가하면 바로 처리해요. 취소한 대기 파일은 압축하여 저장으로 다시 시작해요.</Body>
         </div>
         {running && (
           <>

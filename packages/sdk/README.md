@@ -4,7 +4,7 @@
 
 ## fs 1.1 파일 전송
 
-SDK 0.5.0은 fs 1.3의 `listFiles`, `fileOps`의 확인된 파일명 변경·되돌리기, `schoolData`의 제한된 공통 명부·시간표 읽기, `office`의 실제 문서 변환과 `network`의 저장된 루틴 API를 제공해요. 각 매니페스트에 필요한 캡을 선언하고 선택 권한은 `deck.has()`로 확인해 주세요. 공통 학급 연결 없이 쓰는 도구의 임시 작업은 계속 지원해야 해요.
+SDK 0.7.0은 fs 1.3의 `listFiles`, `fileOps`의 확인된 파일명 변경·되돌리기, `schoolData`의 제한된 공통 명부·시간표 읽기, `office`의 문서 변환과 `network`의 저장된 루틴 API를 제공해요. 각 매니페스트에 필요한 캡을 선언하고 선택 권한은 `deck.has()`로 확인해 주세요. 공통 학급 연결 없이 쓰는 도구의 임시 작업은 계속 지원해야 해요.
 
 `fileOps.executeRename`과 `undoRename`은 한 번에 독립된 변경 묶음 하나를 처리해요. `done: false`이면 다음 묶음을 호출할 수 있으며, 중지는 다음 호출을 하지 않는 방식이에요. 호스트의 첫 확인 이후에도 파일 ID·내용을 재확인하며 원본 변경을 기본값으로 삼지 않아요.
 
@@ -42,8 +42,20 @@ if (parent) {
 
 SDK는 정상 사용의 전송 청크를 제한하지만 악성 모듈이 보내는 모든 IPC/HTTP 요청에 대한 전역 메모리 절대 상한을 보장하지 않아요. 저장·처리 중인 파일 내용과 URL·토큰은 로그에 남기지 마세요.
 
+## 학생 화면
+
+window 1.1의 `listDisplays`, `openPresentation`, `updatePresentation`, `closePresentation`으로 교사가 선택한 화면에 공개 결과를 표시해요. 소유 모듈에만 발급한 화면·창 핸들을 쓰며, 자리·발표·모둠·역할의 공개 자료만 전달해요. 학생 내부 식별자·비공개 기록·교사의 조건은 보내지 않아요. 업데이트에는 직전 응답보다 큰 revision을 사용하고, 종료·모니터 연결 변경 이벤트를 받아 화면 상태를 갱신해요.
+
+기존 window 1.0 호스트에서는 새 메서드를 호출하기 전에 버전 오류를 반환해요. 호환 가능한 모듈은 기존 기능을 유지하면서 학생 화면 버튼만 사용할 수 없다고 안내해 주세요. 자세한 제한과 이벤트는 [학생 화면 계약](../../docs/spec/presentation.md)에 있어요.
+
+TimeAlert 전체 암호화 백업과 원형 기록·사진 보존은 신뢰 셸 전용이에요. 모듈에 전체 백업 읽기 권한을 주지 않으며 `schoolData`로 사용자가 연결한 공통 자료만 제공해요.
+
 ## 테스트
 
 `@deck/sdk/testing`의 createMockHost로 브리지 계약을 검증해요. 파일 읽기 테스트는 자신의 모듈 origin과 대체 fetch를 제공해 합성 바이트를 반환해요. SDK 테스트 통과는 실제 Windows WebView2의 파일·자산·Worker·커스텀 프로토콜 동작 검증을 대신하지 않아요.
 
 캡처 API는 `deck.capture`, `deck.overlay`, `deck.globalShortcut`과 fs 1.2 destination 메서드로 제공해요. 반환 핸들은 소유 모듈만 사용할 수 있고 경로는 노출하지 않아요. 이미지 데이터는 `fs.readChunks`로 읽어요.
+
+## 영상 다운로드
+
+media-download 1.0의 `mediaDownload.start({ url, folderHandle })`은 작업 핸들을 즉시 돌려줘요. `status`로 진행과 완료 파일을 확인하고 `cancel`로 중지할 수 있어요. 선택한 폴더의 새 MP4만 게시하며 완료 파일은 `fs.reveal`로 열 수 있어요. 모듈 종료시 진행 중인 작업은 취소돼요. 임의 주소·로그인 쿠키·실행기 인자는 외부 도구로 전달하지 않아요.

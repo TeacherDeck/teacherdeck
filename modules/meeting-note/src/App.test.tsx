@@ -144,6 +144,7 @@ describe("original meeting interaction flow", () => {
   it("copies public rich content only after a click and keeps file export on older hosts", async () => {
     const { deck, view, store } = await setup(seeded(), undefined, true);
     const input = await screen.findByRole("textbox", { name: "발언 입력" });
+    input.focus();
     for (const text of ["공개 발언", "// 비공개 발언"]) {
       fireEvent.change(input, { target: { value: text } });
       fireEvent.keyDown(input, { key: "Enter" });
@@ -158,9 +159,16 @@ describe("original meeting interaction flow", () => {
     deck.dispose();
     const older = await setup(seeded());
     const oldInput = await screen.findByRole("textbox", { name: "발언 입력" });
+    oldInput.focus();
     fireEvent.keyDown(oldInput, { code: "F8" });
-    expect(screen.queryByRole("button", { name: "서식을 유지해 복사" })).toBeNull();
-    expect(screen.getByRole("button", { name: "공개용 파일 저장" })).toBeTruthy();
+    const dialog = await screen.findByRole("dialog", { name: "내보내기" });
+    await waitFor(() => expect(dialog.querySelector("[data-tabster-dummy]")).toBeTruthy());
+    const action = dialog.querySelector("button");
+    if (!action) throw new Error("synthetic export action missing");
+    action.focus();
+    expect(document.activeElement).toBe(action);
+    expect(await within(dialog).findByRole("button", { name: "공개용 파일 저장" })).toBeTruthy();
+    expect(within(dialog).queryByRole("button", { name: "서식을 유지해 복사" })).toBeNull();
     older.view.unmount();
     older.deck.dispose();
   });

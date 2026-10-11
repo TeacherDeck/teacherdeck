@@ -39,4 +39,8 @@ toPeriod: number | null,
 /**
  *Validated `change_group_id` value in this school-data contract.
  */
-changeGroupId: string | null, };
+changeGroupId: string | null, 
+/**
+ *Validated `target_date` value in this school-data contract.
+ */
+targetDate?: string, };

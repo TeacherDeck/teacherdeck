@@ -52,6 +52,34 @@ const result = (args: OfficeConvertArgs) => ({
   warnings: ["review_layout"],
 });
 describe("installed Office SDK workflow", () => {
+  it("explains bounded Hancom access and the cleaned job after timeout", async () => {
+    let rejectPending: ((reason: DeckCallError) => void) | undefined;
+    const { host, deck } = await setup(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectPending = reject;
+        }),
+    );
+    host.emit("fs.dropped", { files: [file("hancom", "합성.hwp")] });
+    await waitFor(() => expect(screen.getByText("1개 문서")).toBeTruthy());
+    expect(screen.queryByText(/파일 접근은 작업용 사본과 새 결과로 제한/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "출력 폴더 선택하고 변환" }));
+    const approval = await screen.findByText(/파일 접근은 작업용 사본과 새 결과로 제한/);
+    expect(approval.textContent).toContain("안전하게 연결하지 못하면 변환을 중지");
+    expect(screen.getByText("변환 중")).toBeTruthy();
+    rejectPending?.(
+      new DeckCallError(
+        "TIMEOUT",
+        "응답 시간이 지나 한글 변환을 중지하고 작업 창을 정리했어요. 한글에서 직접 변환해 주세요.",
+      ),
+    );
+    await screen.findByText(/한글 변환을 중지하고 작업 창을 정리/);
+    await screen.findByText("변환하지 못한 문서가 있어요. 항목별 안내를 확인하고 실패한 문서만 다시 변환해 주세요.");
+    expect(screen.queryByText(/파일 접근은 작업용 사본과 새 결과로 제한/)).toBeNull();
+    expect(screen.queryByText("변환했어요")).toBeNull();
+    expect((screen.getByRole("button", { name: "실패한 문서 다시 변환" }) as HTMLButtonElement).disabled).toBe(false);
+    deck.dispose();
+  });
   it("retains successful results and retries only failed files in a macro-preserving format", async () => {
     const { host, deck } = await setup((args) => {
       if (args.sourceHandle === "macro" && args.targetFormat === "xlsx")

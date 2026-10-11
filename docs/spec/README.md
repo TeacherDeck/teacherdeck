@@ -10,6 +10,8 @@
 | [modules.md](modules.md) | 매니페스트 포맷, 모듈 구성, 생명주기 | MOD |
 | [bridge-protocol.md](bridge-protocol.md) | 브리지 메시지 포맷, 핸드셰이크, 이벤트 | BRG |
 | [capabilities.md](capabilities.md) | 캡 설계 원칙, v1 레지스트리, 추가 절차, 예정 캡 | CAP |
+| [presentation.md](presentation.md) | 학생용 별도 화면의 공개 자료·수명·권한 | CAP·SEC 참조 |
+| [timealert-portability.md](timealert-portability.md) | TimeAlert 암호화 백업·사진의 호환 경계 | CAP·PRV 참조 |
 | [versioning.md](versioning.md) | 버전 축, 호환성 해석 알고리즘 | VER |
 | [catalog.md](catalog.md) | 카탈로그 인덱스, `.deckmod` 패키지, 서빙 | (SEC·VER 참조) |
 | [design-system.md](design-system.md) | 화면 구조, 토큰, Mica, 폰트, About 화면, `@deck/ui` | UI |
@@ -131,7 +133,7 @@ Additional terms: see LICENSE-ADDITIONAL-TERMS
 | UI-007 | MUST | 문구 규칙. | [manual] | [design-system.md](design-system.md) |
 | UI-008 | MUST | 일괄 처리 도구는 `ToolLayout`(입력 → 옵션 → 미리보기 → 실행 → 결과) 골격을 따른다. | [manual] | [design-system.md](design-system.md) |
 | UI-009 | MUST | 모션은 `transform`·`opacity`만 움직이고 Fluent `duration*`·`curve*` 토큰과 `@deck/ui` 모션 토큰으로 쓰며, `prefers-reduced-motion`과 셸의 애니메이션 효과 설정을 존중한다. | [manual] | [design-system.md](design-system.md) |
-| PRV-001 | MUST NOT | 호스트 외에는 네트워크 통신을 하지 않는다. | 셸·모듈 CSP, 코드 리뷰 | [privacy.md](privacy.md) |
+| PRV-001 | MUST NOT | 호스트 외에는 네트워크 통신을 하지 않는다. | 셸·모듈 CSP, 고정 실행기·주소·해시 검사, 코드 리뷰 | [privacy.md](privacy.md) |
 | PRV-002 | MUST NOT | 텔레메트리, 사용 통계, 크래시 자동 전송을 하지 않는다. | 의존성 리뷰, [manual] | [privacy.md](privacy.md) |
 | PRV-003 | MUST NOT | 로그와 에러 메시지에 경로·파일명·파일 내용·사용자 입력·storage 값을 남기지 않는다. | [manual] 리뷰(타입 강제 로깅 헬퍼는 미구현) | [privacy.md](privacy.md) |
 | PRV-004 | MUST NOT | 테스트·문서·스크린샷·예제에 실존 인명·학교명·연락처를 쓰지 않는다. | [manual], 합성 데이터 생성기 제공 | [privacy.md](privacy.md) |
@@ -140,7 +142,7 @@ Additional terms: see LICENSE-ADDITIONAL-TERMS
 | PRV-007 | MUST | 모듈 데이터는 모듈 id로 격리한다. | storage·school-data 권한 테스트 | [privacy.md](privacy.md) |
 | SEC-001 | MUST | 셸 webview는 로컬 번들만 로드하며 CSP를 설정한다. | tauri.conf 검사 `check-security` | [security.md](security.md) |
 | SEC-002 | MUST | 모듈은 셸 및 다른 모듈과 독립 origin에서만 서빙한다. | origin 생성·authority 검증(`origins.rs`, `protocol.rs`), 셸 브리지·CSP 테스트 | [security.md](security.md) |
-| SEC-003 | MUST | Tauri ACL은 셸 main과 ADR-0017의 로컬 캡처 보조 창에만 아래 정확한 최소 권한으로 준다. | `check-security` | [security.md](security.md) |
+| SEC-003 | MUST | Tauri ACL은 셸 main과 ADR-0017의 로컬 캡처 보조 창, ADR-0025의 로컬 학생 공개 창에만 위의 정확한 최소 권한으로 준다. | `check-security` | [security.md](security.md) |
 | SEC-004 | MUST | 모듈 origin에서 Tauri IPC에 접근할 수 없어야 하며, 이를 검증하는 테스트나 절차를 유지한다. | 검증 절차 [sec-004.md](../security/sec-004.md) | [security.md](security.md) |
 | SEC-005 | MUST | `deckmod` 프로토콜은 정확한 `<id>.modules.localhost` authority와 경로 id를 대조하고 정규화 후 해당 모듈 루트 하위만 서빙한다. | 프로토콜 테스트(`src-tauri/src/protocol.rs`) | [security.md](security.md) |
 | SEC-006 | MUST | 패키지 설치 시 zip-slip·크기·SHA256SUMS를 검증하고, 원격 카탈로그 도입 시 서명 검증을 추가한다. | deck-core `package.rs` 테스트 | [security.md](security.md) |

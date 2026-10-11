@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PROTOCOL_VERSION } from "@deck/sdk";
 import type { ModuleEntry } from "./generated/ModuleEntry.ts";
 
-const entry = (id: string, name: string, keepAlive = false): ModuleEntry => ({
+const entry = (id: string, name: string, keepAlive = false, publicWindow = false): ModuleEntry => ({
   resolution: {
     id,
     state: "ready",
@@ -29,7 +29,7 @@ const entry = (id: string, name: string, keepAlive = false): ModuleEntry => ({
     icon: "icon.svg",
     entry: "index.html",
     authors: [{ name: "합성 기여자" }],
-    requires: {},
+    requires: publicWindow ? { window: "^1.0.0" } : {},
     optional: {},
     ...(keepAlive ? { ui: { keepAlive: true } } : {}),
   },
@@ -52,7 +52,7 @@ vi.mock("./host.ts", () => ({
     ),
     listModules: vi.fn(() =>
       Promise.resolve([
-        entry("sample-timer", "합성 타이머"),
+        entry("sample-timer", "합성 타이머", false, true),
         entry("sample-clock", "합성 시계", true),
         entry("sample-notes", "합성 메모", true),
       ]),
@@ -82,6 +82,7 @@ vi.mock("./host.ts", () => ({
 }));
 
 const { App } = await import("./App.tsx");
+const { host } = await import("./host.ts");
 
 beforeEach(() => window.localStorage.setItem("deck.shell.motion", "off"));
 afterEach(() => {
@@ -122,6 +123,48 @@ async function open(name: string) {
 }
 
 describe("tool handshake", () => {
+  it("forwards public-window lifecycle events only to the declared owning module", async () => {
+    const win = await openTool();
+    const post = vi.spyOn(win, "postMessage");
+    act(() => hello(win));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(expect.objectContaining({ kind: "init" }), expect.any(String)),
+    );
+    post.mockClear();
+    const deliver = vi.mocked(host.onModuleEvent).mock.calls.at(-1)?.[0];
+    if (!deliver) throw new Error("module event subscription missing");
+    act(() => {
+      deliver({
+        moduleId: "sample-notes",
+        topic: "window.presentationClosed",
+        payload: { presentationHandle: "foreign" },
+      });
+      deliver({
+        moduleId: "sample-timer",
+        topic: "window.presentationClosed",
+        payload: { presentationHandle: "owned" },
+      });
+      deliver({
+        moduleId: "sample-timer",
+        topic: "window.presentationDisconnected",
+        payload: { presentationHandle: "owned" },
+      });
+    });
+    expect(post.mock.calls.map(([event]) => event)).toEqual([
+      {
+        deck: PROTOCOL_VERSION,
+        kind: "evt",
+        topic: "window.presentationClosed",
+        payload: { presentationHandle: "owned" },
+      },
+      {
+        deck: PROTOCOL_VERSION,
+        kind: "evt",
+        topic: "window.presentationDisconnected",
+        payload: { presentationHandle: "owned" },
+      },
+    ]);
+  });
   it("answers hello with init right after opening a tool", async () => {
     const win = await openTool();
     const post = vi.spyOn(win, "postMessage");
@@ -166,6 +209,8 @@ describe("tool handshake", () => {
     if (win === null) throw new Error("iframe window missing");
     const post = vi.spyOn(win, "postMessage");
     act(() => hello(win, "sample-clock"));
-    await waitFor(() => expect(post).toHaveBeenCalledWith(expect.objectContaining({ kind: "init" }), expect.any(String)));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(expect.objectContaining({ kind: "init" }), expect.any(String)),
+    );
   });
 });

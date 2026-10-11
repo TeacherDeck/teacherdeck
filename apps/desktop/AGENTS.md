@@ -28,15 +28,17 @@
 | `src/bridge/keepAlive.ts`    | keepAlive LRU                                                                                                                                   |
 | `src/App.tsx`                | 상단바, 내비 레일, 페이지 전환, 테마 push, `fs.dropped` 전달                                                                                    |
 | `src/CaptureOverlay.tsx`     | 승인된 고정 `/overlay` 셸 화면. 영역·툴바 전용 명령만 사용하며 모듈을 로드하지 않음([ADR-0017](../../docs/adr/0017-native-capture-sessions.md)) |
-| `src/LaunchScreen.tsx`       | 셸 안에서 그리는 시작 화면. 로딩 동안만 보이고 프레임이 없어도 타이머로 넘어간다([ADR-0024](../../docs/adr/0024-shell-motion-and-home.md)) |
-| `src/motion.ts`              | 애니메이션 효과 설정, OS reduced-motion, 다시 마운트할 수 없는 레이어용 `playMotion`(UI-009)                                                  |
-| `src/deckState.ts`           | 덱 홈의 즐겨찾기·본 도구 목록. 셸 localStorage에 모듈 id만 저장한다(PRV-003)                                                                   |
-| `src/categories.tsx`         | 카테고리 순서·아이콘(레일과 덱 홈 공용)                                                                                                      |
-| `src/TitleBar.tsx`           | 테두리 없는 창의 상단바(뒤로 버튼, 드래그 영역, 캡션 버튼). 창 조작은 `host.ts`의 `windowControls`로만 한다                                    |
+| `src/LaunchScreen.tsx`       | 셸 안에서 그리는 시작 화면. 로딩 동안만 보이고 프레임이 없어도 타이머로 넘어간다([ADR-0024](../../docs/adr/0024-shell-motion-and-home.md))      |
+| `src/motion.ts`              | 애니메이션 효과 설정, OS reduced-motion, 다시 마운트할 수 없는 레이어용 `playMotion`(UI-009)                                                    |
+| `src/deckState.ts`           | 덱 홈의 즐겨찾기·본 도구 목록. 셸 localStorage에 모듈 id만 저장한다(PRV-003)                                                                    |
+| `src/categories.tsx`         | 카테고리 순서·아이콘(레일과 덱 홈 공용)                                                                                                         |
+| `src/TitleBar.tsx`           | 테두리 없는 창의 상단바(뒤로 버튼, 드래그 영역, 캡션 버튼). 창 조작은 `host.ts`의 `windowControls`로만 한다                                     |
 | `src/pages/`                 | 덱(Home), 모듈 화면(ModuleHost), 설정, 정보(About, GEN-007 테스트), UI 갤러리(dev)                                                              |
 | `src/generated/`             | Rust에서 생성한 타입과 서드파티 목록(GEN-006)                                                                                                   |
 
 ## keepAlive 관리
+
+승인된 학생 화면은 고정 `/presentation` 경로의 `src/Presentation.tsx`다. `host.ts`의 전용 state/close만 사용한다([ADR-0025](../../docs/adr/0025-public-presentation.md), [계약](../../docs/spec/presentation.md)).
 
 - `ui.keepAlive: true` 모듈은 화면을 전환해도 iframe을 숨긴 채 유지한다. 최대 3개이며 LRU로 내린다.
 - 숨기거나 보일 때 `module.visibility` 이벤트를 보낸다.
@@ -53,3 +55,5 @@
 - [ ] `pnpm verify` 통과
 
 학교 자료 화면의 JSON 복구 파일·시간표 PNG 출력은 [ADR-0020](../../docs/adr/0020-school-data.md)과 [학교 자료 명세](../../docs/spec/school-data.md)의 승인된 main 셸 전용 명령을 따른다. JSON은 저장 자료만 담고 사진 파일·미저장 초안을 제외한다. PNG는 현재 화면의 미저장 시간표를 포함하지만 학교 자료 저장을 대신하지 않는다. 모듈 브리지·브라우저 다운로드로 출력 권한을 우회하지 않는다.
+
+사진 포함 이동은 [ADR-0026](../../docs/adr/0026-timealert-portability.md)과 [TimeAlert 계약](../../docs/spec/timealert-portability.md)의 다섯 main 명령만 사용한다. 암호·원본 DB·사진 원본은 모듈에 공개하지 않는다. 학생 연결은 명시적 선택만 사용하며 동명이름으로 병합하지 않는다. 공통 JSON에는 사진 파일이 없고 TimeAlert 출력은 저장 자료만 사용한다. Android 실기 증거가 없으면 호환 완료로 표시하지 않는다.

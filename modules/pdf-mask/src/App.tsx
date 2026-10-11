@@ -20,8 +20,19 @@ import {
 } from "@deck/ui";
 import { useEffect, useRef, useState } from "react";
 import { readFile, readInput, redact, saveResult, type Input } from "./batch.ts";
-import { boundRect, detect, readTerms, TYPES, MAX_CANDIDATES, type Candidate, type Kind, type Rect } from "./logic.ts";
+import {
+  boundRect,
+  detect,
+  mergeCandidates,
+  readTerms,
+  TYPES,
+  MAX_CANDIDATES,
+  type Candidate,
+  type Kind,
+  type Rect,
+} from "./logic.ts";
 import { renderPage } from "./pdf.ts";
+import { recognizePages } from "./ocr.ts";
 const useStyles = makeStyles({
   actions: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: tokens.spacingHorizontalM },
   stack: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalM },
@@ -42,6 +53,7 @@ export function App({ deck }: { deck: Deck }) {
   const [terms, setTerms] = useState<string[]>([]);
   const [term, setTerm] = useState("");
   const [skipHeader, setSkipHeader] = useState(true);
+  const [autoOcr, setAutoOcr] = useState(true);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [pageIndex, setPageIndex] = useState(0);
   const [preview, setPreview] = useState("");
@@ -69,7 +81,7 @@ export function App({ deck }: { deck: Deck }) {
           else setMessage("PDF 파일을 추가해 주세요.");
         }
       }),
-    [deck, terms, enabled],
+    [deck, terms, enabled, autoOcr],
   );
   useEffect(() => {
     if (!input || !page) {
@@ -127,16 +139,33 @@ export function App({ deck }: { deck: Deck }) {
     let next: Input | null = null;
     try {
       next = await readInput(deck, file, abort.signal, progress);
+      let scanMessage = "";
+      const scans = next.pages.filter((p) => !p.boxes.length).map((p) => p.number);
+      if (autoOcr && scans.length) {
+        setMessage(`사진으로 된 ${scans.length}쪽의 글자를 PC에서 읽고 있어요.`);
+        try {
+          const result = await recognizePages(next, scans, abort.signal, progress);
+          next = result.input;
+          scanMessage = ` 이미지 글자 읽기 ${result.summary.read}쪽 · 빈 인식 ${result.summary.empty}쪽 · 낮은 신뢰도 ${result.summary.uncertain}쪽. 인식 결과를 확인해 주세요.`;
+        } catch {
+          if (abort.signal.aborted) throw new Error("CANCELLED");
+          scanMessage = " 이미지 글자를 읽지 못한 쪽이 있어요. 다시 읽거나 직접 영역을 지정해 주세요.";
+        }
+      }
       const found = detect(next.pages, terms, enabled);
-      await current.current?.doc.loadingTask.destroy();
+      if (abort.signal.aborted) throw new Error("CANCELLED");
+      const previous = current.current;
       current.current = next;
       setInput(next);
+      if (previous) void previous.doc.loadingTask.destroy().catch(() => undefined);
       setCandidates(found);
       setPageIndex(0);
       setFolder(null);
       setSaved(null);
       setAck(false);
-      setMessage(`${next.pages.length}쪽에서 개인정보 후보 ${found.length}건을 찾았어요. 제거할 영역을 확인해 주세요.`);
+      setMessage(
+        `${next.pages.length}쪽에서 개인정보 후보 ${found.length}건을 찾았어요. 제거할 영역을 확인해 주세요.${scanMessage}`,
+      );
     } catch {
       if (next && current.current !== next) await next.doc.loadingTask.destroy();
       setMessage(
@@ -162,11 +191,44 @@ export function App({ deck }: { deck: Deck }) {
     if (!input) return;
     try {
       const found = detect(input.pages, nextTerms, nextEnabled);
-      setCandidates((old) => [...found, ...old.filter((c) => c.manual)]);
+      setCandidates(mergeCandidates(found, candidates));
       setSaved(null);
+      setAck(false);
       setMessage(`개인정보 후보 ${found.length}건을 찾았어요. 수동 영역은 유지해요.`);
     } catch {
       setMessage("검색어와 후보가 너무 많아요. 256개 이하 검색어로 나눠 주세요.");
+    }
+  }
+  async function scan(all: boolean) {
+    if (!input || !page || lock.current) return;
+    setRun(true);
+    setDone(0);
+    setMessage("이미지 글자를 PC에서 읽고 있어요. 문서는 외부로 보내지 않아요.");
+    const abort = new AbortController();
+    controller.current = abort;
+    try {
+      const numbers = all ? input.pages.map((p) => p.number) : [page.number];
+      const result = await recognizePages(input, numbers, abort.signal, progress);
+      if (abort.signal.aborted) throw new Error("CANCELLED");
+      const found = detect(result.input.pages, terms, enabled);
+      const merged = mergeCandidates(found, candidates);
+      current.current = result.input;
+      setInput(result.input);
+      setCandidates(merged);
+      setSaved(null);
+      setAck(false);
+      setMessage(
+        `이미지 글자 ${result.summary.read}쪽을 읽었어요. 빈 인식 ${result.summary.empty}쪽 · 낮은 신뢰도 ${result.summary.uncertain}쪽. 후보 ${found.length}건과 각 페이지를 확인해 주세요.`,
+      );
+    } catch {
+      setMessage(
+        abort.signal.aborted
+          ? "글자 읽기를 취소했어요. 이전 후보와 직접 지정한 영역은 유지해요."
+          : "글자를 읽지 못했어요. 이전 영역은 유지해요. 한 쪽씩 다시 읽거나 직접 영역을 지정해 주세요.",
+      );
+    } finally {
+      controller.current = null;
+      setRun(false);
     }
   }
   function addTerm() {
@@ -295,6 +357,12 @@ export function App({ deck }: { deck: Deck }) {
           }}
           description="PDF 한 개를 끌어 놓거나 선택해 주세요. 원본은 그대로 남아요."
         />
+        <CheckBox
+          content="사진으로 된 페이지도 자동으로 읽기"
+          checked={autoOcr}
+          disabled={busy}
+          onChange={setAutoOcr}
+        />
         {input && (
           <Body>
             {input.file.name} · {input.pages.length}쪽
@@ -332,9 +400,24 @@ export function App({ deck }: { deck: Deck }) {
           ))}
         </div>
         <Body secondary>
-          계좌번호·생년월일·주소·학번·이름은 문서의 항목 이름과 함께 찾아요. 명단·검색어를 추가하면 더 정확하게 찾을 수
-          있어요. 후보와 같은 텍스트 덩어리의 주변 글자도 지워질 수 있어요.
+          계좌번호·생년월일·주소·학번·이름은 항목 이름과 함께 찾아요. 이름은 라벨이 있는 한글·영문 표기를 찾으며, 라벨
+          없는 이름은 명단·검색어로 추가해 주세요. 사진 속 글자는 PC 안에서 읽으며 인식 오류가 있을 수 있어요. 주소는
+          가까운 다음 줄도 확인하지만 후보가 빠질 수 있어요. 후보와 같은 글자 덩어리의 주변 글자도 지워질 수 있어요.
         </Body>
+        <CheckBox
+          content="명단·검색어도 후보에 포함"
+          checked={enabled.includes("검색어")}
+          disabled={busy}
+          onChange={(value) => {
+            const next = value ? [...enabled, "검색어" as const] : enabled.filter((kind) => kind !== "검색어");
+            setEnabled(next);
+            refresh(terms, next);
+          }}
+        />
+        <Caption>
+          명단·검색어 {terms.length}개 · 찾은 영역{" "}
+          {candidates.filter((candidate) => candidate.kind === "검색어").length}건
+        </Caption>
         <div className={s.actions}>
           <TextBox
             header="제거할 검색어"
@@ -404,7 +487,7 @@ export function App({ deck }: { deck: Deck }) {
                 disabled={busy}
                 options={input.pages.map((p, i) => ({
                   value: String(i),
-                  label: `${p.number}쪽 · 후보 ${candidates.filter((c) => c.page === p.number).length}건`,
+                  label: `${p.number}쪽 · 후보 ${candidates.filter((c) => c.page === p.number).length}건${p.ocrConfidence !== undefined && p.ocrConfidence < 70 ? " · 글자 인식 확인 필요" : ""}`,
                 }))}
                 onChange={(value) => setPageIndex(Number(value))}
               />
@@ -415,11 +498,40 @@ export function App({ deck }: { deck: Deck }) {
                 다음 페이지
               </Button>
             </div>
-            {!page.boxes.length && (
+            <div className={s.actions}>
+              <Button
+                disabled={busy}
+                onClick={() => {
+                  void scan(false);
+                }}
+              >
+                이 페이지 이미지 글자 읽기
+              </Button>
+              <Button
+                disabled={busy}
+                onClick={() => {
+                  void scan(true);
+                }}
+              >
+                전체 이미지 글자 읽기
+              </Button>
+            </div>
+            <Caption>
+              글자와 사진이 섞인 문서는 이미지 글자 읽기로 추가 확인해요. 인식이 끝나도 개인정보가 없다고 보장하지
+              않아요.
+            </Caption>
+            {(!page.boxes.length || page.ocr === "empty") && (
               <InfoBar
                 severity="warning"
-                title="텍스트가 없는 페이지예요"
-                message="이미지 안의 개인정보는 자동 검색하지 못해요. 직접 영역을 지정해 주세요."
+                title="읽힌 글자가 없거나 부족한 페이지예요"
+                message="개인정보가 없다는 뜻은 아니에요. 이미지 글자 읽기를 다시 실행하거나 직접 영역을 지정해 주세요."
+              />
+            )}
+            {page.ocr === "read" && page.ocrConfidence !== undefined && page.ocrConfidence < 70 && (
+              <InfoBar
+                severity="warning"
+                title="이 페이지의 글자 인식이 불확실해요"
+                message="빠지거나 잘못 읽은 글자가 있을 수 있어요. 원문을 보며 제거 영역을 직접 추가해 주세요."
               />
             )}
             {preview ? (

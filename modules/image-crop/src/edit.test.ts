@@ -1,9 +1,37 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import { describe, expect, it } from "vitest";
-import { centeredRect, clampRect, orientedSize, outputName, transferRect } from "./edit.ts";
+import { createDeckTheme } from "@deck/ui";
+import { centeredRect, clampRect, orientedSize, outputName, outputSize, transferRect } from "./edit.ts";
 import { imageHeader } from "./header.ts";
 describe("crop geometry", () => {
+  it("preserves the cropped aspect ratio for resizing and rejects excessive allocation before drawing", () => {
+    const edit = {
+      turns: 0,
+      flipX: false,
+      flipY: false,
+      rect: { x: 0, y: 0, width: 400, height: 300 },
+      outputWidth: 200,
+    };
+    expect(outputSize(edit)).toEqual({ width: 200, height: 150 });
+    expect(() => outputSize({ ...edit, outputWidth: 10000 })).toThrow("OUTPUT_LIMIT");
+    expect(() => outputSize({ ...edit, brightness: 201 })).toThrow("INVALID_ADJUSTMENT");
+    expect(() =>
+      outputSize({
+        ...edit,
+        annotation: {
+          kind: "text",
+          text: "合성\n텍스트",
+          ink: createDeckTheme("light").colorNeutralForeground1,
+          x: 10,
+          y: 10,
+          width: 50,
+          height: 50,
+          textPixels: 20,
+        },
+      }),
+    ).toThrow("INVALID_ANNOTATION");
+  });
   it("clamps free rectangles to positive integer source pixels", () => {
     expect(clampRect({ x: -10, y: 9.6, width: 1000, height: 0 }, 100, 80)).toEqual({
       x: 0,

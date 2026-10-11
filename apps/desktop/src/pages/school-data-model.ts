@@ -30,6 +30,15 @@ export interface SchoolDataHost {
   recover(args: SaveSchoolDataArgs): Promise<SchoolDataDocument>;
   readWorkbook(): Promise<SchoolWorkbookInput | null>;
   writeWorkbook(args: SchoolWorkbookOutputArgs): Promise<boolean>;
+  openTimeAlert(
+    args: import("../generated/TimeAlertOpenArgs.ts").TimeAlertOpenArgs,
+  ): Promise<import("../generated/TimeAlertPreview.ts").TimeAlertPreview | null>;
+  applyTimeAlert(args: import("../generated/TimeAlertApplyArgs.ts").TimeAlertApplyArgs): Promise<SchoolDataDocument>;
+  exportTimeAlert(args: import("../generated/TimeAlertExportArgs.ts").TimeAlertExportArgs): Promise<boolean>;
+  closeTimeAlert(args: import("../generated/TimeAlertCloseArgs.ts").TimeAlertCloseArgs): Promise<void>;
+  importRosterPhotos(
+    args: import("../generated/TimeAlertRosterPhotosArgs.ts").TimeAlertRosterPhotosArgs,
+  ): Promise<import("../generated/TimeAlertRosterPhotosPreview.ts").TimeAlertRosterPhotosPreview | null>;
 }
 export function emptyDocument(): SchoolDataDocument {
   return {
@@ -243,6 +252,7 @@ export function newOverride(
   weekday: number,
   dayTemplateId: string,
   weeklyTableId: string,
+  fromPeriod?: number,
 ): SchoolDayOverride {
   return {
     id: newId(),
@@ -251,6 +261,7 @@ export function newOverride(
     substituteWeekday: weekday || null,
     dayTemplateId: dayTemplateId || null,
     weeklyTableId: weeklyTableId || null,
+    ...(fromPeriod ? { fromPeriod } : {}),
   };
 }
 export function newChange(
@@ -260,6 +271,7 @@ export function newChange(
   kind: SchoolDateChange["kind"],
   from: number,
   to: number,
+  targetDate?: string,
 ): SchoolDateChange {
   return {
     id: newId(),
@@ -270,6 +282,7 @@ export function newChange(
     fromPeriod: kind === "ADD" ? null : from,
     toPeriod: kind === "CANCEL" ? null : to,
     changeGroupId: null,
+    ...(kind === "MOVE" && targetDate ? { targetDate } : {}),
   };
 }
 

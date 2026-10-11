@@ -72,7 +72,9 @@ pub async fn module_unloaded(
 ) -> Result<(), ()> {
     restore(&app, &state, &module_id);
     crate::caps::school_data::unload(&app, &module_id);
+    crate::presentation_host::unload(&app, &module_id);
     crate::caps::office::cancel_owner(&app, &module_id);
+    crate::caps::media_download::cancel_owner(&app, &module_id);
     crate::messaging_host::cancel_owner(&app, &module_id);
     if let Ok(mut plans) = state.file_ops.lock() {
         plans.unload(&module_id);

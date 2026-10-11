@@ -9,6 +9,36 @@ import { pageInfo } from "./pdf.ts";
 import { boundRect, detect } from "./logic.ts";
 
 describe("PDF viewport redaction coordinates", () => {
+  it.each([0, 90, 180, 270])("finds a labelled Latin name from actual text runs at rotation %i", async (rotation) => {
+    const doc = await PDFDocument.create();
+    const source = doc.addPage([400, 200]);
+    source.setRotation(degrees(rotation));
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    let x = 30;
+    for (const text of ["Name:", "Synthetic", "User"]) {
+      source.drawText(text, { x, y: 90, size: 16, font });
+      x += font.widthOfTextAtSize(text, 16) + 5;
+    }
+    const loading = getDocument({ data: await doc.save(), disableFontFace: true, useSystemFonts: true, verbosity: 0 });
+    try {
+      const parsed = await loading.promise;
+      const info = await pageInfo(await parsed.getPage(1));
+      const found = detect([info], [], ["이름"]);
+      expect(found).toHaveLength(1);
+      expect(found[0]?.label.replace(/\s/g, "")).toBe("SyntheticUser");
+      // Each selected text object must be fully covered in the output coordinate system.
+      for (const box of info.boxes.filter((box) => /Synthetic|User/.test(box.text))) {
+        const mask = found[0]?.rect;
+        if (!mask) throw new Error("MISSING_SYNTHETIC_MASK");
+        expect(mask.x).toBeLessThanOrEqual(box.x);
+        expect(mask.y).toBeLessThanOrEqual(box.y);
+        expect(mask.x + mask.width).toBeGreaterThanOrEqual(Math.min(info.width, box.x + box.width));
+        expect(mask.y + mask.height).toBeGreaterThanOrEqual(Math.min(info.height, box.y + box.height));
+      }
+    } finally {
+      await loading.destroy();
+    }
+  });
   it.each([0, 90, 180, 270].flatMap((rotation) => [1, 2].map((userUnit) => ({ rotation, userUnit }))))(
     "covers text with rotation $rotation and UserUnit $userUnit inside an offset CropBox",
     async ({ rotation, userUnit }) => {

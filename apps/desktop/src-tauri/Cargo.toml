@@ -35,6 +35,10 @@ tracing-subscriber.workspace = true
 tracing-appender.workspace = true
 sha2.workspace = true
 zip.workspace = true
+rusqlite.workspace = true
+aes-gcm.workspace = true
+pbkdf2.workspace = true
+sha2_compat.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-version.workspace = true
@@ -44,6 +48,9 @@ xcap.workspace = true
 chrono.workspace = true
 image.workspace = true
 tauri-plugin-global-shortcut.workspace = true
+
+[dev-dependencies]
+quick-xml.workspace = true
 
 [lints]
 workspace = true

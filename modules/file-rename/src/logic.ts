@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import type { FileHandleInfo } from "@deck/sdk";
+import { documentCategory, documentDate } from "./document-info.ts";
 export type Mode = "pattern" | "excel" | "document";
 export type MatchMode = "student" | "number" | "oldname" | "order";
 export interface Metadata {
@@ -237,47 +238,11 @@ export function preview(
       for (const row of collision) row.errors.push("대소문자만 다른 이름을 포함해 결과 이름이 겹쳐요.");
   return result;
 }
-const SUBJECTS: Record<string, string[]> = {
-  과학: ["통합과학", "지구과학", "생명과학", "물리학", "물리", "화학"],
-  수학: ["미적분", "확률과통계", "기하", "대수"],
-  사회: ["통합사회", "사회문화", "생활과윤리", "윤리와사상", "한국지리", "세계지리", "정치", "경제"],
-  역사: ["한국사", "세계사", "동아시아사"],
-  국어: ["언어와매체", "화법과작문", "문학", "독서"],
-  영어: ["영문법", "영어회화", "영어독해"],
-};
 export function metadataFrom(text: string, filename: string, keywords: string[]): Metadata {
   const header = text.split(/\r?\n/).slice(0, 40).join("\n").slice(0, 1500);
   const content = header || stem(filename);
-  const schoolYear = /(20\d{2})\s*학년도/.exec(content);
-  const year = schoolYear ? `${schoolYear[1]}학년도` : (/\b(20\d{2})(?:\s*년|[.\-/]|\b)/.exec(content)?.[1] ?? "");
-  const monthMatch = /(?:20\d{2}\s*[.\-/년]\s*)?(\d{1,2})\s*월|20\d{2}[.\-/]\s*(\d{1,2})/.exec(content);
-  const monthNumber = Number(monthMatch?.[1] ?? monthMatch?.[2]);
-  const month = monthNumber >= 1 && monthNumber <= 12 ? String(monthNumber).padStart(2, "0") : "";
-  let subject = keywords.find((k) => k && content.includes(k)) ?? "";
-  let main = "";
-  let sub = "";
-  for (const [group, words] of Object.entries(SUBJECTS)) {
-    const found = words.find((k) => content.includes(k));
-    if (found) {
-      main = group;
-      sub = found;
-      subject ||= found;
-      break;
-    }
-  }
-  subject ||=
-    [
-      "모의고사",
-      "학력평가",
-      "모의평가",
-      "수능",
-      "중간고사",
-      "기말고사",
-      "수행평가",
-      "교육계획",
-      "회의록",
-      "가정통신문",
-    ].find((k) => content.includes(k)) ?? "";
+  const { year, month, inferred } = documentDate(content);
+  const { subject, main, sub } = documentCategory(content, keywords);
   const gradeMatch = /(고(?:등학교|등)?|중(?:학교|등)?|초등학교)\s*([1-6])(?:\s*학년|(?!\d))/.exec(content);
   const grade = gradeMatch ? `${gradeMatch[1]?.slice(0, 1)}${gradeMatch[2]}` : "";
   return {
@@ -288,6 +253,8 @@ export function metadataFrom(text: string, filename: string, keywords: string[])
     sub,
     grade,
     header,
-    source: header ? "문서 상단 추출 · 값을 확인해 주세요" : "파일명 추출 · 문서 본문 미확인",
+    source:
+      (header ? "문서 상단 추출 · 값을 확인해 주세요" : "파일명 추출 · 문서 본문 미확인") +
+      (inferred ? " · 월은 학기·분기에서 추정" : ""),
   };
 }

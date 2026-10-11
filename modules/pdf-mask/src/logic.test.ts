@@ -69,4 +69,73 @@ describe("local personal data candidates", () => {
     });
     expect(() => boundRect({ x: NaN, y: 0, width: 10, height: 10 }, 100, 100)).toThrow("INVALID_RECT");
   });
+  it("detects split label and Korean name on one row without joining a distant column", () => {
+    const runs = ["성", "명", ":", "가", "상", "가"].map((text, i) => ({
+      text,
+      x: 20 + i * 12,
+      y: 30,
+      width: 12,
+      height: 20,
+    }));
+    const input = { ...page([]), boxes: runs };
+    const found = detect([input], [], ["이름"]);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.label).toBe("가상가");
+    expect(found[0]?.rect).toEqual({ x: 56, y: 30, width: 36, height: 20 });
+    const first = runs[0],
+      second = runs[1];
+    if (!first || !second) throw new Error("MISSING_SYNTHETIC_BOX");
+    expect(detect([{ ...input, boxes: [first, { ...second, x: 500 }] }], [], ["이름"])).toEqual([]);
+    expect(detect([page(["가상가가 제출한 문서"])], [], ["이름"])).toEqual([]);
+  });
+  it("detects labelled Latin names and a value under a label but stops at the next field", () => {
+    const found = detect(
+      [
+        page([
+          "Name: Synthetic User",
+          "성명: Synthetic-Person Example",
+          "성명:",
+          "가상가",
+          "Full Name: Synthetic User",
+          "Name: Synthetic User Phone: 010-0000-0000",
+        ]),
+      ],
+      [],
+      ["이름"],
+    );
+    expect(found.map((candidate) => candidate.label)).toEqual([
+      "Synthetic User",
+      "Synthetic-Person Example",
+      "가상가",
+      "Synthetic User",
+      "Synthetic User",
+    ]);
+    expect(detect([page(["Synthetic User submitted the file"])], [], ["이름"])).toEqual([]);
+  });
+  it("includes aligned multiline addresses without absorbing a new field, paragraph or column", () => {
+    const found = detect([page(["주소: 가상시 예시로 0", "합성동 2호", "학번 10301", "12345"])], [], ["주소"]);
+    expect(found[0]?.label).toBe("가상시 예시로 0\n합성동 2호");
+    expect(found[0]?.rect.height).toBe(50);
+    const input = page(["주소: 가상시 예시로 0", "합성동 2호"]);
+    const next = input.boxes[1];
+    if (!next) throw new Error("MISSING_SYNTHETIC_BOX");
+    next.x = 500;
+    expect(detect([input], [], ["주소"])[0]?.rect.height).toBe(20);
+    expect(detect([page(["주소: 가상시 예시로 0", "문서를 확인해 주세요"])], [], ["주소"])[0]?.label).toBe(
+      "가상시 예시로 0",
+    );
+  });
+  it("covers the value when a Latin name repeats its field label", () => {
+    const input = {
+      ...page([]),
+      boxes: [
+        { text: "Name:", x: 20, y: 30, width: 50, height: 20 },
+        { text: "Name", x: 75, y: 30, width: 40, height: 20 },
+        { text: "User", x: 120, y: 30, width: 40, height: 20 },
+      ],
+    };
+    const found = detect([input], [], ["이름"]);
+    expect(found[0]?.label).toBe("Name User");
+    expect(found[0]?.rect).toEqual({ x: 75, y: 30, width: 85, height: 20 });
+  });
 });

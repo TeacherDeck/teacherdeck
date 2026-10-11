@@ -5,10 +5,37 @@ import type { SchoolRosterSnapshot } from "@deck/sdk";
 import { linkedStudents } from "./school-roster.ts";
 
 function fixture(): SchoolRosterSnapshot {
-  return { snapshotId: "snapshot", revision: 1,
-    semester: { id: "semester", academicYear: 2026, term: 1, startDate: "2026-03-01", endDate: "2026-07-31", archived: false, readOnly: false },
-    context: { contextId: "context", semesterId: "semester", kind: "division", label: "합성 수업", memberCount: 2, revision: 1 },
-    students: [1, 2].map((n) => ({ studentId: `student-${n}`, enrollmentId: `enrollment-${n}`, grade: 1, classNumber: n, studentNumber: 1, displayStudentCode: `1-${n}-1`, name: "합성학생", status: "active" })) };
+  return {
+    snapshotId: "snapshot",
+    revision: 1,
+    semester: {
+      id: "semester",
+      academicYear: 2026,
+      term: 1,
+      startDate: "2026-03-01",
+      endDate: "2026-07-31",
+      archived: false,
+      readOnly: false,
+    },
+    context: {
+      contextId: "context",
+      semesterId: "semester",
+      kind: "division",
+      label: "합성 수업",
+      memberCount: 2,
+      revision: 1,
+    },
+    students: [1, 2].map((n) => ({
+      studentId: `student-${n}`,
+      enrollmentId: `enrollment-${n}`,
+      grade: 1,
+      classNumber: n,
+      studentNumber: 1,
+      displayStudentCode: `1-${n}-1`,
+      name: "합성학생",
+      status: "active",
+    })),
+  };
 }
 describe("shared roster identity", () => {
   it("keeps equal names and numbers in different classes distinct", async () => {
@@ -20,7 +47,8 @@ describe("shared roster identity", () => {
   it("preserves counts across a name/number change and isolates a different semester", async () => {
     const snapshot = fixture();
     const before = await linkedStudents(snapshot, []);
-    const first = before[0]; if (!first) throw new Error("fixture");
+    const first = before[0];
+    if (!first) throw new Error("fixture");
     first.baseCount = 7;
     snapshot.students = snapshot.students.map((s) => ({ ...s, name: "합성학생수정", studentNumber: 2 }));
     const after = await linkedStudents(snapshot, before);

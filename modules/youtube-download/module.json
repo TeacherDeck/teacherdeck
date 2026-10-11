@@ -1,0 +1,24 @@
+{
+  "$schema": "../../schema/module.schema.json",
+  "manifestVersion": 1,
+  "id": "youtube-download",
+  "name": "영상 다운로드",
+  "description": "공개 YouTube 영상 한 개를 새 MP4로 저장하고 진행·취소를 확인해요.",
+  "version": "0.1.0",
+  "category": "utility",
+  "icon": "icon.svg",
+  "entry": "index.html",
+  "authors": [
+    {
+      "name": "rochelobeJYJ"
+    }
+  ],
+  "requires": {
+    "fs": "^1.0",
+    "media-download": "^1.0"
+  },
+  "optional": {},
+  "ui": {
+    "keepAlive": true
+  }
+}

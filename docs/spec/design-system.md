@@ -18,13 +18,13 @@ Windows 11 Fluent 2를 따르고 PowerToys 설정 앱 구조를 레퍼런스로 
 
 셸 모션은 WinUI 패턴을 따른다([ADR-0024](../adr/0024-shell-motion-and-home.md)).
 
-| 상황 | 모션 | 시간·곡선 |
-| --- | --- | --- |
-| 레일 선택 변경 | 강조 막대가 새 항목으로 이동 | `durationNormal`, `curveDecelerateMid` |
+| 상황               | 모션                                                                             | 시간·곡선                              |
+| ------------------ | -------------------------------------------------------------------------------- | -------------------------------------- |
+| 레일 선택 변경     | 강조 막대가 새 항목으로 이동                                                     | `durationNormal`, `curveDecelerateMid` |
 | 레일로 페이지 전환 | Entrance: 새 페이지가 `deckTokens.motionPageOffset`만큼 아래에서 올라오며 나타남 | `durationGentle`, `curveDecelerateMax` |
-| 카드로 모듈 열기 | Drill-in: 모듈 화면이 살짝 작은 크기에서 커지며 나타남 | `durationSlow`, `curveDecelerateMax` |
-| 카드 그리드 등장 | 카드가 `deckTokens.motionStagger` 간격으로 순서대로 나타남(앞 8장까지만 지연) | `durationGentle`, `curveDecelerateMid` |
-| 카드 hover·누름 | 테두리 강조와 함께 살짝 떠오름, 누르면 살짝 작아짐 | `durationFaster`, `curveEasyEase` |
+| 카드로 모듈 열기   | Drill-in: 모듈 화면이 살짝 작은 크기에서 커지며 나타남                           | `durationSlow`, `curveDecelerateMax`   |
+| 카드 그리드 등장   | 카드가 `deckTokens.motionStagger` 간격으로 순서대로 나타남(앞 8장까지만 지연)    | `durationGentle`, `curveDecelerateMid` |
+| 카드 hover·누름    | 테두리 강조와 함께 살짝 떠오름, 누르면 살짝 작아짐                               | `durationFaster`, `curveEasyEase`      |
 
 - 이전 화면의 퇴장 애니메이션은 두지 않는다. 새 화면만 들어온다.
 - 모듈 iframe 자체에는 모션을 걸지 않는다. 셸의 모듈 레이어만 움직인다.
@@ -71,17 +71,18 @@ GPLv3의 Appropriate Legal Notices를 겸한다. 다음을 모두 보여 준다.
 
 **페이지 패턴**
 
-| 컴포넌트                    | WinUI 대응       | 용도                                                                             |
-| --------------------------- | ---------------- | -------------------------------------------------------------------------------- |
-| `DeckProvider`              | —                | 셸이 보낸 theme으로 `FluentProvider` 구성, 투명 루트 배경 기본값                 |
-| `PageHeader`                | 페이지 제목      | Title(28px) 제목과 설명 한 줄                                                    |
-| `ToolLayout` (+ `.Section`) | —                | 일괄 처리 도구 골격: 입력 → 옵션 → 미리보기 → 실행 → 결과                        |
-| `SettingsGroup`             | 설정 그룹 머리글 | BodyStrong 머리글 + 4px 간격 카드 묶음                                           |
-| `SettingsCard`              | SettingsCard     | 한 줄 설정 항목. `action`(오른쪽 컨트롤) 또는 `onClick`(카드 전체 버튼 + 셰브런) |
-| `SettingsExpander`          | SettingsExpander | 머리글 전체로 펼침, 셰브런 ↓/↑, 안의 SettingsCard는 들여쓴 평면 행               |
-| `CapabilityGate`            | InfoBar          | optional 캡이 없을 때 "앱 업데이트 후 사용 가능" 알림                            |
-| `EmptyState`                | —                | 빈 화면과 다음 행동 안내                                                         |
-| `DropZone`                  | —                | 드롭 영역 표시용. 실제 드롭은 셸 이벤트 `fs.dropped`로 받는다.                   |
+| 컴포넌트                    | WinUI 대응                           | 용도                                                                             |
+| --------------------------- | ------------------------------------ | -------------------------------------------------------------------------------- |
+| `DeckProvider`              | —                                    | 셸이 보낸 theme으로 `FluentProvider` 구성, 투명 루트 배경 기본값                 |
+| `PageHeader`                | 페이지 제목                          | Subtitle(20px) 제목과 설명 한 줄                                                 |
+| `ToolLayout` (+ `.Section`) | —                                    | 일괄 처리 도구 골격: 입력 → 옵션 → 미리보기 → 실행 → 결과                        |
+| `SettingsGroup`             | 설정 그룹 머리글                     | BodyStrong 머리글 + 4px 간격 카드 묶음                                           |
+| `SettingsCard`              | SettingsCard                         | 한 줄 설정 항목. `action`(오른쪽 컨트롤) 또는 `onClick`(카드 전체 버튼 + 셰브런) |
+| `SettingsExpander`          | SettingsExpander                     | 머리글 전체로 펼침, 셰브런 ↓/↑, 안의 SettingsCard는 들여쓴 평면 행               |
+| `CapabilityGate`            | InfoBar                              | optional 캡이 없을 때 "앱 업데이트 후 사용 가능" 알림                            |
+| `EmptyState`                | —                                    | 빈 화면과 다음 행동 안내                                                         |
+| `DropZone`                  | —                                    | 드롭 영역 표시용. 실제 드롭은 셸 이벤트 `fs.dropped`로 받는다.                   |
+| `PresentationControls`      | SettingsExpander + ComboBox + Button | 모니터 선택·공개 결과 열기·명시 갱신·닫기. 창 종료·연결 변경 시 재선택 안내      |
 
 **컨트롤**
 

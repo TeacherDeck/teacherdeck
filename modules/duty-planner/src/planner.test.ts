@@ -33,14 +33,16 @@ describe("duty planner", () => {
     expect(calendar(input({ month: 0 }))).toEqual([]);
   });
   it("excludes verified holidays including newly added holidays, but not September 28", () => {
-    expect(Object.keys(HOLIDAYS)).toHaveLength(22);
+    expect(Object.keys(HOLIDAYS).filter((date) => date.startsWith("2026-"))).toHaveLength(22);
     for (const [month, day] of [
       [5, 1],
       [7, 17],
     ] as const)
       expect(calendar(input({ month, holidays: HOLIDAYS })).find((d) => d.day === day)?.excluded).toBe(true);
     expect(calendar(input({ month: 9, holidays: HOLIDAYS })).find((d) => d.day === 28)?.excluded).toBe(false);
-    expect(calendar(input({ year: 2027, month: 5, holidays: HOLIDAYS })).find((d) => d.day === 1)?.reason).toBe("주말");
+    expect(calendar(input({ year: 2027, month: 5, holidays: HOLIDAYS })).find((d) => d.day === 1)?.reason).toBe(
+      "노동절",
+    );
   });
   it.each([1, 2, 3])("fills %i distinct teachers per day and balances totals", (perDay) => {
     const i = input({ perDay });

@@ -41,6 +41,7 @@ import {
   timetableRows,
 } from "./school-workbook.ts";
 import { renderTimetablePng } from "./school-timetable-image.ts";
+import { SchoolPortability } from "./SchoolPortability.tsx";
 export type { SchoolDataHost } from "./school-data-model.ts";
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: deckTokens.itemGap, padding: deckTokens.pagePadding },
@@ -144,10 +145,12 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
   const [overrideDate, setOverrideDate] = useState(""),
     [overrideWeekday, setOverrideWeekday] = useState(""),
     [overrideDay, setOverrideDay] = useState(""),
+    [overrideFromPeriod, setOverrideFromPeriod] = useState(1),
     [overrideWeekly, setOverrideWeekly] = useState("");
   const [changeDate, setChangeDate] = useState(""),
     [changeContext, setChangeContext] = useState(""),
     [changeKind, setChangeKind] = useState<SchoolDateChangeKind>("MOVE"),
+    [changeTargetDate, setChangeTargetDate] = useState(""),
     [fromPeriod, setFromPeriod] = useState(1),
     [toPeriod, setToPeriod] = useState(2);
   const refresh = async () => {
@@ -496,6 +499,23 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
             복구할 학교 자료 JSON 선택
           </Button>
         </div>
+      )}
+
+      {document && (
+        <SchoolPortability
+          host={host}
+          document={document}
+          semesterId={semesterId}
+          busy={busy}
+          onBusy={setBusy}
+          onSaved={(saved) => {
+            setWorkbookUndo(null);
+            setConfirmWorkbookUndo(false);
+            setDocument(saved);
+            if (!saved.semesters.some((semester) => semester.id === semesterId))
+              setSemesterId(saved.semesters.find((semester) => !semester.readOnly)?.id ?? saved.semesters[0]?.id ?? "");
+          }}
+        />
       )}
 
       <SettingsExpander
@@ -1041,6 +1061,15 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
                       ...weeklies.map((v) => ({ value: v.id, label: v.label })),
                     ]}
                   />
+                  {overrideDay && (
+                    <NumberBox
+                      header="임시 일과 적용 시작 교시"
+                      value={overrideFromPeriod}
+                      min={1}
+                      max={64}
+                      onChange={setOverrideFromPeriod}
+                    />
+                  )}
                   <Button
                     disabled={disabled || !overrideDate || !(overrideWeekday || overrideDay || overrideWeekly)}
                     onClick={() => {
@@ -1051,6 +1080,7 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
                             Number(overrideWeekday),
                             overrideDay,
                             overrideWeekly,
+                            overrideDay ? overrideFromPeriod : undefined,
                           ),
                           previous = d.timetable.dayOverrides.findIndex(
                             (p) => p.semesterId === semesterId && p.date === overrideDate,
@@ -1076,6 +1106,7 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
                             ? `${["월", "화", "수", "목", "금", "토", "일"][v.substituteWeekday - 1]}요일 적용`
                             : "원래 요일"}{" "}
                           · {days.find((d) => d.id === v.dayTemplateId)?.label ?? "기본 일과"} ·{" "}
+                          {v.fromPeriod ? `${v.fromPeriod}교시부터 · ` : ""}
                           {weeklies.find((w) => w.id === v.weeklyTableId)?.label ?? "기본 시간표"}
                         </Body>
                         <Button
@@ -1120,6 +1151,14 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
                     ]}
                   />
                   <div className={s.row}>
+                    {changeKind === "MOVE" && (
+                      <TextBox
+                        header="이동할 날짜 · 비우면 같은 날짜"
+                        value={changeTargetDate}
+                        onChange={setChangeTargetDate}
+                        placeholder="2026-05-02"
+                      />
+                    )}
                     {changeKind !== "ADD" && (
                       <NumberBox header="원래 교시" value={fromPeriod} min={1} max={64} onChange={setFromPeriod} />
                     )}
@@ -1132,7 +1171,15 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
                     onClick={() => {
                       void save((d) => {
                         d.timetable.dateChanges.push(
-                          newChange(semesterId, changeDate, changeContext, changeKind, fromPeriod, toPeriod),
+                          newChange(
+                            semesterId,
+                            changeDate,
+                            changeContext,
+                            changeKind,
+                            fromPeriod,
+                            toPeriod,
+                            changeTargetDate,
+                          ),
                         );
                       }, "해당 날짜의 수업 변경을 저장했어요.");
                     }}
@@ -1146,7 +1193,7 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
                         <Body>
                           {v.date} · {contexts.find((c) => c.id === v.contextId)?.label} ·{" "}
                           {v.kind === "MOVE"
-                            ? `${v.fromPeriod}→${v.toPeriod}교시 이동`
+                            ? `${v.fromPeriod}→${v.targetDate ? `${v.targetDate} ` : ""}${v.toPeriod}교시 이동`
                             : v.kind === "CANCEL"
                               ? `${v.fromPeriod}교시 취소`
                               : `${v.toPeriod}교시 추가`}

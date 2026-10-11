@@ -205,6 +205,26 @@ describe("events (BRG-006, BRG-009)", () => {
 });
 
 describe("native capture contracts", () => {
+  it("maps media job methods without accepting engine or filesystem paths", async () => {
+    const handlers = Object.fromEntries(
+      ["media-download.start", "media-download.status", "media-download.cancel"].map((name) => [name, () => null]),
+    );
+    const host = createMockHost({ granted: ["media-download"], handlers });
+    const deck = await connect({ window: host.window, logger: quietLogger() });
+    await deck.mediaDownload.start({ url: "https://youtu.be/AAAAAAAAAAA", folderHandle: "opaque-folder" });
+    await deck.mediaDownload.status({ jobHandle: "opaque-job" });
+    await deck.mediaDownload.cancel({ jobHandle: "opaque-job" });
+    expect(host.requests.map(({ cap, method, args }) => ({ cap, method, args }))).toEqual([
+      {
+        cap: "media-download",
+        method: "start",
+        args: { url: "https://youtu.be/AAAAAAAAAAA", folderHandle: "opaque-folder" },
+      },
+      { cap: "media-download", method: "status", args: { jobHandle: "opaque-job" } },
+      { cap: "media-download", method: "cancel", args: { jobHandle: "opaque-job" } },
+    ]);
+    deck.dispose();
+  });
   it("maps opaque session/overlay/shortcut/destination helpers to approved wire names", async () => {
     const handlers = Object.fromEntries(
       ["capture.status", "capture.trigger", "overlay.status", "global-shortcut.register", "fs.pickDestination"].map(

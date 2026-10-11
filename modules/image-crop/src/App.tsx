@@ -7,6 +7,7 @@ import {
   Caption,
   CheckBox,
   ComboBox,
+  ColorPicker,
   DropZone,
   ImageCropPreview,
   InfoBar,
@@ -14,18 +15,32 @@ import {
   NumberBox,
   ProgressBar,
   SettingsExpander,
+  TextBox,
   ToolLayout,
   deckTokens,
+  createDeckTheme,
   makeStyles,
 } from "@deck/ui";
 import { useEffect, useRef, useState } from "react";
-import { RATIOS, centeredRect, clampRect, orientedSize, transferRect, type Rect } from "./edit.ts";
+import {
+  RATIOS,
+  DEFAULT_ANNOTATION,
+  centeredRect,
+  clampRect,
+  orientedSize,
+  outputSize,
+  transferRect,
+  type Edit,
+  type Rect,
+} from "./edit.ts";
 import { OutputSession } from "./output-session.ts";
 import { readImage, renderCrop, saveCrops, type CropItem } from "./batch.ts";
 type SaveStatus = { state: "saved" | "failed" | "pending"; file: FileHandleInfo; folder?: FolderHandleInfo };
 interface Item extends CropItem {
   ratio: string;
   initialPreview: Blob | undefined;
+  past: { edit: Edit; ratio: string }[];
+  future: { edit: Edit; ratio: string }[];
 }
 const useStyles = makeStyles({
   actions: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: deckTokens.inlineGap },
@@ -38,9 +53,16 @@ const useStyles = makeStyles({
   stack: { display: "flex", flexDirection: "column", gap: deckTokens.inlineGap },
 });
 const accepted = (file: FileHandleInfo) => /\.(jpe?g|png|webp)$/i.test(file.name);
+const initialAnnotation = { ...DEFAULT_ANNOTATION, ink: createDeckTheme("light").colorNeutralForeground1 };
 export function App({ deck }: { deck: Deck }) {
   const s = useStyles();
   const [items, setItems] = useState<Item[]>([]);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  const queued = useRef(new Map<string, FileHandleInfo>());
+  const admitted = useRef(new Set<string>());
+  const readyHandles = useRef(new Set<string>());
+  const readingHandle = useRef<string | null>(null);
   const [index, setIndex] = useState(0);
   const current = items[index];
   const [busy, setBusy] = useState(false);
@@ -74,11 +96,22 @@ export function App({ deck }: { deck: Deck }) {
     const run = async () => {
       try {
         const blob =
-          current.initialPreview && current.edit.turns === 0 && !current.edit.flipX && !current.edit.flipY
+          current.initialPreview &&
+          current.edit.turns === 0 &&
+          !current.edit.flipX &&
+          !current.edit.flipY &&
+          (current.edit.brightness ?? 100) === 100 &&
+          (current.edit.contrast ?? 100) === 100 &&
+          !current.edit.annotation
             ? current.initialPreview
             : (
                 await renderCrop(
-                  { bytes: current.bytes, edit: current.edit, preview: true, format: "png" },
+                  {
+                    bytes: current.bytes ?? (await readImage(deck, current.file, abort.signal)),
+                    edit: current.edit,
+                    preview: true,
+                    format: "png",
+                  },
                   abort.signal,
                 )
               ).blob;
@@ -99,7 +132,17 @@ export function App({ deck }: { deck: Deck }) {
       abort.abort();
       if (url) URL.revokeObjectURL(url);
     };
-  }, [current?.bytes, current?.edit.turns, current?.edit.flipX, current?.edit.flipY]);
+  }, [
+    deck,
+    current?.file.handle,
+    current?.bytes,
+    current?.edit.turns,
+    current?.edit.flipX,
+    current?.edit.flipY,
+    current?.edit.brightness,
+    current?.edit.contrast,
+    current?.edit.annotation,
+  ]);
   useEffect(
     () => () => {
       controller.current?.abort();
@@ -116,26 +159,66 @@ export function App({ deck }: { deck: Deck }) {
       deck.on("fs.dropped", ({ files }) => {
         void addFiles(files);
       }),
-    [deck, items],
+    [deck],
   );
+  function changeCurrent(change: (item: Item) => Item) {
+    if (locked.current || !current) return;
+    setItems((all) =>
+      all.map((item, i) =>
+        i === index
+          ? {
+              ...change(item),
+              past: [...item.past.slice(-19), { edit: structuredClone(item.edit), ratio: item.ratio }],
+              future: [],
+            }
+          : item,
+      ),
+    );
+  }
+  function undo(redo = false) {
+    if (locked.current || !current) return;
+    setItems((all) =>
+      all.map((item, i) => {
+        if (i !== index) return item;
+        const from = redo ? item.future : item.past;
+        const previous = from.at(-1);
+        if (!previous) return item;
+        const now = { edit: structuredClone(item.edit), ratio: item.ratio };
+        return {
+          ...item,
+          ...previous,
+          past: redo ? [...item.past.slice(-19), now] : item.past.slice(0, -1),
+          future: redo ? item.future.slice(0, -1) : [...item.future.slice(-19), now],
+        };
+      }),
+    );
+  }
   function replaceRect(rect: Rect) {
     if (locked.current || !current) return;
     const fixed = clampRect(rect, size.width, size.height, ratio);
-    setItems((all) => all.map((item, i) => (i === index ? { ...item, edit: { ...item.edit, rect: fixed } } : item)));
+    changeCurrent((item) => ({ ...item, edit: { ...item.edit, rect: fixed } }));
   }
   async function addFiles(files: FileHandleInfo[]) {
-    if (locked.current || !files.length) return;
+    if (!files.length) return;
     const incoming = [...new Map(files.filter(accepted).map((file) => [file.handle, file])).values()].filter(
-      (file) => !items.some((item) => item.file.handle === file.handle),
+      (file) =>
+        !readyHandles.current.has(file.handle) &&
+        readingHandle.current !== file.handle &&
+        !queued.current.has(file.handle),
     );
     if (!incoming.length) {
       setMessage("JPG·PNG·WebP 정지 이미지를 추가해 주세요.");
       return;
     }
-    if (incoming.length + items.length > 100) {
-      setMessage("한 번에 100개까지 확인해요. 저장 후 목록을 비워 주세요.");
+    if (new Set([...admitted.current, ...incoming.map((f) => f.handle)]).size > 1000) {
+      setMessage("한 작업에 1,000개까지 추가해요. 현재 작업을 저장한 뒤 목록을 비워 주세요.");
       return;
     }
+    for (const file of incoming) {
+      queued.current.set(file.handle, file);
+      admitted.current.add(file.handle);
+    }
+    if (locked.current) return;
     locked.current = true;
     setBusy(true);
     const abort = new AbortController();
@@ -143,47 +226,65 @@ export function App({ deck }: { deck: Deck }) {
     setTotal(incoming.length);
     setDone(0);
     let count = 0;
-    let cumulative = items.reduce((sum, item) => sum + item.bytes.length, 0);
-    let previewBytes = items.reduce((sum, item) => sum + (item.initialPreview?.size ?? 0), 0);
+    let attempted = 0;
+    let cumulative = itemsRef.current.reduce((sum, item) => sum + (item.bytes?.length ?? 0), 0);
+    let previewBytes = itemsRef.current.reduce((sum, item) => sum + (item.initialPreview?.size ?? 0), 0);
     try {
-      for (const [i, file] of incoming.entries()) {
+      while (queued.current.size) {
         if (abort.signal.aborted) break;
+        const file = queued.current.values().next().value;
+        if (!file) break;
+        queued.current.delete(file.handle);
+        readingHandle.current = file.handle;
         try {
           const bytes = await readImage(deck, file, abort.signal);
-          if (cumulative + bytes.length > 128 * 1024 * 1024) throw new Error("INPUT_LIMIT");
           const edit = { turns: 0, flipX: false, flipY: false, rect: { x: 0, y: 0, width: 1, height: 1 } };
           const image = await renderCrop({ bytes, edit, preview: true, format: "png" }, abort.signal);
           edit.rect = centeredRect(image.sourceWidth, image.sourceHeight);
-          if (abort.signal.aborted) break;
-          cumulative += bytes.length;
+          if (abort.signal.aborted) {
+            setFailed((all) => [...new Map([...all, file].map((f) => [f.handle, f])).values()]);
+            break;
+          }
+          const cachedBytes = cumulative + bytes.length <= 128 * 1024 * 1024 ? bytes : undefined;
+          cumulative += cachedBytes?.length ?? 0;
           // Bound retained preview memory separately from original encoded inputs.
           const cachedPreview = previewBytes + image.blob.size <= 32 * 1024 * 1024 ? image.blob : undefined;
           previewBytes += cachedPreview?.size ?? 0;
+          readyHandles.current.add(file.handle);
           setItems((all) => [
             ...all,
             {
               file,
-              bytes,
+              bytes: cachedBytes,
               sourceWidth: image.sourceWidth,
               sourceHeight: image.sourceHeight,
               edit,
               ratio: "free",
               initialPreview: cachedPreview,
+              past: [],
+              future: [],
             },
           ]);
           setFailed((all) => all.filter((f) => f.handle !== file.handle));
           count++;
         } catch {
-          if (!abort.signal.aborted)
-            setFailed((all) => [...new Map([...all, file].map((f) => [f.handle, f])).values()]);
+          setFailed((all) => [...new Map([...all, file].map((f) => [f.handle, f])).values()]);
         }
-        setDone(i + 1);
+        readingHandle.current = null;
+        setDone(++attempted);
+        setTotal((n) => Math.max(n, attempted + queued.current.size));
       }
       setMessage(
         abort.signal.aborted ? "읽기를 취소했어요. 이미 확인한 사진은 유지해요." : `${count}개 사진을 추가했어요.`,
       );
     } finally {
+      if (queued.current.size) {
+        const pending = [...queued.current.values()];
+        queued.current.clear();
+        setFailed((all) => [...new Map([...all, ...pending].map((f) => [f.handle, f])).values()]);
+      }
       locked.current = false;
+      readingHandle.current = null;
       setBusy(false);
       controller.current = null;
     }
@@ -204,19 +305,14 @@ export function App({ deck }: { deck: Deck }) {
     if (!current || locked.current) return;
     const turns = (current.edit.turns + 1) % 4;
     const nextSize = orientedSize(current.sourceWidth, current.sourceHeight, turns);
-    setItems((all) =>
-      all.map((item, i) =>
-        i === index
-          ? { ...item, edit: { ...item.edit, turns, rect: centeredRect(nextSize.width, nextSize.height, ratio) } }
-          : item,
-      ),
-    );
+    changeCurrent((item) => ({
+      ...item,
+      edit: { ...item.edit, turns, rect: centeredRect(nextSize.width, nextSize.height, ratio) },
+    }));
   }
   function flip(axis: "flipX" | "flipY") {
     if (!current || locked.current) return;
-    setItems((all) =>
-      all.map((item, i) => (i === index ? { ...item, edit: { ...item.edit, [axis]: !item.edit[axis] } } : item)),
-    );
+    changeCurrent((item) => ({ ...item, edit: { ...item.edit, [axis]: !item.edit[axis] } }));
   }
   function applyAll() {
     if (!current || locked.current) return;
@@ -225,6 +321,8 @@ export function App({ deck }: { deck: Deck }) {
         const target = orientedSize(item.sourceWidth, item.sourceHeight, current.edit.turns);
         return {
           ...item,
+          past: [...item.past.slice(-19), { edit: structuredClone(item.edit), ratio: item.ratio }],
+          future: [],
           ratio: current.ratio,
           edit: { ...current.edit, rect: transferRect(current.edit.rect, size, target, ratio) },
         };
@@ -292,6 +390,13 @@ export function App({ deck }: { deck: Deck }) {
       locked.current = false;
       setBusy(false);
       controller.current = null;
+      if (queued.current.size) {
+        const pending = [...queued.current.values()];
+        queued.current.clear();
+        if (abort.signal.aborted)
+          setFailed((all) => [...new Map([...all, ...pending].map((f) => [f.handle, f])).values()]);
+        else void addFiles(pending);
+      }
     }
   }
   const disabled = busy || previewing;
@@ -332,6 +437,10 @@ export function App({ deck }: { deck: Deck }) {
             disabled={busy || (!items.length && !failed.length)}
             onClick={() => {
               setItems([]);
+              itemsRef.current = [];
+              queued.current.clear();
+              admitted.current.clear();
+              readyHandles.current.clear();
               setIndex(0);
               setFailed([]);
               resetDestination();
@@ -383,6 +492,12 @@ export function App({ deck }: { deck: Deck }) {
           </Button>
           <Button disabled={disabled || !current} onClick={() => flip("flipY")}>
             상하 반전
+          </Button>
+          <Button disabled={disabled || !current?.past.length} onClick={() => undo()}>
+            편집 되돌리기
+          </Button>
+          <Button disabled={disabled || !current?.future.length} onClick={() => undo(true)}>
+            편집 다시 적용
           </Button>
           <ComboBox
             header="저장 형식"
@@ -442,17 +557,11 @@ export function App({ deck }: { deck: Deck }) {
                 disabled={disabled}
                 onChange={(value) => {
                   const r = RATIOS.find((entry) => entry.value === value)?.ratio ?? 0;
-                  setItems((all) =>
-                    all.map((item, i) =>
-                      i === index
-                        ? {
-                            ...item,
-                            ratio: value,
-                            edit: { ...item.edit, rect: centeredRect(size.width, size.height, r) },
-                          }
-                        : item,
-                    ),
-                  );
+                  changeCurrent((item) => ({
+                    ...item,
+                    ratio: value,
+                    edit: { ...item.edit, rect: centeredRect(size.width, size.height, r) },
+                  }));
                 }}
               />
               <Button disabled={disabled} onClick={() => replaceRect(centeredRect(size.width, size.height, ratio))}>
@@ -497,6 +606,154 @@ export function App({ deck }: { deck: Deck }) {
                   />
                 ))}
               </div>
+            </SettingsExpander>
+            <SettingsExpander header="크기·밝기·대비" description="원본은 유지하고 저장할 이미지에 적용해요">
+              <div className={s.controls}>
+                <NumberBox
+                  header="저장 너비 (px)"
+                  value={current.edit.outputWidth ?? current.edit.rect.width}
+                  min={1}
+                  max={Math.min(
+                    10000,
+                    Math.floor(Math.sqrt((24_000_000 * current.edit.rect.width) / current.edit.rect.height)),
+                    Math.floor((10000 * current.edit.rect.width) / current.edit.rect.height),
+                  )}
+                  disabled={disabled}
+                  onChange={(outputWidth) =>
+                    changeCurrent((item) => ({ ...item, edit: { ...item.edit, outputWidth } }))
+                  }
+                />
+                <NumberBox
+                  header="밝기 (%)"
+                  value={current.edit.brightness ?? 100}
+                  min={0}
+                  max={200}
+                  disabled={disabled}
+                  onChange={(brightness) => changeCurrent((item) => ({ ...item, edit: { ...item.edit, brightness } }))}
+                />
+                <NumberBox
+                  header="대비 (%)"
+                  value={current.edit.contrast ?? 100}
+                  min={0}
+                  max={200}
+                  disabled={disabled}
+                  onChange={(contrast) => changeCurrent((item) => ({ ...item, edit: { ...item.edit, contrast } }))}
+                />
+              </div>
+              <Caption>저장 높이는 자르기 비율에 맞춰요. 최대 한 변 10,000px·2,400만 화소예요.</Caption>
+              <Caption>
+                {(() => {
+                  try {
+                    const out = outputSize(current.edit);
+                    return `저장 크기 ${out.width} × ${out.height}px`;
+                  } catch {
+                    return "저장 크기가 한도를 넘어요. 너비를 줄여 주세요.";
+                  }
+                })()}
+              </Caption>
+            </SettingsExpander>
+            <SettingsExpander header="텍스트·사각형 표시" description="사진 전체를 기준으로 위치를 정해요">
+              <ComboBox
+                header="표시 종류"
+                value={current.edit.annotation?.kind ?? "none"}
+                disabled={disabled}
+                options={[
+                  { value: "none", label: "표시 없음" },
+                  { value: "text", label: "한 줄 텍스트" },
+                  { value: "rectangle", label: "사각형 테두리" },
+                ]}
+                onChange={(kind) =>
+                  changeCurrent((item) => ({
+                    ...item,
+                    edit: {
+                      ...item.edit,
+                      annotation:
+                        kind === "none"
+                          ? undefined
+                          : {
+                              ...(item.edit.annotation ?? initialAnnotation),
+                              kind: kind === "text" ? "text" : "rectangle",
+                            },
+                    },
+                  }))
+                }
+              />
+              {current.edit.annotation && (
+                <>
+                  {current.edit.annotation.kind === "text" && (
+                    <TextBox
+                      header="사진에 넣을 텍스트"
+                      value={current.edit.annotation.text}
+                      disabled={disabled}
+                      onChange={(text) => {
+                        if (text.length <= 200 && !Array.from(text).some((c) => c.charCodeAt(0) < 32))
+                          changeCurrent((item) => ({
+                            ...item,
+                            edit: {
+                              ...item.edit,
+                              annotation: { ...(item.edit.annotation ?? initialAnnotation), text },
+                            },
+                          }));
+                      }}
+                    />
+                  )}
+                  <ColorPicker
+                    header="표시 색"
+                    value={current.edit.annotation.ink}
+                    disabled={disabled}
+                    onChange={(color) =>
+                      changeCurrent((item) => ({
+                        ...item,
+                        edit: {
+                          ...item.edit,
+                          annotation: { ...(item.edit.annotation ?? initialAnnotation), ink: color },
+                        },
+                      }))
+                    }
+                  />
+                  <div className={s.controls}>
+                    {(
+                      [
+                        "x",
+                        "y",
+                        ...(current.edit.annotation.kind === "rectangle" ? ["width", "height"] : ["textPixels"]),
+                      ] as const
+                    ).map((field) => {
+                      const key = field as "x" | "y" | "width" | "height" | "textPixels";
+                      return (
+                        <NumberBox
+                          key={key}
+                          header={
+                            {
+                              x: "표시 왼쪽 (%)",
+                              y: "표시 위쪽 (%)",
+                              width: "표시 너비 (%)",
+                              height: "표시 높이 (%)",
+                              textPixels: "원본 글자 크기 (px)",
+                            }[key]
+                          }
+                          value={(current.edit.annotation ?? initialAnnotation)[key]}
+                          min={key === "x" || key === "y" ? 0 : 1}
+                          max={key === "textPixels" ? 500 : 100}
+                          disabled={disabled}
+                          onChange={(value) =>
+                            changeCurrent((item) => ({
+                              ...item,
+                              edit: {
+                                ...item.edit,
+                                annotation: { ...(item.edit.annotation ?? initialAnnotation), [key]: value },
+                              },
+                            }))
+                          }
+                        />
+                      );
+                    })}
+                  </div>
+                  <Caption>
+                    자르기 밖의 표시는 결과에 포함되지 않아요. 사진의 한 줄 주석이며 개인정보 가리기 기능은 아니에요.
+                  </Caption>
+                </>
+              )}
             </SettingsExpander>
             <Caption secondary>
               사진을 끌면 새 영역, 영역 안을 끌면 이동, 모서리를 끌면 크기를 바꿔요. 방향키로 이동하고 Shift+방향키로

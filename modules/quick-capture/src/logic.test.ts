@@ -102,6 +102,14 @@ it("captures IME-independent codes and rejects modifier-free keys", () => {
   expect(shortcutFromKey({ code: "KeyC", ctrlKey: false, shiftKey: false, altKey: false, metaKey: false })).toBeNull();
   expect(shortcutFromKey({ code: "Escape", ctrlKey: true, shiftKey: false, altKey: false, metaKey: false })).toBeNull();
 });
+it("captures and restores the keys already supported by the native host", () => {
+  for (const key of ["F13", "F24", "Space", "Enter", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]) {
+    const shortcut = shortcutFromKey({ code: key, ctrlKey: true, shiftKey: false, altKey: false, metaKey: false });
+    expect(shortcut).toEqual({ key, modifiers: ["control"] });
+    expect(restorePreferences({ ...defaults(border), shortcut }, border).shortcut).toEqual(shortcut);
+  }
+  expect(shortcutFromKey({ code: "F12", ctrlKey: true, shiftKey: false, altKey: false, metaKey: false })).toBeNull();
+});
 it("applied state equality calls no native mutations", async () => {
   const host = createMockHost({ granted: ["capture", "overlay", "global-shortcut"] });
   const deck = await connect({ window: host.window });

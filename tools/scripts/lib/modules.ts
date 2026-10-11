@@ -23,6 +23,19 @@ export function moduleIds(root: string): string[] {
     .sort();
 }
 
+/**
+ * Modules kept in the repo and checked by `pnpm verify` but left out of the bundled index, so the
+ * deck does not show them (catalog.md §1). Each value is the issue that tracks the decision.
+ */
+export const HELD_MODULES: Readonly<Record<string, string>> = {
+  "youtube-download": "https://github.com/TeacherDeck/teacherdeck/issues/15",
+};
+
+/** Ids of modules that ship as default modules: every module except held ones, sorted. */
+export function bundledModuleIds(root: string): string[] {
+  return moduleIds(root).filter((id) => !Object.hasOwn(HELD_MODULES, id));
+}
+
 /** Runs a command and returns stdout; throws with stderr on failure. */
 export function run(cmd: string, args: string[], cwd: string): string {
   const res = spawnSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
