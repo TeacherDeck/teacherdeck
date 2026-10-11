@@ -13,7 +13,10 @@ const first = { handle: "first", name: "합성 첫사진.png", ext: "png", size:
 const second = { ...first, handle: "second", name: "합성 다음사진.png" };
 const third = { ...first, handle: "third", name: "합성 추가사진.png" };
 const folder = { handle: "output", name: "합성 결과" };
-async function setup() {
+async function setup(
+  automatic = false,
+  pickFolder: () => unknown = () => ({ handle: "parent", name: "합성 저장 폴더" }),
+) {
   const selection = { files: [first] };
   const host = createMockHost({
     module: { id: "image-compress", version: "0.1.2" },
@@ -23,7 +26,7 @@ async function setup() {
       "storage.get": () => null,
       "storage.set": () => null,
       "fs.pickFiles": () => selection.files,
-      "fs.pickFolder": () => ({ handle: "parent", name: "합성 저장 폴더" }),
+      "fs.pickFolder": pickFolder,
       "fs.reveal": () => null,
     },
   });
@@ -33,6 +36,7 @@ async function setup() {
       <App deck={deck} />
     </DeckProvider>,
   );
+  if (!automatic) fireEvent.click(screen.getByRole("checkbox", { name: "파일 추가 시 바로 압축" }));
   return { deck, host, selection };
 }
 const pick = () => fireEvent.click(screen.getByRole("button", { name: /파일 선택/ }));
@@ -46,14 +50,12 @@ describe("compression additions and recovery", () => {
       folder,
       results: selected.map((file) => ({ file, status: "compressed" as const, outputSize: 2, folder })),
     }));
-    const { deck, host } = await setup();
-    fireEvent.click(screen.getByRole("button", { name: "저장 폴더 선택" }));
-    await screen.findByText("합성 저장 폴더");
-    fireEvent.click(screen.getByRole("checkbox", { name: "파일 추가 시 바로 압축" }));
+    const { deck, host } = await setup(true);
     pick();
     await waitFor(() => expect(runBatch).toHaveBeenCalledTimes(1));
     await screen.findByText(/대기 0개/);
     expect(vi.mocked(runBatch).mock.calls[0]?.[1]).toEqual([first]);
+    expect(host.requests.filter((r) => r.method === "pickFolder")).toHaveLength(1);
     await act(async () => {
       host.emit("fs.dropped", { files: [second] });
     });
@@ -129,6 +131,88 @@ describe("compression additions and recovery", () => {
     await screen.findByText(/2개 · .*대기 0개/);
     expect(vi.mocked(runBatch).mock.calls[1]?.[1]).toEqual([second]);
     expect(screen.getByText(/합성 첫사진.png · 압축 ·/)).toBeTruthy();
+    deck.dispose();
+  });
+});
+
+describe("default automatic drop queue", () => {
+  it("keeps rapid drops during the first folder picker and reuses the selected folder", async () => {
+    let choose: ((folder: unknown) => void) | undefined;
+    const { deck, host } = await setup(
+      true,
+      () =>
+        new Promise((resolve) => {
+          choose = resolve;
+        }),
+    );
+    vi.mocked(runBatch).mockImplementation(async (_deck, selected) => ({
+      folder,
+      results: selected.map((file) => ({ file, status: "compressed", folder, outputSize: 2 })),
+    }));
+    await act(async () => {
+      host.emit("fs.dropped", { files: [first] });
+    });
+    await waitFor(() => expect(choose).toBeDefined());
+    await act(async () => {
+      host.emit("fs.dropped", { files: [first, second] });
+    });
+    await act(async () => {
+      choose?.({ handle: "parent", name: "합성 저장 폴더" });
+    });
+    await screen.findByText(/2개 · .*대기 0개/);
+    expect(vi.mocked(runBatch).mock.calls.flatMap((call) => call[1])).toEqual([first, second]);
+    expect(host.requests.filter((r) => r.method === "pickFolder")).toHaveLength(1);
+    deck.dispose();
+  });
+  it("cancels before a folder picker resolves and leaves every input recoverable", async () => {
+    let choose: ((folder: unknown) => void) | undefined;
+    const { deck, host } = await setup(
+      true,
+      () =>
+        new Promise((resolve) => {
+          choose = resolve;
+        }),
+    );
+    await act(async () => {
+      host.emit("fs.dropped", { files: [first, second] });
+    });
+    await waitFor(() => expect(choose).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "취소" }));
+    await act(async () => {
+      choose?.({ handle: "parent", name: "합성 저장 폴더" });
+    });
+    await screen.findByText(/폴더 선택을 취소했어요/);
+    expect(runBatch).not.toHaveBeenCalled();
+    expect(screen.getByText(/2개 · .*대기 2개/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "압축하여 저장" }).hasAttribute("disabled")).toBe(false);
+    deck.dispose();
+  });
+  it("processes drops arriving during encoding next and never repeats committed files", async () => {
+    let complete: (() => void) | undefined;
+    vi.mocked(runBatch)
+      .mockImplementationOnce(async () => {
+        await new Promise<void>((resolve) => {
+          complete = resolve;
+        });
+        return { folder, results: [{ file: first, status: "compressed", folder, outputSize: 2 }] };
+      })
+      .mockImplementation(async (_deck, selected) => ({
+        folder,
+        results: selected.map((file) => ({ file, status: "compressed", folder, outputSize: 2 })),
+      }));
+    const { deck, host } = await setup(true);
+    await act(async () => {
+      host.emit("fs.dropped", { files: [first] });
+    });
+    await waitFor(() => expect(complete).toBeDefined());
+    await act(async () => {
+      host.emit("fs.dropped", { files: [second, first] });
+    });
+    await act(async () => {
+      complete?.();
+    });
+    await screen.findByText(/2개 · .*대기 0개/);
+    expect(vi.mocked(runBatch).mock.calls.map((call) => call[1])).toEqual([[first], [second]]);
     deck.dispose();
   });
 });

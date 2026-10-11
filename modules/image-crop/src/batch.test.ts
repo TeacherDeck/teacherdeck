@@ -2,9 +2,10 @@
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import { connect, DeckCallError } from "@deck/sdk";
 import { createMockHost, type MockHandler } from "@deck/sdk/testing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { FONT_STACK } from "@deck/ui";
 import { OutputSession } from "./output-session.ts";
-import { saveCrops, type CropItem, type Renderer } from "./batch.ts";
+import { saveCrops, renderCrop, type CropItem, type Renderer } from "./batch.ts";
 const item = (handle: string): CropItem => ({
   file: { handle, name: "합성.png", ext: "png", size: 4, modifiedAt: 0 },
   bytes: new Uint8Array([1, 2, 3, 4]),
@@ -41,6 +42,37 @@ const renderer: Renderer = async (request) => ({
   imageHeight: 100,
 });
 describe("crop SDK output lifecycle", () => {
+  it("supplies the shared font token from the UI thread instead of importing UI inside the Worker", async () => {
+    let sent: unknown;
+    vi.stubGlobal(
+      "Worker",
+      class {
+        onmessage: ((event: { data: unknown }) => void) | null = null;
+        terminate() {}
+        postMessage(value: unknown) {
+          sent = value;
+          queueMicrotask(() =>
+            this.onmessage?.({
+              data: {
+                blob: new Blob(["synthetic"]),
+                sourceWidth: 100,
+                sourceHeight: 80,
+                imageWidth: 100,
+                imageHeight: 80,
+              },
+            }),
+          );
+        }
+      },
+    );
+    try {
+      const request = { bytes: new Uint8Array([1]), edit: item("source").edit, preview: false, format: "png" as const };
+      await renderCrop(request, new AbortController().signal);
+      expect(sent).toEqual({ ...request, fontFamily: FONT_STACK });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it("preserves originals and edits, saves all distinct names to a new batch", async () => {
     const { deck, host } = await setup();
     const items = [item("first"), item("second")];
@@ -182,6 +214,51 @@ describe("expired crop output recovery", () => {
     expect(attempts).toBe(2);
     await session.close();
     expect(host.requests.filter((request) => request.method === "closeOutputFolder")).toHaveLength(1);
+    deck.dispose();
+  });
+});
+
+describe("lazy large crop batches", () => {
+  it("reads and renders 500 handles sequentially without retaining their source bytes", async () => {
+    const files = Array.from({ length: 500 }, (_, n) => ({ ...item(String(n)), bytes: undefined }));
+    let active = 0,
+      maximum = 0,
+      reads = 0,
+      writes = 0;
+    const render: Renderer = async (request, signal) => {
+      maximum = Math.max(maximum, ++active);
+      await Promise.resolve();
+      active--;
+      return renderer(request, signal);
+    };
+    const fs = {
+      pickFolder: async () => ({ handle: "parent", name: "합성 폴더" }),
+      createOutputFolder: async () => ({ batchId: "batch", folder: { handle: "output", name: "합성 결과" } }),
+      closeOutputFolder: async () => undefined,
+      readChunks: async function* () {
+        reads++;
+        yield new Uint8Array([1, 2, 3, 4]);
+      },
+      writeBlob: async () => {
+        writes++;
+        return { handle: "output", name: "합성.png", size: 4, ext: "png", modifiedAt: 0 };
+      },
+    } as unknown as Parameters<typeof saveCrops>[0]["fs"];
+    const result = await saveCrops({ fs }, files, "png", new AbortController().signal, undefined, render);
+    expect(result?.saved).toHaveLength(500);
+    expect(reads).toBe(500);
+    expect(writes).toBe(500);
+    expect(maximum).toBe(1);
+    expect(files.every((file) => file.bytes === undefined)).toBe(true);
+  });
+  it("rejects a source whose dimensions changed after admission, preserving the edited snapshot", async () => {
+    const { deck, host } = await setup();
+    const before = item("changed");
+    const render: Renderer = async (request, signal) => ({ ...(await renderer(request, signal)), sourceWidth: 200 });
+    const result = await saveCrops(deck, [before], "png", new AbortController().signal, undefined, render);
+    expect(result?.failed).toEqual(["changed"]);
+    expect(host.requests.some((r) => r.method === "beginWrite")).toBe(false);
+    expect(before.edit.rect).toEqual({ x: 10, y: 20, width: 30, height: 40 });
     deck.dispose();
   });
 });

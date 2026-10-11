@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import type { Deck, FileHandleInfo, FolderHandleInfo } from "@deck/sdk";
+import { FONT_STACK } from "@deck/ui";
 import { OutputSession } from "./output-session.ts";
 import { MAX_BYTES } from "./header.ts";
 import { outputName, type Edit } from "./edit.ts";
@@ -34,7 +35,8 @@ export const renderCrop: Renderer = (request, signal) => {
       reject(new Error("INVALID_IMAGE"));
     };
     // Keep the original encoded bytes available for later edits and retry.
-    worker.postMessage(request);
+    // Supply the public token from the UI thread; the Worker never imports React/Fluent.
+    worker.postMessage({ ...request, fontFamily: FONT_STACK });
   });
 };
 export async function readImage(
@@ -61,7 +63,7 @@ export async function readImage(
 }
 export interface CropItem {
   file: FileHandleInfo;
-  bytes: Uint8Array<ArrayBuffer>;
+  bytes?: Uint8Array<ArrayBuffer> | undefined;
   sourceWidth: number;
   sourceHeight: number;
   edit: Edit;
@@ -96,7 +98,10 @@ export async function saveCrops(
     for (const item of items) {
       if (signal.aborted) break;
       try {
-        const result = await render({ bytes: item.bytes, edit: item.edit, preview: false, format }, signal);
+        const bytes = item.bytes ?? (await readImage(deck, item.file, signal));
+        const result = await render({ bytes, edit: item.edit, preview: false, format }, signal);
+        if (result.sourceWidth !== item.sourceWidth || result.sourceHeight !== item.sourceHeight)
+          throw new Error("SOURCE_CHANGED");
         const proposed = outputName(item.file.name, format);
         let name = proposed;
         let suffix = 2;

@@ -11,6 +11,61 @@ export interface Edit {
   flipX: boolean;
   flipY: boolean;
   rect: Rect;
+  outputWidth?: number;
+  brightness?: number;
+  contrast?: number;
+  annotation?: Annotation | undefined;
+}
+export interface Annotation {
+  kind: "text" | "rectangle";
+  text: string;
+  ink: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  textPixels: number;
+}
+export const DEFAULT_ANNOTATION: Omit<Annotation, "ink"> = {
+  kind: "text",
+  text: "",
+  x: 10,
+  y: 10,
+  width: 50,
+  height: 50,
+  textPixels: 32,
+};
+/** Output limits apply before allocating a canvas, independently of encoded file size. */
+export function outputSize(edit: Edit): { width: number; height: number } {
+  if (![edit.rect.width, edit.rect.height].every((n) => Number.isSafeInteger(n) && n > 0))
+    throw new Error("INVALID_RECT");
+  const width = edit.outputWidth ?? edit.rect.width;
+  const height = Math.max(1, Math.round((width * edit.rect.height) / edit.rect.width));
+  if (!Number.isSafeInteger(width) || width < 1 || width > 10000 || height > 10000 || width * height > 24_000_000)
+    throw new Error("OUTPUT_LIMIT");
+  for (const value of [edit.brightness ?? 100, edit.contrast ?? 100])
+    if (!Number.isFinite(value) || value < 0 || value > 200) throw new Error("INVALID_ADJUSTMENT");
+  const a = edit.annotation;
+  if (
+    a &&
+    (!/^#[a-f\d]{6}$/i.test(a.ink) ||
+      a.text.length > 200 ||
+      Array.from(a.text).some((c) => c.charCodeAt(0) < 32) ||
+      ![a.x, a.y, a.width, a.height, a.textPixels].every(Number.isFinite) ||
+      a.x < 0 ||
+      a.y < 0 ||
+      a.x > 100 ||
+      a.y > 100 ||
+      a.width < 1 ||
+      a.width > 100 ||
+      a.height < 1 ||
+      a.height > 100 ||
+      a.textPixels < 1 ||
+      a.textPixels > 500 ||
+      !["text", "rectangle"].includes(a.kind))
+  )
+    throw new Error("INVALID_ANNOTATION");
+  return { width, height };
 }
 export const RATIOS = [
   { value: "free", label: "자유롭게", ratio: 0 },

@@ -4,7 +4,7 @@
 import { connect } from "@deck/sdk";
 import { createMockHost } from "@deck/sdk/testing";
 import { DeckProvider } from "@deck/ui";
-import { fireEvent, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App.tsx";
 import { readImage, renderCrop, saveCrops } from "./batch.ts";
@@ -19,7 +19,7 @@ const files = [
   { handle: "first", name: "합성 첫사진.png", ext: "png", size: 4, modifiedAt: 0 },
   { handle: "second", name: "합성 다음사진.png", ext: "png", size: 4, modifiedAt: 0 },
 ];
-async function setup(previewSize = 1) {
+async function setup(previewSize = 1, incoming = files) {
   const originalUrl = URL;
   vi.stubGlobal(
     "URL",
@@ -45,7 +45,7 @@ async function setup(previewSize = 1) {
     module: { id: "image-crop", version: "0.1.0" },
     caps: { fs: "1.1.0" },
     granted: ["fs"],
-    handlers: { "fs.pickFiles": () => files },
+    handlers: { "fs.pickFiles": () => incoming },
   });
   const deck = await connect({ window: host.window });
   render(
@@ -58,7 +58,7 @@ async function setup(previewSize = 1) {
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "현재 사진 저장" }).hasAttribute("disabled")).toBe(false),
   );
-  return { deck };
+  return { deck, host };
 }
 afterEach(() => {
   cleanup();
@@ -66,6 +66,89 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe("image crop editing flow", () => {
+  it("queues an additional drop during reading and ignores a repeated in-flight handle", async () => {
+    const { deck, host } = await setup();
+    const third = { handle: "third", name: "합성 세번째.png", ext: "png", size: 4, modifiedAt: 0 };
+    const fourth = { ...third, handle: "fourth", name: "합성 네번째.png" };
+    let finish: ((value: Uint8Array<ArrayBuffer>) => void) | undefined;
+    vi.mocked(readImage).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await act(async () => {
+      host.emit("fs.dropped", { files: [third] });
+    });
+    await waitFor(() => expect(finish).toBeDefined());
+    await act(async () => {
+      host.emit("fs.dropped", { files: [third, fourth] });
+    });
+    await act(async () => {
+      finish?.(new Uint8Array([1, 2, 3, 4]));
+    });
+    await screen.findByText("1/4");
+    expect(readImage).toHaveBeenCalledTimes(4);
+    deck.dispose();
+  });
+  it("passes resizing, adjustments and text to real save request and keeps photo-local undo/redo", async () => {
+    vi.mocked(saveCrops).mockResolvedValue({
+      folder: { handle: "output", name: "합성 결과" },
+      saved: ["first"],
+      failed: [],
+      cancelled: false,
+    });
+    const { deck } = await setup();
+    fireEvent.click(screen.getByRole("button", { name: "크기·밝기·대비" }));
+    fireEvent.change(screen.getByRole("spinbutton", { name: "저장 너비 (px)" }), { target: { value: "50" } });
+    fireEvent.blur(screen.getByRole("spinbutton", { name: "저장 너비 (px)" }));
+    fireEvent.change(screen.getByRole("spinbutton", { name: "밝기 (%)" }), { target: { value: "120" } });
+    fireEvent.blur(screen.getByRole("spinbutton", { name: "밝기 (%)" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "편집 되돌리기" }).hasAttribute("disabled")).toBe(false),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "편집 되돌리기" }));
+    expect((screen.getByRole("spinbutton", { name: "밝기 (%)" }) as HTMLInputElement).value).toBe("100");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "편집 다시 적용" }).hasAttribute("disabled")).toBe(false),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "편집 다시 적용" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "현재 사진 저장" }).hasAttribute("disabled")).toBe(false),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "텍스트·사각형 표시" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "표시 종류" }));
+    fireEvent.click(screen.getByRole("option", { name: "한 줄 텍스트" }));
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "사진에 넣을 텍스트" }).hasAttribute("disabled")).toBe(false),
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: "사진에 넣을 텍스트" }), { target: { value: "합성 주석" } });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "현재 사진 저장" }).hasAttribute("disabled")).toBe(false),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "현재 사진 저장" }));
+    await waitFor(() => expect(saveCrops).toHaveBeenCalledOnce());
+    expect(vi.mocked(saveCrops).mock.calls[0]?.[1][0]?.edit).toMatchObject({
+      outputWidth: 50,
+      brightness: 120,
+      annotation: { kind: "text", text: "합성 주석" },
+    });
+    await screen.findByText("2/2");
+    expect(screen.getByRole("button", { name: "편집 되돌리기" }).hasAttribute("disabled")).toBe(true);
+    deck.dispose();
+  });
+  it("admits 500 images while keeping sequential editing available", async () => {
+    const many = Array.from({ length: 500 }, (_, n) => ({
+      ...{ handle: "synthetic", name: "합성.png", ext: "png", size: 4, modifiedAt: 0 },
+      handle: `synthetic-${n}`,
+      name: `합성${n}.png`,
+    }));
+    const { deck } = await setup(1, many);
+    await screen.findByText("1/500");
+    expect(readImage).toHaveBeenCalledTimes(500);
+    expect(screen.getByRole("button", { name: "다음 사진" }).hasAttribute("disabled")).toBe(false);
+    deck.dispose();
+  });
   it("uses shared keyboard crop controls and saves the current edit before advancing to the next image", async () => {
     vi.mocked(saveCrops).mockResolvedValue({
       folder: { handle: "output", name: "합성 결과" },
