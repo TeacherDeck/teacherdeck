@@ -25,6 +25,8 @@ pub mod file_ops;
 pub mod file_output;
 pub mod file_read;
 pub mod file_transfer;
+mod media_mp4;
+mod media_worker;
 mod messaging_host;
 mod messaging_worker;
 pub mod modules;
@@ -41,6 +43,9 @@ mod school_data;
 pub mod state;
 pub mod storage;
 mod timealert;
+
+#[cfg(debug_assertions)]
+pub use caps::media_download::synthetic_proof as media_synthetic_proof;
 
 use crate::modules::ModuleStore;
 use crate::origins::{MAIN_WINDOW, MODULE_SCHEME};
@@ -138,6 +143,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(capture_host::CaptureService::default());
     app.manage(presentation_host::PresentationService::default());
     app.manage(caps::office::OfficeService::default());
+    app.manage(caps::media_download::MediaDownloadService::default());
     app.manage(
         messaging_host::MessagingService::open(
             paths.resource_dir()?.join("native/coolreserve"),

@@ -26,6 +26,7 @@ use deck_core::caps::fs::{
 };
 use deck_core::caps::fs::{FilesPage, ListFilesArgs};
 use deck_core::caps::global_shortcut::*;
+use deck_core::caps::media_download::*;
 use deck_core::caps::messaging::*;
 use deck_core::caps::network::*;
 use deck_core::caps::office::*;
@@ -197,6 +198,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         .with_import_extension(Some("ts"));
 
     let mut sdk = vec![
+        ts::<MediaDownloadStartArgs>(SDK_DIR, &cfg)?,
+        ts::<MediaDownloadJob>(SDK_DIR, &cfg)?,
+        ts::<MediaDownloadStage>(SDK_DIR, &cfg)?,
+        ts::<MediaDownloadStatus>(SDK_DIR, &cfg)?,
+        ts::<MediaDownloadCancelResult>(SDK_DIR, &cfg)?,
         ts::<MessagingProvider>(SDK_DIR, &cfg)?,
         ts::<MessagingMode>(SDK_DIR, &cfg)?,
         ts::<MessagingFeature>(SDK_DIR, &cfg)?,

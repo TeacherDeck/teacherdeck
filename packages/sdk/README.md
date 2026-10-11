@@ -4,7 +4,7 @@
 
 ## fs 1.1 파일 전송
 
-SDK 0.6.0은 fs 1.3의 `listFiles`, `fileOps`의 확인된 파일명 변경·되돌리기, `schoolData`의 제한된 공통 명부·시간표 읽기, `office`의 문서 변환과 `network`의 저장된 루틴 API를 제공해요. 각 매니페스트에 필요한 캡을 선언하고 선택 권한은 `deck.has()`로 확인해 주세요. 공통 학급 연결 없이 쓰는 도구의 임시 작업은 계속 지원해야 해요.
+SDK 0.7.0은 fs 1.3의 `listFiles`, `fileOps`의 확인된 파일명 변경·되돌리기, `schoolData`의 제한된 공통 명부·시간표 읽기, `office`의 문서 변환과 `network`의 저장된 루틴 API를 제공해요. 각 매니페스트에 필요한 캡을 선언하고 선택 권한은 `deck.has()`로 확인해 주세요. 공통 학급 연결 없이 쓰는 도구의 임시 작업은 계속 지원해야 해요.
 
 `fileOps.executeRename`과 `undoRename`은 한 번에 독립된 변경 묶음 하나를 처리해요. `done: false`이면 다음 묶음을 호출할 수 있으며, 중지는 다음 호출을 하지 않는 방식이에요. 호스트의 첫 확인 이후에도 파일 ID·내용을 재확인하며 원본 변경을 기본값으로 삼지 않아요.
 
@@ -55,3 +55,7 @@ TimeAlert 전체 암호화 백업과 원형 기록·사진 보존은 신뢰 셸 
 `@deck/sdk/testing`의 createMockHost로 브리지 계약을 검증해요. 파일 읽기 테스트는 자신의 모듈 origin과 대체 fetch를 제공해 합성 바이트를 반환해요. SDK 테스트 통과는 실제 Windows WebView2의 파일·자산·Worker·커스텀 프로토콜 동작 검증을 대신하지 않아요.
 
 캡처 API는 `deck.capture`, `deck.overlay`, `deck.globalShortcut`과 fs 1.2 destination 메서드로 제공해요. 반환 핸들은 소유 모듈만 사용할 수 있고 경로는 노출하지 않아요. 이미지 데이터는 `fs.readChunks`로 읽어요.
+
+## 영상 다운로드
+
+media-download 1.0의 `mediaDownload.start({ url, folderHandle })`은 작업 핸들을 즉시 돌려줘요. `status`로 진행과 완료 파일을 확인하고 `cancel`로 중지할 수 있어요. 선택한 폴더의 새 MP4만 게시하며 완료 파일은 `fs.reveal`로 열 수 있어요. 모듈 종료시 진행 중인 작업은 취소돼요. 임의 주소·로그인 쿠키·실행기 인자는 외부 도구로 전달하지 않아요.

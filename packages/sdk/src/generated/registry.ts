@@ -2,6 +2,14 @@
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 // 생성물: `pnpm gen`(crates/deck-codegen). 손으로 고치지 마세요(GEN-006).
 export const CAPABILITIES = {
+  "media-download": {
+    version: "1.0.0",
+    methods: {
+      start: { long: false },
+      status: { long: false },
+      cancel: { long: false },
+    },
+  },
   "messaging": {
     version: "1.0.0",
     methods: {

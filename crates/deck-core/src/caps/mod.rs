@@ -20,6 +20,7 @@ pub mod clipboard;
 pub mod file_ops;
 pub mod fs;
 pub mod global_shortcut;
+pub mod media_download;
 pub mod messaging;
 pub mod network;
 pub mod office;
@@ -68,6 +69,16 @@ const fn m(name: &'static str, long: bool, summary: &'static str) -> MethodSpec 
 
 /// v1 capabilities (capabilities.md §2).
 pub const REGISTRY: &[CapSpec] = &[
+    CapSpec {
+        name: "media-download",
+        version: "1.0.0",
+        summary: "공개 단일 영상의 제한된 새 파일 다운로드",
+        methods: &[
+            m("start", false, "선택 폴더로 영상 다운로드 시작"),
+            m("status", false, "자기 다운로드 진행 상태"),
+            m("cancel", false, "미완성 다운로드 중지"),
+        ],
+    },
     CapSpec {
         name: "messaging",
         version: "1.0.0",

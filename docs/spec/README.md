@@ -133,7 +133,7 @@ Additional terms: see LICENSE-ADDITIONAL-TERMS
 | UI-007 | MUST | 문구 규칙. | [manual] | [design-system.md](design-system.md) |
 | UI-008 | MUST | 일괄 처리 도구는 `ToolLayout`(입력 → 옵션 → 미리보기 → 실행 → 결과) 골격을 따른다. | [manual] | [design-system.md](design-system.md) |
 | UI-009 | MUST | 모션은 `transform`·`opacity`만 움직이고 Fluent `duration*`·`curve*` 토큰과 `@deck/ui` 모션 토큰으로 쓰며, `prefers-reduced-motion`과 셸의 애니메이션 효과 설정을 존중한다. | [manual] | [design-system.md](design-system.md) |
-| PRV-001 | MUST NOT | 호스트 외에는 네트워크 통신을 하지 않는다. | 셸·모듈 CSP, 코드 리뷰 | [privacy.md](privacy.md) |
+| PRV-001 | MUST NOT | 호스트 외에는 네트워크 통신을 하지 않는다. | 셸·모듈 CSP, 고정 실행기·주소·해시 검사, 코드 리뷰 | [privacy.md](privacy.md) |
 | PRV-002 | MUST NOT | 텔레메트리, 사용 통계, 크래시 자동 전송을 하지 않는다. | 의존성 리뷰, [manual] | [privacy.md](privacy.md) |
 | PRV-003 | MUST NOT | 로그와 에러 메시지에 경로·파일명·파일 내용·사용자 입력·storage 값을 남기지 않는다. | [manual] 리뷰(타입 강제 로깅 헬퍼는 미구현) | [privacy.md](privacy.md) |
 | PRV-004 | MUST NOT | 테스트·문서·스크린샷·예제에 실존 인명·학교명·연락처를 쓰지 않는다. | [manual], 합성 데이터 생성기 제공 | [privacy.md](privacy.md) |

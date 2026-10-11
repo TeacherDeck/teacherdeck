@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import type { MessagingConnectArgs } from "./generated/MessagingConnectArgs.ts";
+import type { MediaDownloadStartArgs } from "./generated/MediaDownloadStartArgs.ts";
+import type { MediaDownloadJob } from "./generated/MediaDownloadJob.ts";
+import type { MediaDownloadStatus } from "./generated/MediaDownloadStatus.ts";
+import type { MediaDownloadCancelResult } from "./generated/MediaDownloadCancelResult.ts";
 import type { MessagingConnection } from "./generated/MessagingConnection.ts";
 import type { MessagingRecipientsArgs } from "./generated/MessagingRecipientsArgs.ts";
 import type { MessagingRecipient } from "./generated/MessagingRecipient.ts";
@@ -176,6 +180,11 @@ export interface Deck {
     start(args: MessagingStartArgs): Promise<MessagingRun>;
     status(args: MessagingStatusArgs): Promise<MessagingStatus>;
     cancel(args: MessagingCancelArgs): Promise<MessagingCancelResult>;
+  };
+  readonly mediaDownload: {
+    start(args: MediaDownloadStartArgs): Promise<MediaDownloadJob>;
+    status(args: MediaDownloadJob): Promise<MediaDownloadStatus>;
+    cancel(args: MediaDownloadJob): Promise<MediaDownloadCancelResult>;
   };
   readonly office: {
     availability(): Promise<OfficeAvailability>;
@@ -464,6 +473,11 @@ export function connect(options: ConnectOptions = {}): Promise<Deck> {
         start: (args) => call<MessagingRun>("messaging", "start", args),
         status: (args) => call<MessagingStatus>("messaging", "status", args),
         cancel: (args) => call<MessagingCancelResult>("messaging", "cancel", args),
+      },
+      mediaDownload: {
+        start: (args) => call<MediaDownloadJob>("media-download", "start", args),
+        status: (args) => call<MediaDownloadStatus>("media-download", "status", args),
+        cancel: (args) => call<MediaDownloadCancelResult>("media-download", "cancel", args),
       },
       office: {
         availability: () => call<OfficeAvailability>("office", "availability", {}),

@@ -4,6 +4,28 @@
     {
       "methods": [
         {
+          "long": false,
+          "name": "start",
+          "summary": "선택 폴더로 영상 다운로드 시작"
+        },
+        {
+          "long": false,
+          "name": "status",
+          "summary": "자기 다운로드 진행 상태"
+        },
+        {
+          "long": false,
+          "name": "cancel",
+          "summary": "미완성 다운로드 중지"
+        }
+      ],
+      "name": "media-download",
+      "summary": "공개 단일 영상의 제한된 새 파일 다운로드",
+      "version": "1.0.0"
+    },
+    {
+      "methods": [
+        {
           "long": true,
           "name": "connect",
           "summary": "지원하는 쿨메신저 연결 확인"

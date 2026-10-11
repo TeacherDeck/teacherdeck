@@ -161,6 +161,11 @@ pub fn hash_file(file: &mut FileReadSession) -> Result<String, DeckError> {
     Ok(deck_core::util::to_hex(&hash.finalize()))
 }
 impl PackageLease {
+    /// Borrow the verified private interpreter while this lease retains its locks.
+    pub(crate) fn python(&self) -> &Path {
+        &self.python
+    }
+
     /// Validate compile-time locks, reject extra files, and retain readonly locks.
     pub fn open(root: &Path) -> Result<Self, DeckError> {
         let guard = DirectoryGuard::open(root).map_err(|_| unavailable())?;
