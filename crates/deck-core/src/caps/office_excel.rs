@@ -463,107 +463,87 @@ fn cfb<R: Read + Seek>(reader: &mut R, length: u64) -> Result<(), DeckError> {
     biff(&bytes)
 }
 
-fn xml_text(bytes: &[u8]) -> Result<String, DeckError> {
-    let text = std::str::from_utf8(bytes).map_err(|_| rejected())?;
-    if text.contains("<!") {
+#[path = "office_excel_xml.rs"]
+mod xml;
+
+fn metadata<R: Read + Seek>(
+    archive: &mut zip::ZipArchive<R>,
+    index: usize,
+    total: &mut u64,
+) -> Result<Vec<u8>, DeckError> {
+    let mut entry = archive.by_index(index).map_err(|_| rejected())?;
+    *total = total.checked_add(entry.size()).ok_or_else(rejected)?;
+    if entry.size() > 1024 * 1024 || *total > 8 * 1024 * 1024 {
         return Err(rejected());
-    } // no entity declarations/DTDs.
-    let mut result = String::new();
-    let mut rest = text;
-    while let Some(at) = rest.find('&') {
-        result.push_str(rest.get(..at).ok_or_else(rejected)?);
-        rest = rest.get(at + 1..).ok_or_else(rejected)?;
-        let end = rest.find(';').filter(|n| *n <= 12).ok_or_else(rejected)?;
-        let entity = rest.get(..end).ok_or_else(rejected)?;
-        let c = match entity {
-            "amp" => '&',
-            "lt" => '<',
-            "gt" => '>',
-            "apos" => '\'',
-            "quot" => '"',
-            _ => {
-                let n = if let Some(hex) = entity.strip_prefix("#x") {
-                    u32::from_str_radix(hex, 16)
-                } else if let Some(decimal) = entity.strip_prefix('#') {
-                    decimal.parse()
-                } else {
-                    return Err(rejected());
-                };
-                n.ok().and_then(char::from_u32).ok_or_else(rejected)?
-            }
-        };
-        result.push(c);
-        rest = rest.get(end + 1..).ok_or_else(rejected)?;
     }
-    result.push_str(rest);
-    Ok(result.to_ascii_lowercase())
+    let mut bytes = Vec::new();
+    (&mut entry)
+        .take(1024 * 1024 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| rejected())?;
+    if bytes.len() as u64 != entry.size() {
+        return Err(rejected());
+    }
+    Ok(bytes)
 }
+
 fn ooxml<R: Read + Seek>(reader: &mut R) -> Result<(), DeckError> {
     reader.seek(SeekFrom::Start(0)).map_err(|_| rejected())?;
     let mut archive = zip::ZipArchive::new(reader).map_err(|_| rejected())?;
     if archive.len() > 20000 {
         return Err(rejected());
     }
-    let mut names = HashSet::new();
-    let mut xml_bytes = 0u64;
+    let mut names = std::collections::HashMap::new();
     for index in 0..archive.len() {
-        let mut entry = archive.by_index(index).map_err(|_| rejected())?;
+        let entry = archive.by_index(index).map_err(|_| rejected())?;
         let name = entry.name().to_ascii_lowercase();
-        if !names.insert(name.clone()) {
+        if name.starts_with('/')
+            || name.contains('\\')
+            || name.split('/').any(|s| matches!(s, "." | ".."))
+            || names.insert(name.clone(), index).is_some()
+        {
             return Err(rejected());
         }
-        if name.contains("macrosheet") {
-            return Err(xlm());
-        }
-        if name == "[content_types].xml" || name == "xl/workbook.xml" || name.ends_with(".rels") {
-            xml_bytes = xml_bytes.checked_add(entry.size()).ok_or_else(rejected)?;
-            if entry.size() > 1024 * 1024 || xml_bytes > 8 * 1024 * 1024 {
-                return Err(rejected());
-            }
-            let mut bytes = Vec::new();
-            (&mut entry)
-                .take(1024 * 1024 + 1)
-                .read_to_end(&mut bytes)
-                .map_err(|_| rejected())?;
-            if bytes.len() as u64 != entry.size() {
-                return Err(rejected());
-            }
-            let xml = xml_text(&bytes)?;
-            if xml.contains("macrosheet") {
-                return Err(xlm());
-            }
-            if name == "xl/workbook.xml" {
-                let compact: String = xml.chars().filter(|c| !c.is_ascii_whitespace()).collect();
-                if [
-                    "auto_open",
-                    "auto_close",
-                    "auto_activate",
-                    "auto_deactivate",
-                ]
-                .iter()
-                .any(|value| compact.contains(value))
-                    || ["xlm", "function"].iter().any(|key| {
-                        ["1", "true"].iter().any(|value| {
-                            ["\"", "'"].iter().any(|quote| {
-                                compact.contains(&format!("{key}={quote}{value}{quote}"))
-                            })
-                        })
-                    })
-                {
-                    return Err(xlm());
-                }
+    }
+    let mut total = 0;
+    let types_index = *names.get("[content_types].xml").ok_or_else(rejected)?;
+    let types = xml::content_types(&metadata(&mut archive, types_index, &mut total)?)?;
+    let mut main = None;
+    for (name, &index) in &names {
+        if name.ends_with(".rels") {
+            let root = name == "_rels/.rels";
+            let target = xml::relationships(&metadata(&mut archive, index, &mut total)?, root)?;
+            if root {
+                main = target;
             }
         }
     }
-    if ![
-        "[content_types].xml",
-        "xl/workbook.xml",
-        "xl/_rels/workbook.xml.rels",
-    ]
-    .iter()
-    .all(|name| names.contains(*name))
-    {
+    let main = main.ok_or_else(rejected)?;
+    if !types.content_type(&main).is_some_and(xml::is_workbook_type) {
         return Err(rejected());
+    }
+    let (base, file) = main.rsplit_once('/').unwrap_or(("", main.as_str()));
+    let relations = if base.is_empty() {
+        format!("_rels/{file}.rels")
+    } else {
+        format!("{base}/_rels/{file}.rels")
+    };
+    if !names.contains_key(&relations) {
+        return Err(rejected());
+    }
+    // Inspect every declared workbook, including the actual main part, rather
+    // than assuming Excel selects xl/workbook.xml or trusting a decoy there.
+    for (name, kind) in &types.overrides {
+        if xml::is_workbook_type(kind) && !names.contains_key(name) {
+            return Err(rejected());
+        }
+    }
+    for (name, &index) in &names {
+        if name != "[content_types].xml"
+            && types.content_type(name).is_some_and(xml::is_workbook_type)
+        {
+            xml::workbook(&metadata(&mut archive, index, &mut total)?)?;
+        }
     }
     Ok(())
 }
@@ -691,21 +671,70 @@ mod tests {
     fn check(data: Vec<u8>, extension: &str) -> Result<(), DeckError> {
         validate_excel_source(&mut Cursor::new(&data), data.len() as u64, extension)
     }
-    fn package(types: &str, workbook: &str, rels: &str, extra: Option<(&str, &[u8])>) -> Vec<u8> {
+    const TYPES: &str = "http://schemas.openxmlformats.org/package/2006/content-types";
+    const RELS: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
+    const SHEET: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+    const MAIN_TYPE: &str =
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml";
+    const OFFICE_REL: &str =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
+    fn zip_parts(parts: &[(&str, &[u8])]) -> Vec<u8> {
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-        for (name, bytes) in [
-            ("[Content_Types].xml", types.as_bytes()),
-            ("xl/workbook.xml", workbook.as_bytes()),
-            ("xl/_rels/workbook.xml.rels", rels.as_bytes()),
-        ]
-        .into_iter()
-        .chain(extra)
-        {
+        for &(name, bytes) in parts {
             zip.start_file(name, zip::write::SimpleFileOptions::default())
                 .unwrap();
             zip.write_all(bytes).unwrap();
         }
         zip.finish().unwrap().into_inner()
+    }
+    fn main_package(path: &str, workbook: &str, extra: Option<(&str, &[u8])>) -> Vec<u8> {
+        let types = format!(
+            "<Types xmlns='{TYPES}'><Override PartName='/{path}' ContentType='{MAIN_TYPE}'/></Types>"
+        );
+        let root = format!(
+            "<Relationships xmlns='{RELS}'><Relationship Id='main' Type='{OFFICE_REL}' Target='{path}'/></Relationships>"
+        );
+        let rels = format!("<Relationships xmlns='{RELS}'/>");
+        let (base, file) = path.rsplit_once('/').unwrap_or(("", path));
+        let rel_path = if base.is_empty() {
+            format!("_rels/{file}.rels")
+        } else {
+            format!("{base}/_rels/{file}.rels")
+        };
+        let mut parts = vec![
+            ("[Content_Types].xml", types.as_bytes()),
+            ("_rels/.rels", root.as_bytes()),
+            (path, workbook.as_bytes()),
+            (rel_path.as_str(), rels.as_bytes()),
+        ];
+        parts.extend(extra);
+        zip_parts(&parts)
+    }
+    fn package(types: &str, workbook: &str, rels: &str, extra: Option<(&str, &[u8])>) -> Vec<u8> {
+        let types = if types == "<Types/>" {
+            format!(
+                "<Types xmlns='{TYPES}'><Override PartName='/xl/workbook.xml' ContentType='{MAIN_TYPE}'/></Types>"
+            )
+        } else {
+            types.replacen("<Types", &format!("<Types xmlns='{TYPES}'"), 1)
+        };
+        let workbook = workbook.replacen("<workbook", &format!("<workbook xmlns='{SHEET}'"), 1);
+        let rels = rels.replacen(
+            "<Relationships",
+            &format!("<Relationships xmlns='{RELS}'"),
+            1,
+        );
+        let root = format!(
+            "<Relationships xmlns='{RELS}'><Relationship Id='main' Type='{OFFICE_REL}' Target='xl/workbook.xml'/></Relationships>"
+        );
+        let mut parts = vec![
+            ("[Content_Types].xml", types.as_bytes()),
+            ("_rels/.rels", root.as_bytes()),
+            ("xl/workbook.xml", workbook.as_bytes()),
+            ("xl/_rels/workbook.xml.rels", rels.as_bytes()),
+        ];
+        parts.extend(extra);
+        zip_parts(&parts)
     }
     #[test]
     fn normal_biff_regular_and_mini_streams_are_admitted() {
@@ -824,13 +853,13 @@ mod tests {
     }
     #[test]
     fn normal_ooxml_with_escaped_hyperlink_is_admitted() {
-        check(package("<Types/>", "<workbook/>", "<Relationships><Relationship Target='https://example.invalid/?a=1&amp;b=2'/></Relationships>", None), "xlsx").unwrap();
+        check(package("<Types/>", "<workbook/>", "<Relationships><Relationship Id='link' Type='http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink' TargetMode='External' Target='https://example.invalid/?a=1&amp;b=2'/></Relationships>", None), "xlsx").unwrap();
     }
     #[test]
     fn ooxml_macro_relationship_content_type_name_and_encoded_name_are_rejected() {
         for (types, workbook, rels, extra) in [
             (
-                "<Types ContentType='application/vnd.ms-excel.macrosheet+xml'/>",
+                "<Types><Default Extension='xml' ContentType='application/vnd.ms-excel.macrosheet+xml'/></Types>",
                 "<workbook/>",
                 "<Relationships/>",
                 None,
@@ -838,24 +867,24 @@ mod tests {
             (
                 "<Types/>",
                 "<workbook/>",
-                "<Relationships Type='xlMacro&#x53;heet'/>",
+                "<Relationships><Relationship Id='sheet' Type='http://schemas.microsoft.com/office/2006/relationships/xlMacro&#x53;heet' Target='custom/sheet.xml'/></Relationships>",
                 None,
             ),
             (
-                "<Types/>",
+                "<Types><Override PartName='/custom/sheet.xml' ContentType='application/vnd.ms-excel.macrosheet+xml'/></Types>",
                 "<workbook/>",
                 "<Relationships/>",
-                Some(("xl/macrosheets/sheet1.xml", &b"<sheet/>"[..])),
+                Some(("custom/sheet.xml", &b"<sheet/>"[..])),
             ),
             (
                 "<Types/>",
-                "<workbook><definedName name='Auto_Open'/></workbook>",
+                "<workbook><definedNames><definedName name='Auto_Open'/></definedNames></workbook>",
                 "<Relationships/>",
                 None,
             ),
             (
                 "<Types/>",
-                "<workbook><definedName xlm = '&#49;'/></workbook>",
+                "<workbook><definedNames><definedName name='SyntheticName' xlm = '&#49;'/></definedNames></workbook>",
                 "<Relationships/>",
                 None,
             ),
@@ -878,8 +907,145 @@ mod tests {
                 .is_err()
             );
         }
-        assert!(xml_text(&[0xff, 0xfe, 60, 0]).is_err());
+        assert!(xml::workbook(&[0xff, 0xfe, 60, 0]).is_err());
         assert!(check(vec![0; 512], "xlsx").is_err());
         assert!(check(vec![0; 512], "xlsb").is_err());
+    }
+
+    #[test]
+    fn actual_main_part_is_checked_and_normal_auto_open_sheet_is_allowed() {
+        let benign = format!(
+            "<workbook xmlns='{SHEET}'><sheets><sheet name='AUTO_OPEN' sheetId='1'/></sheets><definedNames><definedName name='Ordinary'>AUTO_OPEN!$A$1</definedName></definedNames></workbook>"
+        );
+        check(main_package("custom/actual.xml", &benign, None), "xlsx").unwrap();
+        let malicious = format!(
+            "<workbook xmlns='{SHEET}'><definedNames><definedName name='_xlnm.Auto_Open'>SyntheticName</definedName></definedNames></workbook>"
+        );
+        let decoy = format!("<workbook xmlns='{SHEET}'/>");
+        assert!(
+            check(
+                main_package(
+                    "custom/actual.xml",
+                    &malicious,
+                    Some(("xl/workbook.xml", decoy.as_bytes()))
+                ),
+                "xlsx"
+            )
+            .is_err()
+        );
+    }
+    #[test]
+    fn benign_macro_named_media_is_not_a_macro_sheet() {
+        let types = format!(
+            "<Types><Override PartName='/xl/workbook.xml' ContentType='{MAIN_TYPE}'/><Override PartName='/xl/media/macrosheet-preview.png' ContentType='image/png'/></Types>"
+        );
+        check(
+            package(
+                &types,
+                "<workbook/>",
+                "<Relationships/>",
+                Some(("xl/media/macrosheet-preview.png", b"\x89PNG\r\n\x1a\n")),
+            ),
+            "xlsx",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn default_workbook_content_types_use_overrides_and_check_all_workbook_parts() {
+        let types = format!(
+            "<Types xmlns='{TYPES}'><Default Extension='xml' ContentType='{MAIN_TYPE}'/><Default Extension='rels' ContentType='application/vnd.openxmlformats-package.relationships+xml'/><Override PartName='/xl/sheet.xml' ContentType='application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml'/></Types>"
+        );
+        let root = format!(
+            "<Relationships xmlns='{RELS}'><Relationship Id='main' Type='{OFFICE_REL}' Target='xl/workbook.xml'/></Relationships>"
+        );
+        let book = format!("<workbook xmlns='{SHEET}'/>");
+        let rels = format!(
+            "<Relationships xmlns='{RELS}'><Relationship Id='sheet' Type='http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet' Target='sheet.xml'/></Relationships>"
+        );
+        let sheet = format!("<worksheet xmlns='{SHEET}'/>");
+        let mut parts = vec![
+            ("[Content_Types].xml", types.as_bytes()),
+            ("_rels/.rels", root.as_bytes()),
+            ("xl/workbook.xml", book.as_bytes()),
+            ("xl/_rels/workbook.xml.rels", rels.as_bytes()),
+            ("xl/sheet.xml", sheet.as_bytes()),
+        ];
+        check(zip_parts(&parts), "xlsx").unwrap();
+        let other = format!(
+            "<workbook xmlns='{SHEET}'><definedNames><definedName name='Auto_Open'/></definedNames></workbook>"
+        );
+        parts.push(("custom/other.xml", other.as_bytes()));
+        assert!(
+            check(zip_parts(&parts), "xlsx")
+                .unwrap_err()
+                .message
+                .contains("4.0")
+        );
+        let declared = format!(
+            "<Types xmlns='{TYPES}'><Default Extension='xml' ContentType='application/xml'/><Override PartName='/xl/workbook.xml' ContentType='{MAIN_TYPE}'/><Override PartName='/custom/other.xml' ContentType='{MAIN_TYPE}'/></Types>"
+        );
+        parts[0] = ("[Content_Types].xml", declared.as_bytes());
+        assert!(
+            check(zip_parts(&parts), "xlsx")
+                .unwrap_err()
+                .message
+                .contains("4.0")
+        );
+    }
+    #[test]
+    fn workbook_xml_size_and_combined_metadata_limits_are_retained() {
+        let huge = format!(
+            "<workbook xmlns='{SHEET}'><!--{}--></workbook>",
+            "x".repeat(1024 * 1024)
+        );
+        assert!(check(main_package("custom/actual.xml", &huge, None), "xlsx").is_err());
+        let types = format!(
+            "<Types xmlns='{TYPES}'><Override PartName='/xl/workbook.xml' ContentType='{MAIN_TYPE}'/></Types>"
+        );
+        let root = format!(
+            "<Relationships xmlns='{RELS}'><Relationship Id='main' Type='{OFFICE_REL}' Target='xl/workbook.xml'/></Relationships>"
+        );
+        let book = format!("<workbook xmlns='{SHEET}'/>");
+        let rel = format!(
+            "<Relationships xmlns='{RELS}'><!--{}--></Relationships>",
+            "x".repeat(950_000)
+        );
+        let names: Vec<_> = (0..9)
+            .map(|n| format!("custom/_rels/sheet{n}.xml.rels"))
+            .collect();
+        let mut parts = vec![("[Content_Types].xml", types.as_bytes()), ("_rels/.rels", root.as_bytes()), ("xl/workbook.xml", book.as_bytes()), ("xl/_rels/workbook.xml.rels", b"<Relationships xmlns='http://schemas.openxmlformats.org/package/2006/relationships'/>".as_slice())];
+        for name in &names {
+            parts.push((name.as_str(), rel.as_bytes()));
+        }
+        assert!(check(zip_parts(&parts), "xlsx").is_err());
+    }
+    #[test]
+    fn root_relationship_must_select_one_internal_declared_workbook() {
+        let types = format!(
+            "<Types xmlns='{TYPES}'><Override PartName='/xl/workbook.xml' ContentType='{MAIN_TYPE}'/></Types>"
+        );
+        let book = format!("<workbook xmlns='{SHEET}'/>");
+        let rels = format!("<Relationships xmlns='{RELS}'/>");
+        for inner in [
+            format!(
+                "<Relationship Id='main' Type='{OFFICE_REL}' Target='https://example.invalid/book.xml' TargetMode='External'/>"
+            ),
+            format!("<Relationship Id='main' Type='{OFFICE_REL}' Target='../xl/workbook.xml'/>"),
+            format!(
+                "<Relationship Id='main' Type='{OFFICE_REL}' Target='xl/workbook.xml'/><Relationship Id='other' Type='{OFFICE_REL}' Target='xl/workbook.xml'/>"
+            ),
+            format!("<Relationship Id='main' Type='{OFFICE_REL}' Target='xl/missing.xml'/>"),
+            "".to_owned(),
+        ] {
+            let root = format!("<Relationships xmlns='{RELS}'>{inner}</Relationships>");
+            let parts = [
+                ("[Content_Types].xml", types.as_bytes()),
+                ("_rels/.rels", root.as_bytes()),
+                ("xl/workbook.xml", book.as_bytes()),
+                ("xl/_rels/workbook.xml.rels", rels.as_bytes()),
+            ];
+            assert!(check(zip_parts(&parts), "xlsx").is_err());
+        }
     }
 }

@@ -22,6 +22,10 @@ export interface SchoolDataHost {
   grants(): Promise<SchoolGrantRecord[]>;
   revokeGrant(moduleId: string, grantHandle: string): Promise<void>;
   importPhoto(args: SchoolImportPhotoArgs): Promise<SchoolDataDocument>;
+  exportBackup(): Promise<boolean>;
+  exportTimetableImage(
+    args: import("../generated/SchoolTimetableImageArgs.ts").SchoolTimetableImageArgs,
+  ): Promise<boolean>;
   readBackup(): Promise<SchoolDataDocument | null>;
   recover(args: SaveSchoolDataArgs): Promise<SchoolDataDocument>;
   readWorkbook(): Promise<SchoolWorkbookInput | null>;

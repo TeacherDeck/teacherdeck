@@ -162,6 +162,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@fluentui/react-tabster>keyborg': 3.498.0
+
 importers:
 
   .:
@@ -2077,9 +2080,6 @@ packages:
   json-stable-stringify-without-jsonify@1.0.1:
     resolution: {integrity: sha512-Bdboy+l7tA3OGW6FjyFHWkP5LuByj1Tk33Ljyq0axyzdk9//JSi2u3fP1QSmd1KNwq6VOKYGlAu87CisVir6Pw==}
 
-  keyborg@2.14.1:
-    resolution: {integrity: sha512-/WmmVBa6Me3hIKAOIyIq1sql+6oydQZzGMBDLNfOcJ8710byMsq3KSLS8GQhBJHOMtvnXnUBrDAIbABcZVipcg==}
-
   keyborg@3.498.0:
     resolution: {integrity: sha512-EM963ckIg3nCaqF631tWKfy5+t3Lc5/zQ6bj0zucaZnChzeJbXa69W0cE7j09erYZO7s5/dupxyVqPSL8mdxEQ==}
 
@@ -3599,7 +3599,7 @@ snapshots:
       '@fluentui/react-utilities': 9.26.7(@types/react@19.3.0)(react@19.3.0)
       '@griffel/react': 1.7.8(react@19.3.0)
       '@swc/helpers': 0.5.23
-      keyborg: 2.14.1
+      keyborg: 3.498.0
       react: 19.3.0
       tabster: 8.8.1
     optionalDependencies:
@@ -4460,8 +4460,6 @@ snapshots:
   json-schema-traverse@1.0.0: {}
 
   json-stable-stringify-without-jsonify@1.0.1: {}
-
-  keyborg@2.14.1: {}
 
   keyborg@3.498.0: {}
 

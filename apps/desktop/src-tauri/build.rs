@@ -30,6 +30,8 @@ const COMMANDS: &[&str] = &[
     "school_data_recover",
     "school_data_read_workbook",
     "school_data_write_workbook",
+    "school_data_export_backup",
+    "school_data_export_timetable_image",
     "messaging_pending_confirmations",
     "messaging_resolve_confirmation",
 ];

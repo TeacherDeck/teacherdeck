@@ -49,7 +49,8 @@ export function planConversions(files: FileHandleInfo[], preserveMacros: boolean
 }
 export function conversionError(code: string | undefined, safeMessage?: string): string {
   if (code === "CANCELLED") return "변환을 중지했어요. 앞서 저장한 결과는 유지해요.";
-  if (code === "TIMEOUT") return "변환 시간이 지났어요. 문서의 암호나 열린 승인 창을 확인해 주세요.";
+  if (code === "TIMEOUT")
+    return "응답 시간이 지나 변환을 중지했어요. 다시 시도할 때 한글·Office 창의 문서 접근 승인을 확인해 주세요. 앞서 저장한 결과는 유지해요.";
   if (code === "PERMISSION_DENIED") return "문서 접근 승인을 확인하거나 파일을 다시 선택해 주세요.";
   if (code === "INVALID_ARGS") return "매크로 보존 형식과 문서 종류를 확인해 주세요.";
   if (code === "CAPABILITY_UNAVAILABLE") return "이 문서를 여는 한글·Office가 설치되어 있는지 확인해 주세요.";

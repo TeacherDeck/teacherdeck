@@ -10,6 +10,8 @@
 
 순수 형식 계획과 SDK mock의 매크로 재시도·취소/저장 유지 흐름을 검사한다. 실제 합성 변환은 개발 전용 `office_synthetic` example이 생산 작업자를 재사용해 확인한다. 생성 위치는 레포의 `target/next-tools/office-qa/<무작위 식별자>`로 제한하며 원본 사용자 문서를 입력하지 않는다.
 
-Excel은 프로그램 활성화 전에 CFB/BIFF5·8 및 OOXML 사전 검사를 수행한다. CFB/BIFF의 매크로 시트·이름, 암호화·불완전·지원하지 않는 구조는 거부한다. HTML/XML을 XLS로 저장한 파일과 64MiB를 넘는 BIFF Workbook 스트림 등 검사 범위 밖의 문서는 Office에서 직접 확인해야 한다. OOXML의 실제 workbook 관계와 정의 이름을 구조적으로 확인하는 보강은 [제안서](../../docs/proposals/excel-xml-preflight.md)의 의존성 승인 대기다. 현재 문자열 검사에는 우회·정상 파일 거짓 거부 가능성이 남아 있으므로 전체 XLM 차단 완료로 판정하지 않는다.
+Excel은 프로그램 활성화 전에 CFB/BIFF5·8 및 OOXML 사전 검사를 수행한다. CFB/BIFF의 매크로 시트·이름, 암호화·불완전·지원하지 않는 구조는 거부한다. HTML/XML을 XLS로 저장한 파일과 64MiB를 넘는 BIFF Workbook 스트림 등 검사 범위 밖의 문서는 Office에서 직접 확인해야 한다. OOXML은 승인된 XML 파서로 패키지 루트의 실제 workbook 관계·namespace·정의 이름을 검사한다. 자동 실행 정의와 XLM 함수 표식은 거부하지만 정상 `AUTO_OPEN` 시트 이름은 허용한다. DTD·외부 엔티티·외부 main target·손상 구조는 거부한다. 검사 대상과 한도는 [구현 기록](../../docs/proposals/excel-xml-preflight.md)에 있으며 Office의 모든 매크로·취약점 차단을 보증하지 않는다.
 
 한글의 새 편집창은 소유권 검증 뒤 표시한다. 사용자 승인이 필요한 경우 직접 처리해야 하며, 창 표시만으로 HWP 변환 성공을 보증하지 않는다. 이번 PC의 합성 검증은 첫 HWP SaveAs가 120초 동안 반환하지 않아 중단됐고, HWPX 변환 성공은 미검증이다. 승인 창 때문인지는 확인되지 않았다.
+
+실행 중에는 한글·Office의 문서 접근 승인 창을 직접 확인한다. 120초 응답 제한에 도달하면 전용 작업자와 소유 프로그램을 정리하므로, 종료된 작업의 승인 창을 찾도록 안내하지 않는다. 다시 시도하는 동안 승인 창을 확인하도록 안내하며 앞서 저장한 결과는 유지한다. 첫 한글 저장 대기의 원인·수정 후보는 [후속 진단](../../docs/reviews/hancom-save-timeout-followup-2026-10-11.md)에 구분해 기록한다.

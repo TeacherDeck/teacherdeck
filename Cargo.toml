@@ -6,7 +6,7 @@ resolver = "3"
 members = ["crates/*", "apps/desktop/src-tauri"]
 
 [workspace.package]
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 rust-version = "1.98"
 license = "GPL-3.0-only"
@@ -23,6 +23,7 @@ ts-rs = { version = "12.0.1", features = ["semver-impl", "serde-json-impl"] }
 sha2 = "0.11.0"
 thiserror = "2.0.21"
 zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+quick-xml = "=0.42.0"
 # Host (apps/desktop/src-tauri). Tauri stays on 2.x (ADR-0001).
 tauri = { version = "2.12.1", features = ["tray-icon"] }
 tauri-build = { version = "2.7.1", features = [] }
