@@ -36,6 +36,9 @@ export const schoolDataHost = {
     invoke("school_data_revoke_grant", { moduleId, grantHandle }).then(() => undefined),
   importPhoto: (args: import("@deck/sdk").SchoolImportPhotoArgs) =>
     invoke<import("@deck/sdk").SchoolDataDocument>("school_data_import_photo", { args }),
+  exportBackup: () => invoke<boolean>("school_data_export_backup"),
+  exportTimetableImage: (args: import("./generated/SchoolTimetableImageArgs.ts").SchoolTimetableImageArgs) =>
+    invoke<boolean>("school_data_export_timetable_image", { args }),
   readBackup: () => invoke<import("@deck/sdk").SchoolDataDocument | null>("school_data_read_backup"),
   recover: (args: import("@deck/sdk").SaveSchoolDataArgs) =>
     invoke<import("@deck/sdk").SchoolDataDocument>("school_data_recover", { args }),

@@ -40,6 +40,7 @@ import {
   timetableFromWorkbook,
   timetableRows,
 } from "./school-workbook.ts";
+import { renderTimetablePng } from "./school-timetable-image.ts";
 export type { SchoolDataHost } from "./school-data-model.ts";
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: deckTokens.itemGap, padding: deckTokens.pagePadding },
@@ -62,7 +63,17 @@ const useStyles = makeStyles({
     borderBottom: `${tokens.strokeWidthThin} solid ${deckTokens.cardStroke}`,
   },
   tableScroll: { overflowX: "auto" },
-  weeklyTable: { width: "100%", borderCollapse: "collapse", tableLayout: "fixed" },
+  weeklyTable: {
+    width: "100%",
+    borderCollapse: "collapse",
+    tableLayout: "fixed",
+    backgroundColor: tokens.colorNeutralBackground1,
+    color: tokens.colorNeutralForeground1,
+    fontFamily: tokens.fontFamilyBase,
+    fontSize: tokens.fontSizeBase400,
+    lineHeight: tokens.lineHeightBase400,
+  },
+  imageHeader: { backgroundColor: tokens.colorNeutralBackground3 },
   weeklyCell: {
     padding: tokens.spacingVerticalXS,
     border: `${tokens.strokeWidthThin} solid ${deckTokens.cardStroke}`,
@@ -85,6 +96,8 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [grants, setGrants] = useState<SchoolGrantRecord[]>([]);
+  const timetableElement = useRef<HTMLTableElement>(null);
+  const [confirmBackup, setConfirmBackup] = useState(false);
   const [semesterSettings, setSemesterSettings] = useState(false);
   const [recovery, setRecovery] = useState<SchoolDataDocument | null>(null);
   const [workbookUndo, setWorkbookUndo] = useState<{
@@ -325,6 +338,47 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
     }
   }, [document, semesterId, weeklyText, weeklyEntries]);
   const periods = Math.max(gridPeriods, ...grid.entries.map((entry) => entry.period));
+  const exportBackup = async () => {
+    if (!document || busy) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      if (await host.exportBackup())
+        setMessage("저장된 명부·시간표 복구 JSON을 새 파일로 저장했어요. 사진 파일과 미저장 초안은 포함하지 않아요.");
+    } catch {
+      setError("복구 JSON을 저장하지 못했어요. 기존 파일과 학교 자료는 유지돼요.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const exportTimetableImage = async () => {
+    if (!document || busy || grid.error || !timetableElement.current) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const pngBase64 = await renderTimetablePng(
+        {
+          title: `${semester?.academicYear}학년도 ${semester?.term}학기 · ${weeklyLabel.trim() || "새 시간표"}`,
+          periods,
+          entries: structuredClone(grid.entries),
+          contexts: contexts.map(({ id, label }) => ({ id, label })),
+        },
+        timetableElement.current,
+      );
+      if (await host.exportTimetableImage({ pngBase64 }))
+        setMessage("현재 화면의 시간표를 PNG 새 파일로 저장했어요. 학교 자료의 저장 상태는 바뀌지 않아요.");
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "시간표 이미지를 저장하지 못했어요. 입력·이미지 크기를 확인해 주세요. 기존 파일과 학교 자료는 유지돼요.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
   const currentWeekday = ((new Date().getDay() + 6) % 7) + 1;
   const gridContextLabel = (context: (typeof contexts)[number]) => {
     const sameName = contexts.filter((other) => other.label === context.label);
@@ -416,6 +470,9 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
           }}
         >
           다시 불러오기
+        </Button>
+        <Button disabled={busy || !document} onClick={() => setConfirmBackup(true)}>
+          명부·시간표 복구 JSON 저장
         </Button>
         {busy && <ProgressRing label="학교 자료 처리 중" />}
       </div>
@@ -770,9 +827,21 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
                   >
                     선택한 시간표 XLSX 내보내기
                   </Button>
+                  <Button
+                    disabled={busy || Boolean(grid.error)}
+                    onClick={() => {
+                      void exportTimetableImage();
+                    }}
+                  >
+                    현재 화면 시간표 PNG 저장
+                  </Button>
                 </div>
                 <Caption>
                   XLSX는 기본 주간표만 담아요. 일과 시각·날짜 변경·수업의 학생 연결·사진은 포함하지 않아요.
+                </Caption>
+                <Caption>
+                  PNG는 지금 보이는 교시와 수업 배치를 담으며 미저장 수정도 포함해요. 일과 시각·날짜 변경·사진은 담지
+                  않고, 학교 자료 저장을 대신하지 않아요.
                 </Caption>
                 <ComboBox
                   header="시간표 선택"
@@ -820,15 +889,15 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
                   <InfoBar severity="warning" message={`붙여넣은 주간 수업 입력을 먼저 고쳐 주세요. ${grid.error}`} />
                 )}
                 <div className={s.tableScroll}>
-                  <table className={s.weeklyTable} aria-label="주간 시간표 편집">
+                  <table ref={timetableElement} className={s.weeklyTable} aria-label="주간 시간표 편집">
                     <thead>
                       <tr>
-                        <th className={s.weeklyCell} scope="col">
+                        <th className={`${s.weeklyCell} ${s.imageHeader}`} scope="col">
                           교시
                         </th>
                         {WEEKDAYS.map((day, index) => (
                           <th
-                            className={`${s.weeklyCell} ${index === 5 ? s.saturday : index === 6 ? s.sunday : ""} ${index + 1 === currentWeekday ? s.today : ""}`}
+                            className={`${s.weeklyCell} ${s.imageHeader} ${index === 5 ? s.saturday : index === 6 ? s.sunday : ""} ${index + 1 === currentWeekday ? s.today : ""}`}
                             data-day-tone={index === 5 ? "blue" : index === 6 ? "red" : "neutral"}
                             scope="col"
                             key={day}
@@ -1263,6 +1332,23 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
           value={workbookPreview?.text.split("\n").slice(0, 20).join("\n") ?? ""}
           onChange={() => {}}
         />
+      </ContentDialog>
+      <ContentDialog
+        open={confirmBackup}
+        title="명부·시간표 복구 JSON을 저장할까요?"
+        primaryButtonText="복구 JSON 저장"
+        closeButtonText="취소"
+        defaultButton="close"
+        onClose={(result) => {
+          setConfirmBackup(false);
+          if (result === "primary") void exportBackup();
+        }}
+      >
+        <Body>
+          호스트에 저장된 모든 학기의 명부·수업 연결·일과 시각·주간표·날짜 변경을 담아요. 사진 파일과 화면의 미저장
+          수정은 포함하지 않아요. 같은 PC의 명부·시간표 복구용이며 사진을 포함한 이동용 전체 백업이 아니에요. 기존
+          파일은 그대로 두고 새 이름으로 저장해요.
+        </Body>
       </ContentDialog>
       <ContentDialog
         open={confirmWorkbookUndo && workbookUndo !== null}

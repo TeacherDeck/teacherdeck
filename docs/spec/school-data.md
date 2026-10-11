@@ -28,13 +28,22 @@
 
 자료 관리의 학기·명부·우리 반/수업·일과표·시간표 편집과 권한 확인은 main 창의 셸 origin만 사용한다. module payload의 자기 신고나 module iframe이 보낸 승인 메시지를 신뢰하지 않는다. `school_data_pending/resolve_access/grants/revoke_grant/import_photo`는 native Webview label과 URL을 검사한다. 신뢰 화면에서 도구 이름·학기·대상·읽기 필드·기억 여부를 보여준다. 사진 선택은 네이티브 picker에서 사용자 선택 파일을 읽기만 하며 호스트 소유 사진 저장소에 새 식별자로 복사한다.
 
-trusted 명령은 `load`, `save`, `pending`, `resolve_access`, `grants`, `revoke_grant`, `import_photo`, `read_backup`, `recover`, `read_workbook`, `write_workbook`의11개이며 모두 `school_data_` 접두사를 쓴다. JSON 복구와 XLSX picker도 동일 native label/origin 검사를 적용한다. 명부와 허용 context 목록은50개 단위로 표시하며 검색으로 좁힐 수 있다. 학기 추가 이후 관리 패널을 접고 명부 입력을 먼저 보여준다.
+trusted 명령은 `load`, `save`, `pending`, `resolve_access`, `grants`, `revoke_grant`, `import_photo`, `read_backup`, `recover`, `read_workbook`, `write_workbook`, `export_backup`, `export_timetable_image`의13개이며 모두 `school_data_` 접두사를 쓴다. JSON 복구와 XLSX picker도 동일 native label/origin 검사를 적용한다. 명부와 허용 context 목록은50개 단위로 표시하며 검색으로 좁힐 수 있다. 학기 추가 이후 관리 패널을 접고 명부 입력을 먼저 보여준다.
 
 네 교실 도구는 등록 자료 사용을 기본 선택으로 제시하고 이번 작업에만 사용을 고를 수 있다. 선택한 context를 명시적으로 읽어 새 작업 명단에 적용하며 기존 수행/확정 이력을 보존한다. 공유 미허용이나 미등록 상태가 도구의 임시 명단 사용을 막지 않는다. 요청 거부·취소·조회 실패로 기존 작업을 바꾸지 않는다.
 
 주간 시간표는 수업을 고른 뒤 요일·교시 칸을 눌러 편집한다. 격자와 저장 자료는 이름 대신 수업 식별자를 보존하고, 이름이 같은 수업은 선택 목록에서 구분한다. 기존 텍스트 입력과 XLSX 가져오기도 유지하되 이름만으로 수업을 확정할 수 없는 텍스트는 경고한다. 저장 전 초안은 열린 화면에서 학기·시간표별로 보관하여 선택을 바꿔도 복원하며, 저장 중에는 대상을 바꾸지 못한다. 화면을 닫거나 앱을 종료하면 저장하지 않은 초안은 복원되지 않는다.
 
 XLSX 적용 직후에는 직전 자료의 메모리 사본과 적용 성공 revision으로 한 번 되돌리기를 제공한다. 확인을 거쳐 기존 저장 명령의 expectedRevision으로 복원하고, 외부 변경이 있으면 덮지 않는다. 되돌리기 실패에는 사본을 유지하며, 다른 저장이 성공하거나 자료를 다시 불러오면 이전 되돌리기는 폐기한다. 앱 종료 후 복원용 백업이나 사진 파일 복구를 대신하지 않는다.
+
+## 신뢰 셸 출력
+
+[승인된 출력 후속 제안](../proposals/school-data-output-followup.md)에 따라 main 셸만 다음 두 명령을 호출한다. 네이티브 webview label과 로컬 셸 origin 검사를 함께 적용하고 main ACL에 명령별 최소 권한만 추가한다. 모듈 origin·overlay에는 제공하지 않으며 캡 레지스트리·school-data 1.0·SDK 모듈 메서드는 유지한다.
+
+- `school_data_export_backup() -> bool`: 호스트의 현재 검증된 SchoolDataDocument를 직접 읽어 최대32MiB UTF-8 JSON을 만든다. 모든 학기·학생 식별자·수업 연결·일과 시각·주간표·날짜 변경·사진 metadata를 보존하며 기존 복구 파서로 읽는다. **사진 파일과 미저장 초안은 포함하지 않는다.** UI 확인과 폴더 선택 제목에 사진 미포함을 안내한다. 같은 PC의 명부·시간표 복구용이며 이동용 전체 백업이나 TimeAlert `.teacherbackup` 호환으로 표시하지 않는다.
+- `school_data_export_timetable_image({pngBase64}) -> bool`: 현재 화면의 시간표 이름·요일·표시 교시·수업 배치를 PNG로 출력한다. 화면의 미저장 수정도 담으며 학교 자료를 저장하지 않는다. 일과 시각·날짜 변경·사진은 포함하지 않는다. 수업 ID를 보존한 격자에서 한글을 줄바꿈하고 현재 Fluent 토큰·시스템 글꼴을 사용한다. 상한 초과에는 자료를 자르지 않고 실패한다. 호스트는 폴더 선택 전에 canonical base64·PNG 형식과 전체 디코드·인코딩 전16MiB·한 변4096px·16메가픽셀 이하를 검사한다. 인자 타입은 Rust 셸 원천과 셸 생성 그룹에만 등록한다.
+
+폴더만 네이티브 picker로 선택하며 basename은 각각 `티처덱_명부시간표_복구.json`, `티처덱_시간표.png`로 고정한다. 기존 OutputBatch의 임시 쓰기·append-new 원자 게시로 같은 이름에는 번호를 붙인다. 경로·확장자·실행 명령은 프론트에서 받지 않는다. 취소는 false이며 실패는 고정 오류 코드와 안내를 반환한다. 로그·오류에 경로·파일명·학생 자료를 남기지 않으며 학교 자료 자체와 사진 파일을 변경하지 않는다.
 
 ## 검증과 호환 범위
 

@@ -6,6 +6,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { DeckProvider } from "@deck/ui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SchoolData } from "./SchoolData.tsx";
+import { renderTimetablePng } from "./school-timetable-image.ts";
+vi.mock("./school-timetable-image.ts", () => ({ renderTimetablePng: vi.fn() }));
 import { SchoolDataAccess } from "./SchoolDataAccess.tsx";
 import { emptyDocument, appendRoster, type SchoolDataHost } from "./school-data-model.ts";
 vi.stubGlobal("crypto", webcrypto);
@@ -26,6 +28,8 @@ function host(): SchoolDataHost {
     grants: vi.fn(async () => []),
     revokeGrant: vi.fn(async () => {}),
     importPhoto: vi.fn(async () => d),
+    exportBackup: vi.fn(async () => false),
+    exportTimetableImage: vi.fn(async () => false),
     readBackup: vi.fn(async () => null),
     recover: vi.fn(async (args) => args.document),
     readWorkbook: vi.fn(async () => null),
@@ -524,5 +528,85 @@ describe("trusted school data screens", () => {
     fireEvent.click(await within(nextDialog).findByRole("button", { name: "확인한 자료 적용" }));
     await screen.findByText("1-2-1 · 합성가 · 재학");
     expect(api.save).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("trusted school JSON and PNG outputs", () => {
+  it("requires photo-exclusion confirmation and keeps data on native cancel/failure", async () => {
+    const api = host();
+    render(
+      <DeckProvider>
+        <SchoolData host={api} />
+      </DeckProvider>,
+    );
+    const open = async () => {
+      const trigger = await screen.findByRole("button", { name: "명부·시간표 복구 JSON 저장" });
+      await waitFor(() => expect((trigger as HTMLButtonElement).disabled).toBe(false));
+      trigger.focus();
+      fireEvent.click(trigger);
+      return focusRegisteredDialog("명부·시간표 복구 JSON을 저장할까요?");
+    };
+    let dialog = await open();
+    expect(within(dialog).getByText(/사진 파일과 화면의 미저장 수정은 포함하지 않아요/)).toBeTruthy();
+    fireEvent.click(await within(dialog).findByRole("button", { name: "취소" }));
+    expect(api.exportBackup).not.toHaveBeenCalled();
+    dialog = await open();
+    fireEvent.click(await within(dialog).findByRole("button", { name: "복구 JSON 저장" }));
+    await waitFor(() => expect(api.exportBackup).toHaveBeenCalledOnce());
+    await screen.findByRole("button", { name: "다시 불러오기" });
+    expect(screen.queryByText(/복구 JSON을 새 파일로 저장했어요/)).toBeNull();
+    vi.mocked(api.exportBackup).mockRejectedValueOnce(new Error("synthetic output rejection"));
+    dialog = await open();
+    fireEvent.click(await within(dialog).findByRole("button", { name: "복구 JSON 저장" }));
+    expect(await screen.findByText(/복구 JSON을 저장하지 못했어요/)).toBeTruthy();
+    expect(api.save).not.toHaveBeenCalled();
+    expect(api.recover).not.toHaveBeenCalled();
+  });
+  it("exports the current unsaved grid by ID and never changes persisted school data", async () => {
+    const api = host(),
+      seed = emptyDocument();
+    seed.semesters.push({
+      id: "sem",
+      academicYear: 2026,
+      term: 1,
+      startDate: "2026-03-01",
+      endDate: "2026-07-31",
+      archived: false,
+      readOnly: false,
+    });
+    let serial = 0;
+    const document = appendRoster(seed, "sem", "1,1,1,합성가", () => `id${++serial}`);
+    vi.mocked(api.load).mockResolvedValue(document);
+    vi.mocked(renderTimetablePng).mockResolvedValue("synthetic-base64");
+    vi.mocked(api.exportTimetableImage).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    render(
+      <DeckProvider>
+        <SchoolData host={api} />
+      </DeckProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "일과표·시간표" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "칸에 넣을 수업" }));
+    fireEvent.click(await screen.findByRole("option", { name: "1학년 1반" }));
+    fireEvent.click(screen.getByRole("button", { name: "일요일 2교시: 빈 칸" }));
+    fireEvent.change(screen.getByLabelText("시간표 이름"), { target: { value: "미저장 합성표" } });
+    fireEvent.click(screen.getByRole("button", { name: "현재 화면 시간표 PNG 저장" }));
+    await waitFor(() => expect(api.exportTimetableImage).toHaveBeenCalledWith({ pngBase64: "synthetic-base64" }));
+    expect(vi.mocked(renderTimetablePng).mock.calls.at(-1)?.[0]).toMatchObject({
+      title: "2026학년도 1학기 · 미저장 합성표",
+      entries: [{ weekday: 7, period: 2, contextId: document.contexts[0]?.id }],
+    });
+    expect(api.save).not.toHaveBeenCalled();
+    expect(document.timetable.weeklyTables).toEqual([]);
+    expect(screen.queryByText(/PNG 새 파일로 저장했어요/)).toBeNull();
+    const trigger = await screen.findByRole("button", { name: "현재 화면 시간표 PNG 저장" });
+    await waitFor(() => expect((trigger as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(trigger);
+    expect(await screen.findByText(/현재 화면의 시간표를 PNG 새 파일로 저장했어요/)).toBeTruthy();
+    vi.mocked(renderTimetablePng).mockRejectedValueOnce(new Error("시간표 이미지가 너무 커요."));
+    await waitFor(() => expect((trigger as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(trigger);
+    expect(await screen.findByText("시간표 이미지가 너무 커요.")).toBeTruthy();
+    expect(api.exportTimetableImage).toHaveBeenCalledTimes(2);
+    expect(api.save).not.toHaveBeenCalled();
   });
 });

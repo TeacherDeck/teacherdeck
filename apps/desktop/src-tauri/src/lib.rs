@@ -309,6 +309,8 @@ pub fn run() {
             caps::school_data::school_data_recover,
             caps::school_data::school_data_read_workbook,
             caps::school_data::school_data_write_workbook,
+            caps::school_data::school_data_export_backup,
+            caps::school_data::school_data_export_timetable_image,
             caps::messaging::messaging_pending_confirmations,
             caps::messaging::messaging_resolve_confirmation,
         ])

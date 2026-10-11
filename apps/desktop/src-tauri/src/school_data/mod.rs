@@ -2,6 +2,7 @@
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 
 //! Shell-owned data and owner-bound, revocable projections (ADR-0020).
+pub mod output;
 pub mod workbook;
 use deck_core::caps::school_data::*;
 use deck_core::handles::{HANDLE_BYTES, RandomSource};

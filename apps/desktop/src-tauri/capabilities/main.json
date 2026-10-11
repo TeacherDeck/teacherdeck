@@ -34,6 +34,8 @@
     "allow-school-data-recover",
     "allow-school-data-read-workbook",
     "allow-school-data-write-workbook",
+    "allow-school-data-export-backup",
+    "allow-school-data-export-timetable-image",
     "allow-messaging-pending-confirmations",
     "allow-messaging-resolve-confirmation"
   ]

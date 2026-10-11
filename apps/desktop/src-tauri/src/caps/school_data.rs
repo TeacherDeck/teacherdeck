@@ -48,14 +48,15 @@ impl Op {
         })
     }
 }
-fn trusted(webview: &Webview) -> Result<(), DeckError> {
-    let url = webview.url().map_err(|_| denied())?;
-    if webview.label() != crate::origins::MAIN_WINDOW
-        || !crate::origins::shell_origins().contains(&url.origin().ascii_serialization().as_str())
-    {
+fn trusted_identity(label: &str, origin: &str) -> Result<(), DeckError> {
+    if label != crate::origins::MAIN_WINDOW || !crate::origins::shell_origins().contains(&origin) {
         return Err(denied());
     }
     Ok(())
+}
+fn trusted(webview: &Webview) -> Result<(), DeckError> {
+    let url = webview.url().map_err(|_| denied())?;
+    trusted_identity(webview.label(), &url.origin().ascii_serialization())
 }
 /// Dispatch; request approval is awaited away from the UI thread.
 pub async fn call(
@@ -316,23 +317,7 @@ pub async fn school_data_read_backup(
                 (file.size() as usize - bytes.len()).min(crate::file_read::READ_CHUNK_BYTES),
             )?);
         }
-        let value: Value = serde_json::from_slice(&bytes).map_err(|_| {
-            DeckError::new(
-                ErrorCode::InvalidArgs,
-                "TeacherDeck 학교 자료 JSON을 선택해 주세요.",
-            )
-        })?;
-        let document: SchoolDataDocument = serde_json::from_value(
-            value.get("document").cloned().unwrap_or(value),
-        )
-        .map_err(|_| {
-            DeckError::new(
-                ErrorCode::InvalidArgs,
-                "TeacherDeck 학교 자료 JSON을 선택해 주세요.",
-            )
-        })?;
-        document.validate()?;
-        Ok(Some(document))
+        crate::school_data::output::read_backup(&bytes).map(Some)
     })
     .await
     .map_err(|_| internal())?
@@ -433,6 +418,72 @@ pub async fn school_data_write_workbook(
     .map_err(|_| internal())?
 }
 
+/// Exports current validated host data, excluding photo files and unsaved shell drafts.
+#[tauri::command]
+pub async fn school_data_export_backup(
+    webview: Webview,
+    app: AppHandle,
+) -> Result<bool, DeckError> {
+    trusted(&webview)?;
+    let worker_app = app.clone();
+    let bytes = tauri::async_runtime::spawn_blocking(move || {
+        crate::school_data::output::backup(&worker_app.state::<SchoolDataService>().load()?)
+    })
+    .await
+    .map_err(|_| internal())??;
+    export_school_file(
+        app,
+        "복구 JSON 저장 폴더 선택 · 사진 파일 미포함",
+        "티처덱_명부시간표_복구.json",
+        bytes,
+    )
+    .await
+}
+/// Only main may submit an image; format/size are checked before the destination picker.
+#[tauri::command]
+pub async fn school_data_export_timetable_image(
+    webview: Webview,
+    app: AppHandle,
+    args: deck_core::shell::SchoolTimetableImageArgs,
+) -> Result<bool, DeckError> {
+    trusted(&webview)?;
+    let bytes = tauri::async_runtime::spawn_blocking(move || {
+        crate::school_data::output::png(&args.png_base64)
+    })
+    .await
+    .map_err(|_| internal())??;
+    export_school_file(
+        app,
+        "현재 화면 시간표 PNG 저장 폴더 선택",
+        "티처덱_시간표.png",
+        bytes,
+    )
+    .await
+}
+async fn export_school_file(
+    app: AppHandle,
+    title: &str,
+    name: &'static str,
+    bytes: Vec<u8>,
+) -> Result<bool, DeckError> {
+    let dialog = app.dialog().file().set_title(title);
+    let picked = tauri::async_runtime::spawn_blocking(move || dialog.blocking_pick_folder())
+        .await
+        .map_err(|_| internal())?;
+    let Some(picked) = picked else {
+        return Ok(false);
+    };
+    let path = picked.into_path().map_err(|_| denied())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let temp = state.file_temp.as_ref().ok_or_else(internal)?;
+        crate::school_data::output::publish(&path, name, &bytes, temp)?;
+        Ok(true)
+    })
+    .await
+    .map_err(|_| internal())?
+}
+
 /// Uses the existing authenticated, bounded resource protocol, without an fs grant.
 pub fn serve_photo_resource(
     app: &AppHandle,
@@ -517,4 +568,24 @@ pub fn serve_photo_resource(
     );
     let _ = &mut inner;
     Some(response)
+}
+
+#[cfg(test)]
+mod trusted_output_tests {
+    use super::*;
+    #[test]
+    fn export_identity_rejects_module_origin_and_overlay_even_with_shell_origin() {
+        assert!(trusted_identity("main", crate::origins::SHELL_ORIGIN).is_ok());
+        for (label, origin) in [
+            ("main", crate::origins::MODULE_ORIGIN),
+            ("main", "http://deckmod.timer.modules.localhost"),
+            ("overlay", crate::origins::SHELL_ORIGIN),
+            ("main", "https://example.invalid"),
+        ] {
+            assert_eq!(
+                trusted_identity(label, origin).unwrap_err().code,
+                ErrorCode::PermissionDenied
+            );
+        }
+    }
 }

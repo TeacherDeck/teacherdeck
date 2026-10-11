@@ -39,7 +39,9 @@ use deck_core::catalog::{CatalogIndex, IndexEntry};
 use deck_core::error::{DeckError, ErrorCode};
 use deck_core::manifest::{Author, Category, ModuleManifest, UiOptions};
 use deck_core::resolver::{Picked, Resolution, ResolveState, Source, UnmetCap};
-use deck_core::shell::{FsDroppedEvent, ModuleEntry, ShellInfo, UpdateStatus};
+use deck_core::shell::{
+    FsDroppedEvent, ModuleEntry, SchoolTimetableImageArgs, ShellInfo, UpdateStatus,
+};
 use schemars::JsonSchema;
 use serde::Serialize;
 use ts_rs::{Config, TS};
@@ -381,6 +383,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         ts::<CatalogIndex>(SHELL_DIR, &cfg)?,
         ts::<IndexEntry>(SHELL_DIR, &cfg)?,
         ts::<ShellInfo>(SHELL_DIR, &cfg)?,
+        ts::<SchoolTimetableImageArgs>(SHELL_DIR, &cfg)?,
         ts::<ModuleEntry>(SHELL_DIR, &cfg)?,
         ts::<FsDroppedEvent>(SHELL_DIR, &cfg)?,
         ts::<UpdateStatus>(SHELL_DIR, &cfg)?,
