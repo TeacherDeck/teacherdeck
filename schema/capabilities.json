@@ -4,6 +4,186 @@
     {
       "methods": [
         {
+          "long": true,
+          "name": "connect",
+          "summary": "지원하는 쿨메신저 연결 확인"
+        },
+        {
+          "long": true,
+          "name": "recipients",
+          "summary": "수신자 계정 조회"
+        },
+        {
+          "long": true,
+          "name": "plan",
+          "summary": "예약 내용과 첨부 검증"
+        },
+        {
+          "long": true,
+          "name": "start",
+          "summary": "호스트 확인 후 선택한 작업 시작"
+        },
+        {
+          "long": false,
+          "name": "status",
+          "summary": "자기 작업 진행 상태"
+        },
+        {
+          "long": false,
+          "name": "cancel",
+          "summary": "이후 처리 중지 요청"
+        }
+      ],
+      "name": "messaging",
+      "summary": "확인한 쿨메신저 예약 등록",
+      "version": "1.0.0"
+    },
+    {
+      "methods": [
+        {
+          "long": false,
+          "name": "availability",
+          "summary": "설치된 변환 프로그램 조회"
+        },
+        {
+          "long": true,
+          "name": "convert",
+          "summary": "원본을 보존하고 실제 새 형식으로 저장"
+        },
+        {
+          "long": false,
+          "name": "cancel",
+          "summary": "자기 모듈의 현재 변환 취소"
+        }
+      ],
+      "name": "office",
+      "summary": "설치된 한글·Office로 새 형식 변환",
+      "version": "1.0.0"
+    },
+    {
+      "methods": [
+        {
+          "long": false,
+          "name": "adapters",
+          "summary": "연결 장치 조회"
+        },
+        {
+          "long": false,
+          "name": "inspect",
+          "summary": "현재 연결과 선택한 Wi-Fi 상태"
+        },
+        {
+          "long": false,
+          "name": "saveProfile",
+          "summary": "내부 설정과 자동 주소 복원 프로필 저장"
+        },
+        {
+          "long": true,
+          "name": "configureRoutine",
+          "summary": "사용자가 설정한 자동 전환 활성화"
+        },
+        {
+          "long": false,
+          "name": "status",
+          "summary": "저장된 루틴·자동 실행 상태"
+        },
+        {
+          "long": true,
+          "name": "evaluate",
+          "summary": "저장된 설정으로 지금 검사"
+        },
+        {
+          "long": true,
+          "name": "apply",
+          "summary": "선택한 프로필 적용과 수동 우선 유지"
+        },
+        {
+          "long": true,
+          "name": "stopRoutine",
+          "summary": "현재 주소를 유지하고 자동 실행 중지"
+        }
+      ],
+      "name": "network",
+      "summary": "저장된 IP·DNS 프로필과 네트워크 루틴",
+      "version": "1.0.0"
+    },
+    {
+      "methods": [
+        {
+          "long": true,
+          "name": "planRename",
+          "summary": "파일명 변경 계획 검증"
+        },
+        {
+          "long": true,
+          "name": "executeRename",
+          "summary": "호스트 확인 후 변경 묶음 실행"
+        },
+        {
+          "long": true,
+          "name": "listHistory",
+          "summary": "자기 모듈의 변경 이력 조회"
+        },
+        {
+          "long": true,
+          "name": "undoRename",
+          "summary": "수정·교체되지 않은 파일만 되돌리기"
+        }
+      ],
+      "name": "file-ops",
+      "summary": "확인된 파일명 변경과 보호된 되돌리기",
+      "version": "1.0.0"
+    },
+    {
+      "methods": [
+        {
+          "long": false,
+          "name": "status",
+          "summary": "자기 모듈의 연결 상태"
+        },
+        {
+          "long": true,
+          "name": "requestAccess",
+          "summary": "셸에서 학급·항목 선택과 공유 확인"
+        },
+        {
+          "long": false,
+          "name": "listContexts",
+          "summary": "연결된 학급·수업 목록"
+        },
+        {
+          "long": false,
+          "name": "readRoster",
+          "summary": "선택한 학급의 명부 스냅샷"
+        },
+        {
+          "long": false,
+          "name": "readTimetable",
+          "summary": "허용된 수업의 시간표 스냅샷"
+        },
+        {
+          "long": true,
+          "name": "openPhoto",
+          "summary": "명부 사진의 인증된 읽기 리소스"
+        },
+        {
+          "long": false,
+          "name": "closePhoto",
+          "summary": "사진 읽기 권한 닫기"
+        },
+        {
+          "long": false,
+          "name": "revokeAccess",
+          "summary": "자기 모듈의 공유 권한 해제"
+        }
+      ],
+      "name": "school-data",
+      "summary": "사용자가 연결한 공통 학급 자료의 제한된 읽기",
+      "version": "1.0.0"
+    },
+    {
+      "methods": [
+        {
           "long": false,
           "name": "status",
           "summary": "등록 단축키 조회"
@@ -172,6 +352,11 @@
       "methods": [
         {
           "long": true,
+          "name": "listFiles",
+          "summary": "선택 폴더의 제한된 파일 목록"
+        },
+        {
+          "long": true,
           "name": "pickDestination",
           "summary": "명시적으로 기억할 새 파일 저장 폴더 선택"
         },
@@ -253,7 +438,7 @@
       ],
       "name": "fs",
       "summary": "파일 선택과 핸들(경로는 노출하지 않음)",
-      "version": "1.2.0"
+      "version": "1.3.0"
     },
     {
       "methods": [

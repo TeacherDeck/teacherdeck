@@ -231,6 +231,9 @@ export interface SettingsExpanderProps extends CardContent {
   /** Control in the header, e.g. a ToggleSwitch that enables the whole group. */
   action?: ReactNode;
   defaultExpanded?: boolean;
+  /** Controlled expansion, e.g. collapse setup after its first successful save. */
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
   /** SettingsCard rows; they render flat and indented. */
   children: ReactNode;
 }
@@ -242,12 +245,18 @@ export function SettingsExpander({
   description,
   action,
   defaultExpanded = false,
+  expanded,
+  onExpandedChange,
   children,
 }: SettingsExpanderProps) {
   const s = useStyles();
-  const [open, setOpen] = useState(defaultExpanded);
+  const [internalOpen, setOpen] = useState(defaultExpanded);
+  const open = expanded ?? internalOpen;
   const bodyId = useId();
-  const toggle = () => setOpen((o) => !o);
+  const toggle = () => {
+    if (expanded === undefined) setOpen(!open);
+    onExpandedChange?.(!open);
+  };
   return (
     <div className={s.expander}>
       <div className={mergeClasses(s.card, s.expanderHeader)}>

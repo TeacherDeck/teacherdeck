@@ -7,5 +7,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    if let Some(code) = teacherdeck_lib::native_workers::dispatch_worker_mode() {
+        std::process::exit(code);
+    }
     teacherdeck_lib::run();
 }

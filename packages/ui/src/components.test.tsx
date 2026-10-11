@@ -70,6 +70,22 @@ describe("@deck/ui", () => {
     expect(onClick).toHaveBeenCalledOnce();
   });
 
+  it("lets a saved setup collapse without losing its independent header action", () => {
+    const changed = vi.fn();
+    const action = vi.fn();
+    const content = (expanded: boolean) => <ui.DeckProvider><ui.SettingsExpander header="자료 설정" expanded={expanded} onExpandedChange={changed} action={<ui.Button onClick={action}>적용</ui.Button>}><span>설정 내용</span></ui.SettingsExpander></ui.DeckProvider>;
+    const view = render(content(true));
+    fireEvent.click(screen.getByRole("button", { name: "자료 설정" }));
+    expect(changed).toHaveBeenCalledWith(false);
+    expect(screen.getByRole("group", { name: "자료 설정" })).toBeDefined();
+    view.rerender(content(false));
+    expect(screen.queryByRole("group", { name: "자료 설정" })).toBeNull();
+    expect(screen.getByRole("button", { name: "자료 설정" }).getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(screen.getByRole("button", { name: "적용" }));
+    expect(action).toHaveBeenCalledOnce();
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
+
   it("SettingsExpander has one native header button and an independent action", () => {
     const action = vi.fn();
     wrap(

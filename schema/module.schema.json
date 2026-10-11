@@ -131,6 +131,11 @@
       "description": "Optional capabilities and semver ranges (MOD-007).",
       "propertyNames": {
         "enum": [
+          "messaging",
+          "office",
+          "network",
+          "file-ops",
+          "school-data",
           "global-shortcut",
           "overlay",
           "capture",
@@ -150,6 +155,11 @@
       "description": "Required capabilities and semver ranges.",
       "propertyNames": {
         "enum": [
+          "messaging",
+          "office",
+          "network",
+          "file-ops",
+          "school-data",
           "global-shortcut",
           "overlay",
           "capture",

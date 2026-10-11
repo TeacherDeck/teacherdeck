@@ -31,6 +31,12 @@
 
 ## 3. 규칙
 
+PDF 렌더링용 Liberation Sans 네 자산만 [ADR-0018](../adr/0018-pdf-resource-notices.md)의 해시 고정 예외로 동봉한다. 일반 라이선스 allowlist는 확대하지 않는다. 각 PDF 모듈에 원문 고지와 자산 목록을 포함하고 생성·라이선스 검사 및 빌드에서 확인한다.
+
+승인된 Win32 FFI 경계는 [ADR-0022](../adr/0022-windows-ffi-boundary.md)의 네 호스트 파일로 한정한다. 각 블록에 안전성 주석과 독립 리뷰가 필요하다. 다른 코드의 unsafe 금지와 검사는 유지한다.
+
+공통 자료 관리의 `school_data_load/save/pending/resolve_access/grants/revoke_grant/import_photo/read_backup/recover/read_workbook/write_workbook` 열한 명령은 main ACL에만 등록한다(ADR-0020). 호출 창의 main label과 로컬 셸 origin을 다시 검증한다. 복구는 TeacherDeck 공통 자료 저장소에 한정하며 손상된 원본을 보존하고 교사가 확인한 자료로 복구한다. XLSX 입출력은 교사가 선택한 파일 읽기와 덮어쓰기 없는 새 파일 저장만 수행한다. 모듈에는 이 명령을 노출하지 않고 school-data의 읽기 투영만 제공한다. 캡처 보조 창 ACL과 CSP는 확대하지 않는다.
+
 - **SEC-001** [MUST] 셸 webview는 로컬 번들만 로드하며 CSP를 설정한다. 원격 URL을 로드하지 않는다. — 강제: tauri.conf 검사 `check-security`
 - **SEC-002** [MUST] 모듈은 셸 및 다른 모듈과 독립 origin에서만 서빙한다. Windows origin은 `http://deckmod.<id>.modules.localhost`다. 셸 origin에서 모듈 코드를 서빙하거나 셸 문서에 모듈 스크립트를 주입하지 않는다. iframe `allow-same-origin`이 안전하다는 전제가 이 규칙이다. — 강제: origin 생성·authority 검증(`origins.rs`, `protocol.rs`), 셸 브리지·CSP 테스트
 - **SEC-003** [MUST] Tauri ACL은 셸 main과 ADR-0017의 로컬 캡처 보조 창에만 아래 정확한 최소 권한으로 준다. 프론트엔드에 fs/shell/http 플러그인 권한을 주지 않는다. OS 접근은 Rust 캡을 경유한다. — 강제: `check-security`

@@ -5,6 +5,8 @@ import { generateCapTable } from "./cap-table.ts";
 import { generateRuleIndex } from "./rule-index.ts";
 import { generateFromRust } from "./rust.ts";
 import { generateThirdParty } from "./third-party.ts";
+import { generatePdfResources } from "./pdf-resources.ts";
+import { generateMessagingResources } from "./messaging-resources.ts";
 
 export interface GenOutput {
   /** POSIX path relative to the repo root. */
@@ -24,5 +26,7 @@ export function generateAll(root: string): GenOutput[] {
     ...rust,
     ...(caps === undefined ? [] : [generateCapTable(root, caps.content)]),
     ...generateThirdParty(root),
+    ...generatePdfResources(root),
+    ...generateMessagingResources(root),
   ];
 }

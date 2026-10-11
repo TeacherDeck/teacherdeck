@@ -42,6 +42,8 @@ pub enum Op {
     RevokeDestination,
     /// `stat`
     Stat,
+    /// Bounded selected folder snapshot (fs1.3).
+    ListFiles,
     /// `reveal`
     Reveal,
     /// `openRead`
@@ -73,6 +75,7 @@ impl Op {
             "revealDestination" => Self::RevealDestination,
             "revokeDestination" => Self::RevokeDestination,
             "stat" => Self::Stat,
+            "listFiles" => Self::ListFiles,
             "reveal" => Self::Reveal,
             "openRead" => Self::OpenRead,
             "closeRead" => Self::CloseRead,
@@ -94,7 +97,7 @@ fn display_name(path: &Path) -> String {
 }
 
 /// Builds the module-visible info for `path` under `handle`.
-fn file_info(handle: String, path: &Path) -> std::io::Result<FileHandleInfo> {
+pub(crate) fn file_info(handle: String, path: &Path) -> std::io::Result<FileHandleInfo> {
     let meta = std::fs::metadata(path)?;
     let name = display_name(path);
     Ok(FileHandleInfo {
@@ -110,7 +113,7 @@ fn file_info(handle: String, path: &Path) -> std::io::Result<FileHandleInfo> {
     })
 }
 
-fn issue(
+pub(crate) fn issue(
     state: &AppState,
     module_id: &str,
     path: PathBuf,
@@ -128,7 +131,7 @@ fn issue(
     ))
 }
 
-fn resolve(
+pub(crate) fn resolve(
     state: &AppState,
     module_id: &str,
     handle: &str,
@@ -385,6 +388,7 @@ impl Op {
             Self::RevealDestination => "revealDestination",
             Self::RevokeDestination => "revokeDestination",
             Self::Stat => "stat",
+            Self::ListFiles => "listFiles",
             Self::Reveal => "reveal",
         }
     }
@@ -399,6 +403,11 @@ fn transfer_call(
 ) -> Result<Value, DeckError> {
     let mut transfers = state.transfers.lock().map_err(|_| internal())?;
     match op {
+        Op::ListFiles => {
+            let a: deck_core::caps::fs::ListFilesArgs = parse_args(args)?;
+            drop(transfers);
+            to_value(&crate::file_listing::list(state, owner, generation, a)?)
+        }
         Op::OpenRead => {
             let HandleArgs { handle } = parse_args(args)?;
             let path = resolve(

@@ -182,6 +182,20 @@ impl FileTransfers {
         Ok((id, path))
     }
 
+    /// Checks an output batch before a native worker starts without reserving a file.
+    pub fn validate_output_batch(
+        &mut self,
+        owner: &str,
+        generation: u64,
+        batch_id: &str,
+    ) -> Result<(), DeckError> {
+        self.ready(owner, generation)?;
+        let batch = self.batches.get_mut(batch_id).ok_or_else(missing)?;
+        check(batch, owner, generation)?;
+        batch.touched = Instant::now();
+        Ok(())
+    }
+
     /// Reserves one new output. Reservations count toward batch limits even when aborted.
     pub fn begin_write(
         &mut self,

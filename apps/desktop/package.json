@@ -6,8 +6,8 @@
   "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
-    "dev": "node ../../tools/scripts/bundle-modules.ts && vite",
-    "build": "node ../../tools/scripts/bundle-modules.ts && vite build",
+    "dev": "node ../../tools/scripts/prepare-native.ts && node ../../tools/scripts/bundle-modules.ts && vite",
+    "build": "node ../../tools/scripts/prepare-native.ts && node ../../tools/scripts/bundle-modules.ts && vite build",
     "tauri": "tauri"
   },
   "dependencies": {

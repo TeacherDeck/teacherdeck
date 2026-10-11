@@ -2,7 +2,8 @@
 
 - 정지 조건: 새 캡(CAP-005), 호스트 런타임 의존성(GEN-004), 외부 앱으로의 메시지 전달과 개인정보 약속의 해석 충돌(GEN-002/GEN-005). 자동 네트워크 변경을 위한 관리자 helper·작업 등록과 배포 설정도 승인 범위에 포함한다.
 - 배경: [제품 계획](../PRODUCT_PLAN.md)의 세 도구는 브라우저 JS/WASM만으로 원래 핵심 동작을 수행할 수 없다. 단순 확장자 변경, 앱이 열린 동안만 작동하는 네트워크 설정, 범용 클릭 매크로는 대체물이 아니다.
-- 제안: 아래의 제한된 캡 계약을 승인한 뒤 ADR → spec → Rust 타입 → 생성 → 구현 순서로 진행한다. 이 문서는 승인 전 제안이며 레지스트리·CSP·ACL·원본 저장소를 수정하지 않았다.
+- 상태: 2026-10-11 사용자가 세 기능, 정확한 Windows 직접 의존성 `windows=0.62.2`, 명시적인 쿨메신저 전달 예외를 승인했다. 이어 [Windows FFI 경계](windows-ffi-boundary.md)의 네 파일 한정 예외와 [CoolReserve 관리 런타임](coolreserve-managed-runtime.md)의 정확한 Python 배포 파일을 추가 승인했다. Office·network 구현과 합성 검증을 진행하며 실제 PC 네트워크/작업 등록 변경 및 실제 메시지 발송은 검증하지 않는다.
+- 제안: 승인된 제한 계약에 따라 ADR → spec → Rust 타입 → 생성 → 구현 순서로 진행한다. 브리지/CSP/ACL과 원본 저장소를 임의 변경하지 않는다.
 - 검토한 대안: fs/storage만 사용하면 문서의 COM 저장·OS IP 변경·다른 앱 조작이 불가능하다. WASM은 XLSX/PPTX/HWPX의 구조 읽기에 유용하지만 기존 바이너리 형식과 설치 앱의 서식 호환을 대체하지 못한다. Python 웹 서버를 iframe에 그대로 넣는 방식은 origin·IPC·개인정보 규칙을 만족하지 않는다.
 - 영향: 새 캡은 각각 1.0.0, SDK는 공개 API 추가로 minor, 앱과 사용자 모듈은 기능 추가에 맞춰 minor 이상을 올린다. 브리지/매니페스트/카탈로그 포맷 변경은 제안하지 않는다. 현재 cap requires 해석기로 구형 호스트를 차단한다. 생성 표를 직접 고치지 않는다.
 - 필요한 승인: 프로젝트 소유자가 아래 세 캡의 정확한 메서드·권한·의존성, 제한된 helper 실행/자동 네트워크 변경, 명시적 메시지 전달 예외를 승인한다. 실제 메시지 보내기나 이 PC의 네트워크 변경 시험은 구현 승인과 구별한다.
@@ -99,7 +100,7 @@ Excel/Word/PowerPoint는 문서 매크로 실행 억제·읽기 전용 열기·�
 | CoolReserve 기존 adapter를 유지하는 첫 경로 | `pywinauto==0.6.9`, `comtypes==1.4.17`, `pywin32==312`, `six==1.17.0` | 원본 requirements와 정확히 일치. Python3.14 x64에서 설치 확인은 원본 README 보고이며 이번 실행 검증 아님. 관리된 helper를 제작하는 경우 runtime/라이선스/해시 전체 승인 필요 |
 | network_routine 독립판의 Python 의존성 | 현재 `pywin32>=311` → 릴리스 제작 시 `pywin32==312` 후보 | 상한 없는 원본 요구를 정확 버전 산출물로 고정하는 별도 원천 변경. 이번 문서에서 원본 수정/설치하지 않음 |
 
-우선 Office와 네트워크는 Rust 고정 worker를 권고한다. CoolReserve는 608개 Python/70개 JS 검사라는 원본 보고를 버리고 급히 전면 Rust 재작성하기보다, 같은 코어·adapter를 유지한 관리 helper와 웹 모듈을 먼저 패키징한다. Python runtime의 정확 patch 버전/배포 해시/라이선스와 standalone helper 방식이 아직 확정되지 않았으므로 설치된 임의 Python 경로를 호출하는 방식은 승인안에 포함하지 않는다. helper 패키지 잠금이 완성될 때까지 배포 완료를 주장하지 않는다.
+Office와 네트워크는 Rust 고정 worker를 사용한다. CoolReserve는 같은 원작 코어·adapter를 유지한 관리 helper와 웹 모듈을 패키징한다. 추가 승인한 Python 3.14.8 x64와 정확한 라이브러리 파일·라이선스·해시는 [관리 런타임 제안](coolreserve-managed-runtime.md)에 고정한다. 설치된 임의 Python 경로는 호출하지 않는다. 원천 커밋·산출물과 모듈 파일 잠금까지 완성하고 검사하기 전에는 배포 완료를 주장하지 않는다.
 
 CoolReserve와 network_routine 원천 저장소에 공통 순수 코어·TeacherDeck 프론트엔드·브리지 adapter·기존 독립판 adapter를 둔다. TeacherDeck은 같은 소스의 tag/SHA에서 만든 `.deckmod`와 관련 helper의 정확 버전/sha256만 소비한다. 다른 구현 복사본을 TeacherDeck 안에서 따로 발전시키지 않는다. 원천의 authors/license는 보존한다.
 

@@ -1,0 +1,29 @@
+{
+  "$comment": "ADR-0018: 사용자 승인된 PDF 전용 글꼴 네 개. 일반 GPL 패키지 허용 아님.",
+  "package": "pdfjs-dist",
+  "version": "6.4.299",
+  "fontVersion": "1.07.4",
+  "source": "https://github.com/mozilla/pdf.js/tree/v6.4.299/external/standard_fonts",
+  "fontSource": "https://github.com/liberationfonts/liberation-fonts/tree/1.07.4",
+  "license": "GPL-2.0 with Liberation font exception",
+  "licenseFile": "standard_fonts/LICENSE_LIBERATION",
+  "licenseSha256": "d2c4d5b3e115a519cb58eb691aa64538397e2611f9ebe801392cf9667997e7dc",
+  "files": [
+    {
+      "path": "standard_fonts/LiberationSans-Regular.ttf",
+      "sha256": "f8ace1f892b2bd9dc1792ba7f097fa7588f84fed48321480e04de5390828221f"
+    },
+    {
+      "path": "standard_fonts/LiberationSans-Bold.ttf",
+      "sha256": "361c61b82d575c5c35fd9157fda8b0194bcfcd0d88ea8521a4fb5dd53d33dddc"
+    },
+    {
+      "path": "standard_fonts/LiberationSans-Italic.ttf",
+      "sha256": "832b4406dbef23628800d3aaad21048534ac84d7e3ad955be83b8172ed8ef512"
+    },
+    {
+      "path": "standard_fonts/LiberationSans-BoldItalic.ttf",
+      "sha256": "a224075ac17495ad0a3af3bc0a419ac0704a8b3fd1095456201fb9b095fc281d"
+    }
+  ]
+}

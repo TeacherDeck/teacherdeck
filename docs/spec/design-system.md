@@ -31,7 +31,7 @@ Windows 11 Fluent 2를 따르고 PowerToys 설정 앱 구조를 레퍼런스로 
 
 - 본문 스택: `"Segoe UI Variable Text", "Segoe UI", "Malgun Gothic", sans-serif`. 한글은 맑은 고딕으로 표시된다(Windows 11 설정 앱과 같다).
 - 20px 이상(Subtitle 이상): `"Segoe UI Variable Display", ...`
-- 폰트는 번들하지 않는다. 셸과 모듈 iframe이 같은 시스템 폰트를 쓰므로 외관이 같다. CDN 폰트는 금지한다(PRV-001, MOD-008).
+- UI 폰트는 번들하지 않는다. 셸과 모듈 iframe이 같은 시스템 폰트를 쓰므로 외관이 같다. PDF 원문 렌더링만 [ADR-0018](../adr/0018-pdf-resource-notices.md)의 한정 대체 글꼴 자산을 사용한다. CDN 폰트는 금지한다(PRV-001, MOD-008).
 - 타입 램프(WinUI): Caption 12/16, Body 14/20, BodyStrong 14/20, Subtitle 20/26, Title 28/36, TitleLarge 40/52, Display 68/92. `@deck/ui`의 같은 이름 컴포넌트로 쓴다.
 
 ## 5. About/크레딧 화면
@@ -87,6 +87,8 @@ GPLv3의 Appropriate Legal Notices를 겸한다. 다음을 모두 보여 준다.
 `TextBox`는 `onKeyDown`, `onCompositionStart`, `onCompositionEnd`로 실제 입력 요소의 키보드·한글 조합 이벤트를 전달한다. `inputRef`는 한 줄/여러 줄 입력 요소를 가리키며 포커스 복귀와 텍스트 선택에 사용한다. 결과를 선택해 복사할 때는 `readOnly`를 사용한다. `multiline` 입력의 기본 표시 행 수는 `rows`로 지정한다. 조합 중 Enter를 기록 확정으로 처리하지 않는 업무 규칙은 사용 모듈에서 검사한다.
 
 셸 dev 빌드에만 "UI 갤러리" 화면을 두어 모든 `@deck/ui` 컴포넌트를 light/dark와 텍스트 배율별로 보여 준다.
+
+`SettingsExpander`는 선택 `expanded`와 `onExpandedChange`로 제어할 수 있다. 지정하지 않으면 `defaultExpanded`로 시작해 스스로 펼침 상태를 관리한다. 제어 상태에서도 머리글의 네이티브 버튼·`aria-expanded`와 별도 action의 키보드 동작을 유지한다.
 
 ## 7. 문구
 
