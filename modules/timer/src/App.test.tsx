@@ -33,6 +33,20 @@ async function open() {
   return { fullscreen };
 }
 describe("timer keyboard and monotonic time", () => {
+  it("keeps edited controls in place through blur and starts the edited time on the first click", async () => {
+    await open();
+    fireEvent.click(screen.getByRole("button", { name: /눌러서 시간 입력/ }));
+    const minutes = screen.getByRole("textbox", { name: /^분$/ });
+    fireEvent.change(minutes, { target: { value: "1" } });
+    const start = screen.getByRole("button", { name: /^시작$/ });
+    fireEvent.pointerDown(start);
+    fireEvent.blur(minutes, { relatedTarget: start });
+    expect(screen.getByRole("textbox", { name: /^분$/ })).toBeTruthy();
+    fireEvent.pointerUp(start);
+    fireEvent.click(start);
+    expect(screen.getByRole("button", { name: /^일시정지$/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /남은 시간 1:00/ })).toBeTruthy();
+  });
   it("keeps focused button Space native and ignores repeats and composition", async () => {
     await open();
     const reset = screen.getByRole("button", { name: "리셋" });
