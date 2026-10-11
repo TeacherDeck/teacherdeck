@@ -81,7 +81,10 @@ const useStyles = makeStyles({
     gap: tokens.spacingVerticalM,
   },
   toolbar: { display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalS, alignItems: "center", flexShrink: 0 },
-  saved: { marginInlineStart: "auto" },
+  meetingInfo: { display: "flex", flexWrap: "wrap", gap: deckTokens.inlineGap, alignItems: "center", flexShrink: 0 },
+  meetingTitle: { flex: "1", minWidth: 0, overflowWrap: "anywhere" },
+  management: { display: "flex", gap: deckTokens.inlineGap, marginInlineStart: "auto" },
+  saveState: { flex: "1", minWidth: 0, overflowWrap: "anywhere" },
   helpText: { "@media (max-height: 640px)": { display: "none" } },
   inlineKinds: { "@media (max-height: 640px)": { display: "none" } },
   compactKinds: { display: "none", "@media (max-height: 640px)": { display: "block" } },
@@ -145,6 +148,12 @@ const useStyles = makeStyles({
     "&:hover [data-record-actions]": { opacity: 1 },
     "&:focus-within [data-record-actions]": { opacity: 1 },
     "@media (max-width: 720px)": { gridTemplateColumns: "11ch minmax(4ch, 8ch) minmax(0, 1fr) auto" },
+    "@container (max-width: 480px)": {
+      gridTemplateColumns: "minmax(0, 1fr)",
+      alignItems: "start",
+      "& > [data-record-actions]": { flexWrap: "wrap", gridColumn: "1 / -1" },
+      "& > [data-record-actions] button": { minWidth: 0 },
+    },
   },
   agenda: {
     backgroundColor: tokens.colorBrandBackground2,
@@ -171,7 +180,11 @@ const useStyles = makeStyles({
   action: { backgroundColor: tokens.colorPaletteGreenBackground2, color: tokens.colorPaletteGreenForeground2 },
   question: { backgroundColor: tokens.colorPalettePurpleBackground2, color: tokens.colorPalettePurpleForeground2 },
   private: { opacity: 0.65, fontStyle: "italic" },
-  retag: { gridColumn: "2 / -1", maxWidth: "20rem" },
+  retag: {
+    gridColumn: "2 / -1",
+    maxWidth: "20rem",
+    "@container (max-width: 480px)": { gridColumn: "1 / -1" },
+  },
   row: { display: "flex", flexWrap: "wrap", gap: deckTokens.inlineGap, alignItems: "center" },
   grid: {
     display: "grid",
@@ -225,6 +238,7 @@ const useStyles = makeStyles({
   stack: { display: "flex", flexDirection: "column", gap: deckTokens.inlineGap, minWidth: 0 },
   log: {
     gridArea: "records",
+    containerType: "inline-size",
     overflowY: "auto",
     minHeight: 0,
     borderRadius: tokens.borderRadiusSmall,
@@ -352,6 +366,7 @@ export function App({ deck }: { deck: Deck }) {
   const latest = useRef(meeting);
   const [library, setLibrary] = useState<Library>(EMPTY_LIBRARY);
   const [status, setStatus] = useState("불러오는 중이에요.");
+  const [taskError, setTaskError] = useState("");
   const [copyStatus, setCopyStatus] = useState("");
   const [ready, setReady] = useState(false);
   const [failedLoad, setFailedLoad] = useState(false);
@@ -763,12 +778,15 @@ export function App({ deck }: { deck: Deck }) {
     if (busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
+    setTaskError("");
     try {
       await action();
     } catch (error) {
-      if (error instanceof Error && error.message === "ARCHIVE_FULL")
-        setStatus("지난 회의가 20개로 가득 찼어요. 지난 회의에서 불필요한 보관을 제거한 뒤 다시 시도해 주세요.");
-      else setStatus("처리하지 못했어요. 현재 회의는 그대로 두었어요. 저장 공간과 파일을 확인해 주세요.");
+      setTaskError(
+        error instanceof Error && error.message === "ARCHIVE_FULL"
+          ? "지난 회의가 20개로 가득 찼어요. 지난 회의에서 불필요한 보관을 제거한 뒤 다시 시도해 주세요."
+          : "처리하지 못했어요. 현재 회의는 그대로 두었어요. 저장 공간과 파일을 확인해 주세요.",
+      );
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -1067,21 +1085,21 @@ export function App({ deck }: { deck: Deck }) {
         </div>
       ) : (
         <>
-          <div className={s.toolbar}>
-            <BodyStrong>{meeting.title}</BodyStrong>
+          <div className={s.meetingInfo}>
+            <BodyStrong className={s.meetingTitle}>{meeting.title}</BodyStrong>
             <Caption secondary>
               {meeting.place}
               {meeting.place ? " · " : ""}참석 {meeting.speakers.length}명
               {meeting.absentees?.length ? ` · 결석 ${meeting.absentees.length}명` : ""}
             </Caption>
-            <Caption secondary className={s.saved}>
-              {status}
-            </Caption>
             <Elapsed startedAt={meeting.startedAt} />
+          </div>
+          <div className={s.toolbar}>
             <Button size="small" onClick={() => setDialog("export")}>
               내보내기 (F8)
             </Button>
             <Button
+              size="small"
               onClick={() => {
                 setNames(activeSpeakers(latest.current).join("\n"));
                 setAbsent(latest.current.absentees?.join("\n") ?? "");
@@ -1090,13 +1108,17 @@ export function App({ deck }: { deck: Deck }) {
             >
               참석자 (F9)
             </Button>
-            <Button onClick={() => setDialog("help")}>도움말 (F4)</Button>
-            <Button disabled={busy} onClick={() => setDialog("archive")}>
-              지난 회의
+            <Button size="small" onClick={() => setDialog("help")}>
+              도움말 (F4)
             </Button>
-            <Button disabled={busy} onClick={() => setDialog("new")}>
-              새 회의
-            </Button>
+            <div className={s.management} role="group" aria-label="회의 관리">
+              <Button size="small" appearance="transparent" disabled={busy} onClick={() => setDialog("archive")}>
+                지난 회의
+              </Button>
+              <Button size="small" appearance="transparent" disabled={busy} onClick={() => setDialog("new")}>
+                새 회의
+              </Button>
+            </div>
           </div>
           <div className={s.workspace}>
             <div className={s.editor}>
@@ -1212,19 +1234,36 @@ export function App({ deck }: { deck: Deck }) {
                   <Button disabled={busy} appearance="primary" onClick={commit}>
                     {editing ? "수정 저장" : "기록"}
                   </Button>
-                  <Button disabled={busy || !undo.current.length} onClick={() => restoreUndo()}>
-                    기록 되돌리기
-                  </Button>
-                  <Button disabled={busy || !redo.current.length} onClick={() => restoreUndo(true)}>
-                    다시 적용
-                  </Button>
-                  <Button onClick={saveNow} disabled={busy}>
-                    지금 저장
-                  </Button>
                   <Caption secondary className={s.helpText}>
                     전체 {meeting.entries.length}건 · Shift+Enter 줄바꿈 · Alt+↑↓ 화자 이동
                   </Caption>
                 </div>
+                <div className={s.row} role="group" aria-label="기록 되돌리기와 저장">
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    disabled={busy || !undo.current.length}
+                    onClick={() => restoreUndo()}
+                  >
+                    기록 되돌리기
+                  </Button>
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    disabled={busy || !redo.current.length}
+                    onClick={() => restoreUndo(true)}
+                  >
+                    다시 적용
+                  </Button>
+                  <span className={s.saveState} role="status">
+                    <Caption secondary>{saveFailed.current ? "자동 저장 실패" : status}</Caption>
+                  </span>
+                  <Button size="small" appearance="transparent" onClick={saveNow} disabled={busy}>
+                    지금 저장
+                  </Button>
+                </div>
+                {saveFailed.current && <InfoBar severity="error" message={status} />}
+                {taskError && <InfoBar severity="error" message={taskError} />}
               </div>
             </div>
             <div className={s.speakers}>
@@ -1277,7 +1316,8 @@ export function App({ deck }: { deck: Deck }) {
       )}
       {!running && <Caption secondary>{status}</Caption>}
       {busy && <ProgressRing label="파일과 회의록을 처리하는 중" />}
-      {saveFailed.current && <InfoBar severity="error" message={status} />}
+      {!running && saveFailed.current && <InfoBar severity="error" message={status} />}
+      {!running && taskError && <InfoBar severity="error" message={taskError} />}
       <ContentDialog
         open={dialog === "kinds"}
         title="종류 · 비공개 선택"

@@ -20,6 +20,7 @@ const useStyles = makeStyles({
   actions: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: deckTokens.inlineGap },
   row: {
     display: "flex",
+    flexWrap: "wrap",
     alignItems: "center",
     justifyContent: "space-between",
     gap: deckTokens.inlineGap,
@@ -47,7 +48,8 @@ export function App({ deck }: { deck: Deck }) {
     [message, setMessage] = useState("");
   const locked = useRef(false),
     stopped = useRef(false),
-    mounted = useRef(true);
+    mounted = useRef(true),
+    selectedFiles = useRef<FileHandleInfo[]>([]);
   useEffect(() => {
     mounted.current = true;
     void deck.office
@@ -63,11 +65,17 @@ export function App({ deck }: { deck: Deck }) {
   function addFiles(incoming: FileHandleInfo[]) {
     if (locked.current) return;
     const valid = incoming.filter((file) => providerFor(file) !== null);
-    setFiles((previous) => [
-      ...previous,
-      ...valid.filter((file) => !previous.some((existing) => existing.handle === file.handle)),
-    ]);
-    setRows([]);
+    const known = new Set(selectedFiles.current.map((file) => file.handle));
+    const additions = valid.filter((file) => {
+      if (known.has(file.handle)) return false;
+      known.add(file.handle);
+      return true;
+    });
+    if (additions.length) {
+      selectedFiles.current = [...selectedFiles.current, ...additions];
+      setFiles(selectedFiles.current);
+      setRows([]);
+    }
     if (valid.length !== incoming.length) setMessage("한글·Excel·PowerPoint·Word 문서만 선택해 주세요.");
   }
   useEffect(() => deck.on("fs.dropped", ({ files: incoming }) => addFiles(incoming)), [deck]);
@@ -194,14 +202,22 @@ export function App({ deck }: { deck: Deck }) {
       description="설치된 한글·Office로 실제 문서 형식을 바꿔요. 원본은 유지하고 새 폴더에 저장해요."
     >
       <ToolLayout.Section step="input" title="변환할 문서">
-        <DropZone
-          {...(busy ? {} : { onPick: () => void pick() })}
-          description="HWP·XLS·PPT·DOC 문서를 선택하거나 덱 창에 놓아 주세요."
-        />
+        {files.length === 0 && (
+          <DropZone
+            {...(busy ? {} : { onPick: () => void pick() })}
+            description="HWP·XLS·PPT·DOC 문서를 선택하거나 덱 창에 놓아 주세요."
+          />
+        )}
         <div className={s.actions}>
+          {files.length > 0 && (
+            <Button disabled={busy} onClick={() => void pick()}>
+              문서 추가
+            </Button>
+          )}
           <Button
             disabled={busy || files.length === 0}
             onClick={() => {
+              selectedFiles.current = [];
               setFiles([]);
               setRows([]);
               setFolder(null);
@@ -211,6 +227,7 @@ export function App({ deck }: { deck: Deck }) {
             목록 비우기
           </Button>
           <Caption>{files.length}개 문서</Caption>
+          {files.length > 0 && <Caption>덱 창에 문서를 놓아 더 추가할 수 있어요.</Caption>}
         </div>
       </ToolLayout.Section>
       <ToolLayout.Section step="options" title="변환 옵션">
@@ -280,15 +297,10 @@ export function App({ deck }: { deck: Deck }) {
           <Button appearance="primary" disabled={busy || plans.length === 0} onClick={() => void run()}>
             출력 폴더 선택하고 변환
           </Button>
-          <Button disabled={!busy} onClick={() => void stop()}>
-            중지
-          </Button>
-          <Button
-            disabled={busy || !rows.some((row) => row.state === "failed" || row.state === "cancelled")}
-            onClick={() => void run(true)}
-          >
-            실패한 문서 다시 변환
-          </Button>
+          {busy && <Button onClick={() => void stop()}>중지</Button>}
+          {!busy && rows.some((row) => row.state === "failed" || row.state === "cancelled") && (
+            <Button onClick={() => void run(true)}>실패한 문서 다시 변환</Button>
+          )}
         </div>
         {busy && (
           <ProgressBar
@@ -307,24 +319,24 @@ export function App({ deck }: { deck: Deck }) {
         )}
         <Caption>다른 Office의 문서 접근 승인 창은 직접 확인해 주세요. 한 문서당 최대 2분 기다려요.</Caption>
       </ToolLayout.Section>
-      <ToolLayout.Section step="result" title="변환 결과">
-        {message && <InfoBar severity="informational" message={message} />}
-        {folder && (
-          <Button
-            disabled={busy}
-            onClick={() =>
-              void deck.fs
-                .reveal(folder.handle)
-                .catch(() => setMessage("결과 폴더를 열지 못했어요. 선택한 출력 폴더에서 확인해 주세요."))
-            }
-          >
-            결과 폴더 열기
-          </Button>
-        )}
-        <Caption>
-          확장자만 바꾸지 않고 새 형식으로 저장·재열기 확인해요. 기존 파일과 앞서 변환한 파일은 덮어쓰지 않아요.
-        </Caption>
-      </ToolLayout.Section>
+      {(message || folder) && (
+        <ToolLayout.Section step="result" title="변환 결과">
+          {message && <InfoBar severity="informational" message={message} />}
+          {folder && (
+            <Button
+              disabled={busy}
+              onClick={() =>
+                void deck.fs
+                  .reveal(folder.handle)
+                  .catch(() => setMessage("결과 폴더를 열지 못했어요. 선택한 출력 폴더에서 확인해 주세요."))
+              }
+            >
+              결과 폴더 열기
+            </Button>
+          )}
+          {folder && <Caption>기존 파일과 앞서 변환한 파일은 덮어쓰지 않아요.</Caption>}
+        </ToolLayout.Section>
+      )}
     </ToolLayout>
   );
 }

@@ -1,6 +1,6 @@
 {
   "name": "teacherdeck",
-  "version": "0.5.1",
+  "version": "0.6.2",
   "private": true,
   "description": "교사용 Windows 도구 덱",
   "license": "GPL-3.0-only",
@@ -30,7 +30,8 @@
     "new:module": "node tools/scripts/new-module.ts",
     "pack:module": "node tools/scripts/pack-module.ts",
     "bundle:modules": "node tools/scripts/bundle-modules.ts",
-    "tauri": "pnpm --filter @deck/desktop tauri"
+    "clean:builds": "node tools/scripts/clean-build-artifacts.ts",
+    "tauri": "node tools/scripts/tauri-with-cleanup.ts"
   },
   "devDependencies": {
     "@deck/sdk": "workspace:*",

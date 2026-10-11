@@ -2,5 +2,7 @@
 <!-- Additional terms: see LICENSE-ADDITIONAL-TERMS -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
   <rect x="4" y="4" width="40" height="40" rx="10" fill="#0f6cbd"/>
-  <rect x="14" y="14" width="20" height="20" rx="4" fill="#ffffff"/>
+  <g fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M19 11h-8v8m18-8h8v8m0 10v8h-8m-10 0h-8v-8"/><circle cx="24" cy="24" r="7"/><circle cx="24" cy="24" r="2" fill="#ffffff" stroke="none"/>
+  </g>
 </svg>

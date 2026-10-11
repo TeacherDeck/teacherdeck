@@ -21,6 +21,8 @@
 
 자세한 내용: [개인정보 원칙](docs/spec/privacy.md)
 
+공통 화면과 아이콘의 기준은 [기본 앱·모듈 디자인 계획](docs/proposals/app-module-design-2026-10-11.md)에 있어요. 도구마다 핵심 작업 흐름을 유지하면서 홈의 빠른 실행, 기능별 아이콘, 입력·실행·결과의 위치를 일관되게 다듬고 있어요.
+
 ## 개발 환경
 
 Windows 10/11에서 개발해요.
@@ -57,6 +59,8 @@ pnpm tauri dev       # 개발 실행 (기본 모듈을 번들한 뒤 실행해�
 pnpm tauri build     # NSIS 설치본: target/release/bundle/nsis/
 ```
 
+새 설치본 빌드가 성공하면 이전 설치 파일과 오래된 모듈 패키지를 자동 정리해요. 실패한 빌드는 기존 설치본을 보존해요. 정리 범위와 수동 확인 방법은 [빌드 산출물 정리](docs/development-build-cleanup.md)에 있어요.
+
 Windows 전체 검증·개발 실행·빌드는 쿨 예약실의 승인된 Python 실행 환경을 앱 내부에 준비해요. 처음에는 공식 배포 파일을 내려받아 해시를 검사하고, 이후에는 캐시와 준비된 파일을 확인해 재사용해요. `pnpm verify`도 Rust 빌드 전에 이 단계를 실행하므로 새 체크아웃에 앱 실행 이력이 없어도 검증할 수 있어요. 전역 Python 설치는 필요 없어요. 완성된 설치본은 실행 환경을 함께 포함해요. 원작 코어·모듈 갱신 절차는 [쿨 예약실 안내](modules/coolreserve/README.md)에 있어요.
 
 한글 변환용 제한 보안 모듈도 저장소 소스로 빌드해 동봉해요. 이때 고정 Rust 도구체인의 `i686-pc-windows-msvc` 대상이 필요하며 준비 스크립트가 설치 여부를 확인해요. 한글에 작업용 보안 모듈을 등록하지 못하면 변환을 중단하고 직접 변환을 안내해요. 0.5.1에서 이 PC의 한글 2024로 실제 HWP→HWPX 저장·재열기·원본 보존을 확인했어요. 확인한 문서 범위와 남은 제한은 [변환 검수](docs/reviews/hancom-conversion-2026-10-11.md)에 있어요.
@@ -69,12 +73,14 @@ Windows 전체 검증·개발 실행·빌드는 쿨 예약실의 승인된 Pytho
 
 개발 현황과 실제 검증 범위는 [개발 현황](docs/DEVELOPMENT_STATUS.md)에 정리했어요.
 
+현재 화면의 동선·정보 배치 개선 제안은 [디자인 개선 계획](docs/proposals/design-improvements-2026-10-11.md)에 있어요.
+
 도구별 사용법과 지원 범위예요.
 
 - 파일·문서: [파일명 작업기](modules/file-rename/README.md), [문서 변환](modules/office-convert/README.md), [PDF 압축](modules/pdf-compress/README.md), [PDF 개인정보 지우기](modules/pdf-mask/README.md)
 - 이미지: [이미지 압축](modules/image-compress/README.md), [명렬표 사진 추출](modules/photo-extract/README.md), [이미지 자르기](modules/image-crop/README.md), [퀵캡처](modules/quick-capture/README.md)
 - 수업·업무: [회의록](modules/meeting-note/README.md), [지도일 배정](modules/duty-planner/README.md), [발표자 뽑기](modules/presenter-picker/README.md), [모둠 편성](modules/group-planner/README.md), [자리 배치](modules/seat-planner/README.md), [역할·당번 배정](modules/role-planner/README.md)
-- 작은 도구: [빠른 메모](modules/quick-note/README.md), [D-day](modules/dday/README.md)
+- 작은 도구: [빠른 메모](modules/quick-note/README.md), [D-day](modules/dday/README.md), [QR 코드 만들기](modules/qr-maker/README.md)
 - 보류: [영상 다운로드](modules/youtube-download/README.md)는 기본 모듈에서 빠져 덱에 나타나지 않아요([#15](https://github.com/TeacherDeck/teacherdeck/issues/15)).
 - Windows 연동: [네트워크 루틴](modules/network-routine/README.md), [쿨 예약실](modules/coolreserve/README.md)
 

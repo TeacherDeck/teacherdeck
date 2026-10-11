@@ -4,7 +4,7 @@
   "id": "quick-note",
   "name": "빠른 메모",
   "description": "빠르게 메모를 적고 검색·고정·보관하며 이 PC에 저장해요.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "category": "utility",
   "icon": "icon.svg",
   "entry": "index.html",

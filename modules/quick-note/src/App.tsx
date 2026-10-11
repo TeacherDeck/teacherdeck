@@ -9,11 +9,10 @@ import {
   CheckBox,
   ComboBox,
   ContentDialog,
-  EmptyState,
   InfoBar,
+  ListView,
   PageHeader,
   SettingsExpander,
-  Subtitle,
   TextBox,
   deckTokens,
   makeStyles,
@@ -31,15 +30,32 @@ import {
 } from "./logic.ts";
 import { exportBackup, pickBackup, replaceDocument } from "./files.ts";
 const useStyles = makeStyles({
-  page: { padding: deckTokens.pagePadding, display: "flex", flexDirection: "column", gap: deckTokens.sectionGap },
+  page: {
+    padding: deckTokens.pagePadding,
+    display: "flex",
+    flexDirection: "column",
+    gap: deckTokens.sectionGap,
+    containerType: "inline-size",
+  },
   row: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: deckTokens.inlineGap },
-  cards: {
+  fields: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,240px),1fr))",
+    gridTemplateColumns: "minmax(0, 1fr) minmax(0, 3fr)",
     gap: deckTokens.itemGap,
+    "@media (max-width: 720px)": { gridTemplateColumns: "minmax(0, 1fr)" },
+    "@container (max-width: 720px)": { gridTemplateColumns: "minmax(0, 1fr)" },
+  },
+  draftOptions: { flex: "1", minWidth: "min(100%, 16rem)" },
+  workspace: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.4fr)",
+    gap: deckTokens.itemGap,
+    alignItems: "start",
+    "@media (max-width: 720px)": { gridTemplateColumns: "minmax(0, 1fr)" },
+    "@container (max-width: 720px)": { gridTemplateColumns: "minmax(0, 1fr)" },
   },
   card: {
-    padding: deckTokens.pagePadding,
+    padding: deckTokens.cardPadding,
     borderRadius: deckTokens.cardRadius,
     backgroundColor: deckTokens.cardFill,
     display: "flex",
@@ -48,7 +64,20 @@ const useStyles = makeStyles({
     minWidth: 0,
     overflowWrap: "anywhere",
   },
-  body: { whiteSpace: "pre-wrap", overflowWrap: "anywhere" },
+  list: {
+    minWidth: 0,
+    maxHeight: "48vh",
+    overflowY: "auto",
+    "& [role='option'], & [role='listitem']": { paddingBlock: tokens.spacingVerticalS },
+  },
+  summary: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS, minWidth: 0, width: "100%" },
+  excerpt: {
+    display: "-webkit-box",
+    WebkitBoxOrient: "vertical",
+    WebkitLineClamp: 1,
+    overflow: "hidden",
+    overflowWrap: "anywhere",
+  },
   yellow: { backgroundColor: tokens.colorPaletteYellowBackground1 },
   blue: { backgroundColor: tokens.colorPaletteBlueBackground2 },
   green: { backgroundColor: tokens.colorPaletteGreenBackground1 },
@@ -74,13 +103,17 @@ export function App({ deck }: { deck: Deck }) {
     [message, setMessage] = useState("");
   const [query, setQuery] = useState(""),
     [archived, setArchived] = useState(false),
-    [page, setPage] = useState(0);
+    [page, setPage] = useState(0),
+    [selectedId, setSelectedId] = useState("");
   const [preview, setPreview] = useState<Document | null>(null),
     [previewOpen, setPreviewOpen] = useState(false),
     [addToList, setAddToList] = useState(true);
   const raw = useRef<unknown>(null),
     lock = useRef(false),
     active = useRef(true);
+  const input = useRef<HTMLInputElement | HTMLTextAreaElement>(null),
+    list = useRef<HTMLDivElement>(null),
+    pendingFocus = useRef<string | null>(null);
   const [recoveryKeys, setRecoveryKeys] = useState<string[]>([]),
     [recoveryKey, setRecoveryKey] = useState("");
 
@@ -91,6 +124,21 @@ export function App({ deck }: { deck: Deck }) {
       active.current = false;
     };
   }, [deck]);
+  useEffect(() => {
+    if (busy || pendingFocus.current === null) return;
+    const target = pendingFocus.current;
+    pendingFocus.current = null;
+    if (target === "input") input.current?.focus();
+    else {
+      const summary = [...(list.current?.querySelectorAll<HTMLElement>("[data-note-id]") ?? [])].find(
+        (element) => element.dataset["noteId"] === target,
+      );
+      (
+        summary?.closest<HTMLElement>("[role='option'],[role='listitem']") ??
+        list.current?.querySelector<HTMLElement>("[role='option'],[role='listitem']")
+      )?.focus();
+    }
+  }, [busy]);
   async function load() {
     if (lock.current) return;
     lock.current = true;
@@ -147,24 +195,42 @@ export function App({ deck }: { deck: Deck }) {
       setMessage("제목이나 메모 내용을 적어 주세요.");
       return;
     }
-    await commit({
+    const next: Document = {
       ...document,
       items: [
         ...document.items.filter((item) => item.id !== draft.id),
         { ...draft, updatedAt: new Date().toISOString() },
       ],
-    });
-    if (active.current) setDraft(blankItem());
+    };
+    await commit(next);
+    if (active.current) {
+      if (editing) revealItem(next, draft.id);
+      else pendingFocus.current = "input";
+      setDraft(blankItem());
+    }
+  }
+  function revealItem(next: Document, id: string) {
+    const items = visibleItems(next, query, archived),
+      index = items.findIndex((item) => item.id === id);
+    setSelectedId(id);
+    if (index >= 0) setPage(Math.floor(index / 20));
+    pendingFocus.current = index >= 0 ? id : "input";
   }
   function patch(item: Item, changes: Partial<Item>) {
     void task(async () => {
       const updatedAt = new Date().toISOString();
-      await commit({
+      const next: Document = {
         ...document,
         items: document.items.map((entry) => (entry.id === item.id ? { ...entry, ...changes, updatedAt } : entry)),
-      });
+      };
+      await commit(next);
       if (active.current)
         setDraft((previous) => (previous.id === item.id ? { ...previous, ...changes, updatedAt } : previous));
+      const index = shown.findIndex((entry) => entry.id === item.id);
+      const remaining = visibleItems(next, query, archived);
+      const nextId =
+        changes.archived !== undefined ? (remaining[Math.min(index, remaining.length - 1)]?.id ?? "") : item.id;
+      revealItem(next, nextId);
     });
   }
   function editItem(item: Item) {
@@ -175,9 +241,12 @@ export function App({ deck }: { deck: Deck }) {
       return;
     }
     setDraft({ ...item });
+    input.current?.focus();
   }
   const shown = visibleItems(document, query, archived),
     currentPage = Math.min(page, Math.max(0, Math.ceil(shown.length / 20) - 1)),
+    pageItems = shown.slice(currentPage * 20, currentPage * 20 + 20),
+    selected = pageItems.find((item) => item.id === selectedId) ?? pageItems[0],
     editing = document.items.some((item) => item.id === draft.id);
   const disabled = !ready || busy || blocked;
   return (
@@ -203,57 +272,70 @@ export function App({ deck }: { deck: Deck }) {
       )}
       <section className={s.card} aria-label="메모 입력">
         <BodyStrong>{editing ? "메모 수정" : "새 메모"}</BodyStrong>
-        <TextBox
-          header="제목 (선택)"
-          value={draft.title}
-          disabled={disabled}
-          onChange={(title) => {
-            if (title.length <= 120) setDraft({ ...draft, title });
-          }}
-        />
-        <TextBox
-          header="메모 내용"
-          multiline
-          rows={3}
-          value={draft.body}
-          disabled={disabled}
-          onChange={(body) => {
-            if (body.length <= 4000) setDraft({ ...draft, body });
-          }}
-          onKeyDown={(event) => {
-            if (event.ctrlKey && event.key === "Enter" && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              void task(saveDraft);
-            }
-          }}
-        />
-        <div className={s.row}>
-          <CheckBox
-            content="상단 고정"
-            checked={draft.pinned}
+        <div className={s.fields}>
+          <TextBox
+            header="제목 (선택)"
+            value={draft.title}
             disabled={disabled}
-            onChange={(pinned) => setDraft({ ...draft, pinned })}
+            onChange={(title) => {
+              if (title.length <= 120) setDraft({ ...draft, title });
+            }}
           />
-          <ComboBox
-            header="메모 색"
-            value={draft.tone}
+          <TextBox
+            header="메모 내용"
+            multiline
+            rows={2}
+            inputRef={input}
+            value={draft.body}
             disabled={disabled}
-            options={[
-              { value: "neutral", label: "기본" },
-              { value: "yellow", label: "노랑" },
-              { value: "blue", label: "파랑" },
-              { value: "green", label: "초록" },
-            ]}
-            onChange={(tone) => setDraft({ ...draft, tone })}
+            onChange={(body) => {
+              if (body.length <= 4000) setDraft({ ...draft, body });
+            }}
+            onKeyDown={(event) => {
+              if (event.ctrlKey && event.key === "Enter" && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                void task(saveDraft);
+              }
+            }}
           />
         </div>
         <div className={s.row}>
           <Button appearance="primary" disabled={disabled} onClick={() => void task(saveDraft)}>
             {editing ? "수정 저장" : "메모 저장"}
           </Button>
-          <Button disabled={disabled} onClick={() => setDraft(blankItem())}>
+          <Button
+            disabled={disabled}
+            onClick={() => {
+              setDraft(blankItem());
+              input.current?.focus();
+            }}
+          >
             입력 취소
           </Button>
+          <div className={s.draftOptions}>
+            <SettingsExpander header="색 · 고정 설정">
+              <div className={s.row}>
+                <CheckBox
+                  content="상단 고정"
+                  checked={draft.pinned}
+                  disabled={disabled}
+                  onChange={(pinned) => setDraft({ ...draft, pinned })}
+                />
+                <ComboBox
+                  header="메모 색"
+                  value={draft.tone}
+                  disabled={disabled}
+                  options={[
+                    { value: "neutral", label: "기본" },
+                    { value: "yellow", label: "노랑" },
+                    { value: "blue", label: "파랑" },
+                    { value: "green", label: "초록" },
+                  ]}
+                  onChange={(tone) => setDraft({ ...draft, tone })}
+                />
+              </div>
+            </SettingsExpander>
+          </div>
         </div>
         <Caption secondary>
           입력 중인 내용은 저장을 누르기 전까지 초안이에요. Ctrl+Enter로도 저장해요. 메모는 보관해도 사라지지 않아요.
@@ -277,43 +359,76 @@ export function App({ deck }: { deck: Deck }) {
           }}
         />
       </div>
-      <div className={s.cards}>
-        {shown.slice(currentPage * 20, currentPage * 20 + 20).map((item) => (
-          <section key={item.id} className={[s.card, item.tone === "neutral" ? "" : s[item.tone]].join(" ")}>
-            <Subtitle>{item.title || "제목 없는 메모"}</Subtitle>
-            {item.pinned && <Caption>상단 고정</Caption>}
-            <Body className={s.body}>{item.body}</Body>
+      <div className={s.workspace}>
+        <div ref={list} className={s.list}>
+          <ListView
+            header="저장한 메모"
+            items={pageItems}
+            getKey={(item) => item.id}
+            selectionMode="single"
+            selectedKeys={selected ? [selected.id] : []}
+            onSelectionChange={(keys) => setSelectedId(keys[0] ?? "")}
+            emptyText={
+              archived
+                ? "보관한 메모가 없어요. 보관함 보기를 끄거나 검색어를 바꿔 주세요."
+                : "새 내용을 저장하거나 검색어를 바꿔 주세요."
+            }
+            renderItem={(item) => (
+              <div
+                data-note-id={item.id}
+                className={[s.summary, item.tone === "neutral" ? "" : s[item.tone]].join(" ")}
+              >
+                <div className={s.row}>
+                  <BodyStrong>{item.title || "제목 없는 메모"}</BodyStrong>
+                  {item.pinned && <Caption>상단 고정</Caption>}
+                </div>
+                <Caption secondary className={s.excerpt}>
+                  {item.body ? `${item.body.slice(0, 140)}${item.body.length > 140 ? "…" : ""}` : "내용 없는 메모"}
+                </Caption>
+              </div>
+            )}
+          />
+        </div>
+        {selected && (
+          <section
+            className={[s.card, selected.tone === "neutral" ? "" : s[selected.tone]].join(" ")}
+            aria-label="선택한 메모"
+          >
+            <BodyStrong>{selected.title || "제목 없는 메모"}</BodyStrong>
+            {selected.pinned && <Caption>상단 고정</Caption>}
+            <TextBox
+              header="선택한 메모 전문"
+              multiline
+              rows={6}
+              readOnly
+              value={selected.body}
+              onChange={() => undefined}
+            />
             <div className={s.row}>
-              <Button disabled={disabled} onClick={() => editItem(item)}>
+              <Button disabled={disabled} onClick={() => editItem(selected)}>
                 수정
               </Button>
               <Button
                 disabled={disabled}
                 onClick={() =>
                   void task(async () => {
-                    if (await exportBackup(deck, { ...document, items: [item] }))
+                    if (await exportBackup(deck, { ...document, items: [selected] }))
                       setMessage("선택한 항목을 새 폴더에 저장했어요.");
                   })
                 }
               >
                 항목 백업 저장
               </Button>
-              <Button disabled={disabled} onClick={() => patch(item, { pinned: !item.pinned })}>
-                {item.pinned ? "고정 해제" : "고정"}
+              <Button disabled={disabled} onClick={() => patch(selected, { pinned: !selected.pinned })}>
+                {selected.pinned ? "고정 해제" : "고정"}
               </Button>
-              <Button disabled={disabled} onClick={() => patch(item, { archived: !item.archived })}>
-                {item.archived ? "보관 해제" : "보관"}
+              <Button disabled={disabled} onClick={() => patch(selected, { archived: !selected.archived })}>
+                {selected.archived ? "보관 해제" : "보관"}
               </Button>
             </div>
           </section>
-        ))}
+        )}
       </div>
-      {!shown.length && (
-        <EmptyState
-          title={archived ? "보관한 메모가 없어요" : "찾은 메모가 없어요"}
-          description="새 내용을 저장하거나 검색어를 바꿔 주세요."
-        />
-      )}
       {shown.length > 20 && (
         <div className={s.row}>
           <Button disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>

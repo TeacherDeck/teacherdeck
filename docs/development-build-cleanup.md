@@ -1,0 +1,35 @@
+# 개발 빌드 산출물 정리
+
+`pnpm tauri build`는 Tauri 빌드가 성공하고 이번 실행에서 새 설치 파일이 생성된 뒤에 이전 산출물을 정리한다. 다른 Tauri 명령은 기존 CLI에 그대로 전달한다. 빌드 실패, 디버그 빌드, 설치 파일이 없는 빌드는 이전 파일을 보존한다.
+
+## 정리 범위
+
+- `target/release/bundle/nsis/` 및 `target/<빌드 폴더>/release/bundle/nsis/`의 `TeacherDeck_<버전>_<x64|x86|arm64>-setup.exe`. Windows 대상 triple이 포함된 표준 Cargo 출력 경로도 지원한다.
+- 해당 이전 설치 파일과 이름이 정확히 일치하는 `.exe.sig` 서명 파일.
+- `target/deckmod/`의 `<모듈 id>-<버전>.deckmod`. 모듈의 현재 매니페스트 버전 패키지가 실제로 존재하고 비어 있지 않을 때 그보다 낮은 버전만 정리한다.
+
+현재 앱 버전의 설치 파일은 모든 복사본을 보존한다. 아키텍처별 비어 있지 않은 가장 높은 설치 파일 버전과 현재 앱보다 높은 버전도 보존한다. 숫자 세 부분으로 이루어진 정식 버전만 비교하며, 사전 배포 버전이나 알려지지 않은 파일명은 정리하지 않는다.
+
+실행 파일과 native 리소스, release/debug의 모듈 리소스, Rust 캐시, pnpm 실행 환경, 빌드 폴더 전체, 로그 및 검증 자료는 자동 정리 대상에 포함하지 않는다. 소스, 사용자 문서, `.git`도 보존한다. 디렉터리를 재귀 삭제하지 않고, 허용 목록에 들어간 파일만 지운다.
+
+## 수동 미리보기와 적용
+
+수동 실행은 기본적으로 삭제 목록과 바이트 수만 보여 준다. 빌드가 성공한 것을 확인한 뒤 현재 설치 파일을 작업 폴더 내부의 상대 경로로 지정한다.
+
+```powershell
+node tools/scripts/clean-build-artifacts.ts --successful-build --current-artifact target/review-040/release/bundle/nsis/TeacherDeck_0.6.0_x64-setup.exe
+```
+
+목록을 실제 적용하려면 동일한 명령 끝에 `--apply`를 추가한다. 현재 설치 파일이 없거나 비어 있거나 루트 `package.json`의 앱 버전과 다르면 정리를 중단한다. 성공한 현재 빌드가 없는 상태에서는 적용하지 않는다.
+
+## 자동 실행의 안전 조건
+
+Tauri CLI 종료 코드가 0이며 설치 파일 수정 시각이 이번 빌드 시작 이후여야 한다. 기본 Cargo 출력 경로 및 작업 폴더의 `target/` 아래 한 단계의 절대 `CARGO_TARGET_DIR`을 지원한다. `--target`의 알려진 Windows 대상도 지원한다.
+
+상대 `CARGO_TARGET_DIR`, 작업 폴더 밖 출력, 사용자 지정 profile/config/runner, 추가 Cargo 인자, NSIS가 아닌 번들은 출력 경로를 추측하지 않고 정리를 건너뛴다. 빌드 자체는 전달된 인자로 계속 실행한다.
+
+작업 폴더와 각 파일 경로를 실제 경로로 확인하고, 중간 디렉터리의 junction·심볼릭 링크를 거부한다. 삭제 전 전체 목록을 다시 확인하고 각 파일 삭제 직전에도 현재 설치 파일과 경계를 재확인한다. 빌드·정리 도중 출력 경로를 다른 프로세스로 교체하거나 함께 삭제하지 않는다.
+
+정리 오류가 발생하면 현재 설치 파일을 보존하고 종료 코드 2로 빌드 성공 후 정리 실패를 구별한다. Tauri 자체의 실패 종료 코드는 그대로 전달한다.
+
+구현: [정리 스크립트](../tools/scripts/clean-build-artifacts.ts), [Tauri 래퍼](../tools/scripts/tauri-with-cleanup.ts). 합성 임시 폴더에서 경로 탈출, Windows junction, 실패한 빌드, 최신 버전 보존 및 무관한 파일 보존을 테스트한다.

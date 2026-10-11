@@ -74,7 +74,22 @@ foreach ($name in (& git -C $sourceRoot ls-tree -r --name-only $revision -- 'tea
     }
     New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($destination)) -Force | Out-Null
     $bytes = Read-CommittedBytes $name
-    [IO.File]::WriteAllBytes($destination, $bytes)
+    # A diff viewer may keep a read-only mapping open. Never truncate that file:
+    # retain identical bytes, or replace it with a complete sibling file.
+    $unchanged = (Test-Path -LiteralPath $destination) -and ((Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant() -eq (Get-BytesHash $bytes))
+    if (-not $unchanged) {
+        $pendingDestination = $destination + '.' + [Guid]::NewGuid().ToString('N') + '.pending'
+        try {
+            [IO.File]::WriteAllBytes($pendingDestination, $bytes)
+            if (Test-Path -LiteralPath $destination) {
+                [IO.File]::Replace($pendingDestination, $destination, [System.Management.Automation.Language.NullString]::Value)
+            } else {
+                [IO.File]::Move($pendingDestination, $destination)
+            }
+        } finally {
+            if (Test-Path -LiteralPath $pendingDestination) { Remove-Item -LiteralPath $pendingDestination }
+        }
+    }
     $moduleFiles += @{path=$relative;size=$bytes.Length;sha256=(Get-BytesHash $bytes)}
 }
 $lock = [ordered]@{

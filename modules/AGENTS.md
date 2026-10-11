@@ -56,6 +56,8 @@
 
 ## 완료 체크리스트
 
+모듈 아이콘과 공통 작업 화면의 기준은 [디자인 시스템](../docs/spec/design-system.md)과 [ADR-0029](../docs/adr/0029-compact-tool-workspaces.md)를 따른다(UI-003·005·008).
+
 - [ ] `pnpm new:module`로 생성했다
 - [ ] `module.json`이 스키마를 통과하고 `authors`가 정확하다
 - [ ] 호출하는 모든 캡이 `requires`/`optional`에 있다

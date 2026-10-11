@@ -81,6 +81,7 @@ export function CaptureOverlay({ controls }: { controls: OverlayControls }) {
   const [flash, setFlash] = useState(false);
   const previousSequence = useRef<number | undefined>(undefined);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
+  const capturePending = useRef(false);
   const mode = useColorMode("system");
   useEffect(() => {
     const elements = [document.documentElement, document.body, document.getElementById("root")].filter(
@@ -132,7 +133,16 @@ export function CaptureOverlay({ controls }: { controls: OverlayControls }) {
     return () => clearTimeout(timer);
   }, [state?.session?.sequence]);
   const act = (action: OverlayUiAction) => {
-    void controls.action(action).catch(() => setError("작업하지 못했어요. 설정에서 폴더와 단축키를 확인해 주세요."));
+    if (action === "capture") {
+      if (!state?.session || state.session.busy || capturePending.current) return;
+      capturePending.current = true;
+    }
+    void controls
+      .action(action)
+      .catch(() => setError("작업하지 못했어요. 설정에서 폴더와 단축키를 확인해 주세요."))
+      .finally(() => {
+        if (action === "capture") capturePending.current = false;
+      });
   };
   const edges: { direction: ResizeDirection; label: string; className: string }[] = [
     { direction: "North", label: "위쪽 크기 조절", className: s.north },
@@ -217,6 +227,7 @@ export function CaptureOverlay({ controls }: { controls: OverlayControls }) {
           <div
             role="button"
             aria-label="캡처 영역. 끌어서 이동, 더블클릭 또는 Enter로 캡처"
+            aria-disabled={!state.session || state.session.busy}
             tabIndex={0}
             className={mergeClasses(s.region, flash && s.flash)}
             style={

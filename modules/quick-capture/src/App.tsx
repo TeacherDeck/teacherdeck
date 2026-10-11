@@ -10,9 +10,7 @@ import {
   InfoBar,
   NumberBox,
   PageHeader,
-  BodyStrong,
   ColorPicker,
-  tokens,
   SettingsExpander,
   TextBox,
   ToggleSwitch,
@@ -40,22 +38,8 @@ const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: deckTokens.sectionGap, padding: deckTokens.pagePadding },
   row: { display: "flex", flexWrap: "wrap", alignItems: "end", gap: deckTokens.inlineGap },
   stack: { display: "flex", flexDirection: "column", gap: deckTokens.itemGap },
-  cards: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2,minmax(0,1fr))",
-    gap: deckTokens.inlineGap,
-    "@media (max-width: 680px)": { gridTemplateColumns: "minmax(0,1fr)" },
-  },
-  card: {
-    display: "flex",
-    flexDirection: "column",
-    gap: deckTokens.itemGap,
-    padding: tokens.spacingVerticalM,
-    border: `${tokens.strokeWidthThin} solid ${deckTokens.cardStroke}`,
-    borderRadius: deckTokens.cardRadius,
-    backgroundColor: deckTokens.cardFill,
-    minWidth: 0,
-  },
+  folder: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: deckTokens.inlineGap, minWidth: 0 },
+  folderLabel: { overflowWrap: "anywhere", minWidth: 0, flex: "1 1 auto" },
   numbers: { display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: deckTokens.inlineGap },
 });
 const KEYS = CAPTURE_KEYS;
@@ -75,6 +59,9 @@ export function App({ deck }: { deck: Deck }) {
   const currentOverlay = useRef(overlay);
   currentOverlay.current = overlay;
   const [message, setMessage] = useState("");
+  const [problem, setProblem] = useState("");
+  const [settingsProblem, setSettingsProblem] = useState("");
+  const [shortcutProblem, setShortcutProblem] = useState("");
   const [activeShortcut, setActiveShortcut] = useState<ShortcutInfo | null>(null);
   const [recording, setRecording] = useState(false);
   const blocked = useRef("");
@@ -98,6 +85,7 @@ export function App({ deck }: { deck: Deck }) {
     if (next.shortcut) {
       blockedShortcut.current = "";
       blocked.current = "";
+      setShortcutProblem("");
     }
     setPrefs((p) => ({ ...p, ...next }));
   }
@@ -140,12 +128,12 @@ export function App({ deck }: { deck: Deck }) {
             );
             if (alive) setDestination(grant);
           } catch {
-            if (alive) setMessage("저장 폴더를 다시 선택해 주세요.");
+            if (alive) setProblem("저장 폴더를 다시 선택해 주세요.");
           }
         }
         if (alive) await refresh(true);
       } catch {
-        if (alive) setMessage("이전 상태를 불러오지 못했어요. 폴더를 선택하고 다시 시작해 주세요.");
+        if (alive) setProblem("이전 상태를 불러오지 못했어요. 폴더를 선택하고 다시 시작해 주세요.");
       } finally {
         if (alive) setReady(true);
       }
@@ -155,12 +143,13 @@ export function App({ deck }: { deck: Deck }) {
       deck.on("capture.completed", ({ sessionHandle, result }) => {
         if (currentSession.current?.sessionHandle !== sessionHandle) return;
         setSession((p) => (p ? { ...p, sequence: result.sequence, busy: false, lastResult: result } : p));
+        setProblem("");
         setMessage(`${result.sequence}장 저장했어요. ${result.file.name}`);
       }),
       deck.on("capture.failed", ({ sessionHandle }) => {
         if (currentSession.current?.sessionHandle === sessionHandle) {
           setSession((p) => (p ? { ...p, busy: false } : p));
-          setMessage("캡처를 저장하지 못했어요. 저장 폴더와 화면 상태를 확인한 뒤 다시 캡처해 주세요.");
+          setProblem("캡처를 저장하지 못했어요. 저장 폴더와 화면 상태를 확인한 뒤 다시 캡처해 주세요.");
         }
       }),
       deck.on("overlay.changed", (info) => {
@@ -176,7 +165,7 @@ export function App({ deck }: { deck: Deck }) {
       }),
       deck.on("module.visibility", ({ visible: shown }) => {
         visible.current = shown;
-        if (shown) void refresh().catch(() => setMessage("캡처 상태를 불러오지 못했어요. 다시 열어 주세요."));
+        if (shown) void refresh().catch(() => setProblem("캡처 상태를 불러오지 못했어요. 다시 열어 주세요."));
       }),
     ];
     return () => {
@@ -190,7 +179,7 @@ export function App({ deck }: { deck: Deck }) {
     const timer = setTimeout(() => {
       saved.current = saved.current
         .then(() => deck.storage.set(PREFERENCES_KEY, prefs))
-        .catch(() => setMessage("설정을 기억하지 못했어요. 이번 캡처는 계속 사용할 수 있어요."));
+        .catch(() => setProblem("설정을 기억하지 못했어요. 이번 캡처는 계속 사용할 수 있어요."));
     }, 250);
     return () => clearTimeout(timer);
   }, [deck, prefs, ready]);
@@ -234,7 +223,7 @@ export function App({ deck }: { deck: Deck }) {
     try {
       await action();
     } catch {
-      setMessage("작업하지 못했어요. 단축키 중복, 저장 폴더와 화면 상태를 확인해 주세요.");
+      setProblem("작업하지 못했어요. 단축키 중복, 저장 폴더와 화면 상태를 확인해 주세요.");
     } finally {
       locked.current = false;
       setBusy(false);
@@ -253,6 +242,7 @@ export function App({ deck }: { deck: Deck }) {
       });
       setSession(updated);
       setPendingDestination(null);
+      setProblem("");
       setMessage("새 저장 폴더를 연결했어요. 캡처를 계속할 수 있어요.");
     } catch (error) {
       if (typeof error === "object" && error !== null && "code" in error && error.code === "BUSY") {
@@ -264,7 +254,7 @@ export function App({ deck }: { deck: Deck }) {
         setOverlay(null);
         setActiveShortcut(null);
         setPendingDestination(null);
-        setMessage("새 저장 폴더는 선택했지만 캡처에 연결하지 못했어요. 영역 띄우고 시작을 눌러 다시 연결해 주세요.");
+        setProblem("새 저장 폴더는 선택했지만 캡처에 연결하지 못했어요. 영역 띄우고 시작을 눌러 다시 연결해 주세요.");
       }
     }
   }
@@ -274,6 +264,7 @@ export function App({ deck }: { deck: Deck }) {
     // Picking replaces the old authority immediately. Retain the new grant even
     // when an in-flight capture temporarily prevents rebinding the session.
     setDestination(grant);
+    setProblem("");
     setPrefs((p) => {
       const next = { ...p };
       delete next.destinationGrant;
@@ -302,6 +293,11 @@ export function App({ deck }: { deck: Deck }) {
     );
     setOverlay(started.overlay);
     setSession(started.session);
+    setProblem("");
+    setSettingsProblem("");
+    setShortcutProblem("");
+    blocked.current = "";
+    blockedShortcut.current = "";
     changed({ rect: started.overlay.rect });
     setMessage(`${shortcutLabel(prefs.shortcut)} 또는 영역 안을 더블클릭하면 자동 저장해요.`);
   }
@@ -311,6 +307,8 @@ export function App({ deck }: { deck: Deck }) {
     setSession(null);
     setOverlay(null);
     setPendingDestination(null);
+    setActiveShortcut(null);
+    setShortcutProblem("");
     setMessage("캡처를 종료했어요. 저장한 파일은 그대로 있어요.");
   }
   async function apply() {
@@ -323,6 +321,7 @@ export function App({ deck }: { deck: Deck }) {
     setSession(updated.session);
     setOverlay(updated.overlay);
     setActiveShortcut(updated.shortcut);
+    setSettingsProblem("");
   }
   useEffect(() => {
     if (!ready || !session || !overlay || session.busy || busy || pendingDestination || !visible.current) return;
@@ -356,14 +355,14 @@ export function App({ deck }: { deck: Deck }) {
         .catch(async (error: unknown) => {
           if (error instanceof ShortcutApplyError) {
             blockedShortcut.current = JSON.stringify(prefs.shortcut);
-            setMessage("이 단축키는 사용할 수 없어요. 기존 단축키를 유지해요. 다른 조합을 눌러 주세요.");
+            setShortcutProblem("이 단축키는 사용할 수 없어요. 기존 단축키를 유지해요. 다른 조합을 눌러 주세요.");
           } else if (typeof error === "object" && error !== null && "code" in error && error.code === "BUSY") {
             setSession((p) => (p ? { ...p, busy: true } : p));
             setMessage("캡처가 끝나면 설정을 적용해요.");
           } else {
             blocked.current = target;
             await refresh().catch(() => undefined);
-            setMessage("설정을 적용하지 못했어요. 입력과 화면 상태를 확인해 주세요.");
+            setSettingsProblem("설정을 적용하지 못했어요. 입력과 화면 상태를 확인해 주세요.");
           }
         })
         .finally(() => {
@@ -408,6 +407,7 @@ export function App({ deck }: { deck: Deck }) {
                 await apply();
                 const result = await deck.capture.trigger({ sessionHandle: session.sessionHandle });
                 setSession((p) => (p ? { ...p, sequence: result.sequence, lastResult: result } : p));
+                setProblem("");
               } else await start();
             })
           }
@@ -441,33 +441,48 @@ export function App({ deck }: { deck: Deck }) {
             ? `${session.sequence}장 저장 · ${overlay?.rect.width ?? rect.width} × ${overlay?.rect.height ?? rect.height}px`
             : "폴더 선택 → 영역 띄우기 → 단축키로 캡처"}
         </Body>
+        <Caption>현재 단축키: {shortcutLabel(session && activeShortcut ? activeShortcut : prefs.shortcut)}</Caption>
+        <Button disabled={!ready} onClick={() => setRecording(true)}>
+          {recording ? "새 단축키를 눌러 주세요 · Esc 취소" : shortcutLabel(prefs.shortcut)}
+        </Button>
       </div>
+      {problem && <InfoBar severity="error" message={problem} />}
+      {settingsProblem && <InfoBar severity="error" message={settingsProblem} />}
+      {shortcutProblem && <InfoBar severity="warning" message={shortcutProblem} />}
+      {destination && !destination.available && (
+        <InfoBar severity="warning" message="저장 폴더 연결이 끊겼어요. 폴더를 다시 선택해 주세요." />
+      )}
+      {session && !destination && (
+        <InfoBar severity="warning" message="저장 폴더 연결을 확인할 수 없어요. 폴더를 다시 선택해 주세요." />
+      )}
       {message && <InfoBar severity="informational" message={message} onClose={() => setMessage("")} />}
-      <div className={s.cards}>
-        <section className={s.card} aria-label="저장 설정">
-          <BodyStrong>저장 설정</BodyStrong>
-          <div className={s.row}>
-            <Body>{destination?.label ?? "저장 폴더를 선택해 주세요."}</Body>
-            <Button
-              icon={<FolderOpenRegular />}
-              disabled={disabled || session?.busy === true}
-              onClick={() =>
-                void run(async () => {
-                  await pickDestination();
-                })
-              }
-            >
-              {destination ? "폴더 바꾸기" : "폴더 선택"}
-            </Button>
-            {destination && (
-              <Button
-                disabled={disabled || !destination.available}
-                onClick={() => void run(() => deck.fs.revealDestination({ grantHandle: destination.grantHandle }))}
-              >
-                폴더 열기
-              </Button>
-            )}
-          </div>
+      <div className={s.folder} aria-label="저장 폴더">
+        <Caption className={s.folderLabel}>{destination?.label ?? "저장 폴더를 선택해 주세요."}</Caption>
+        <Button
+          icon={<FolderOpenRegular />}
+          disabled={disabled || session?.busy === true}
+          onClick={() =>
+            void run(async () => {
+              await pickDestination();
+            })
+          }
+        >
+          {destination ? "폴더 바꾸기" : "폴더 선택"}
+        </Button>
+        {destination && (
+          <Button
+            disabled={disabled || !destination.available}
+            onClick={() => void run(() => deck.fs.revealDestination({ grantHandle: destination.grantHandle }))}
+          >
+            폴더 열기
+          </Button>
+        )}
+      </div>
+      <Caption secondary>
+        영역 안을 드래그해 이동하고 가장자리로 크기를 조절해요. 더블클릭·Enter·단축키로 계속 저장해요.
+      </Caption>
+      <SettingsExpander header="저장·영역 설정" description="파일 형식 · 파일명 · 폴더 기억 · 테두리 · 항상 위">
+        <div className={s.stack}>
           <CheckBox checked={remember} content="다음 실행에도 폴더 기억" disabled={disabled} onChange={setRemember} />
           <div className={s.numbers}>
             <ComboBox
@@ -519,17 +534,6 @@ export function App({ deck }: { deck: Deck }) {
               }
             />
           )}
-        </section>
-        <section className={s.card} aria-label="캡처 설정">
-          <BodyStrong>캡처 설정</BodyStrong>
-          <Caption>단축키 · 버튼을 누른 뒤 원하는 키 조합을 눌러요.</Caption>
-          <Button disabled={!ready} onClick={() => setRecording(true)}>
-            {recording ? "새 단축키를 눌러 주세요 · Esc 취소" : shortcutLabel(prefs.shortcut)}
-          </Button>
-          {activeShortcut &&
-            !same({ modifiers: activeShortcut.modifiers, key: activeShortcut.key }, prefs.shortcut) && (
-              <Caption>현재 단축키: {shortcutLabel(activeShortcut)}</Caption>
-            )}
           <div className={s.row}>
             <ColorPicker
               header="테두리 색"
@@ -553,8 +557,8 @@ export function App({ deck }: { deck: Deck }) {
             onChange={(alwaysOnTop) => changed({ alwaysOnTop })}
           />
           <Caption secondary>영역 안 드래그로 이동, 가장자리로 크기 조절. 화면을 닫아도 캡처는 유지돼요.</Caption>
-        </section>
-      </div>
+        </div>
+      </SettingsExpander>
       <SettingsExpander header="고급 설정" description="실제 픽셀 좌표 · 키 조합 직접 선택 · 색 코드 · 폴더 연결 해제">
         <div className={s.stack}>
           <div className={s.row}>

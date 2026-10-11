@@ -29,6 +29,7 @@ async function setup(convert: (args: OfficeConvertArgs) => unknown, cancel = () 
       }),
       "office.convert": (args) => convert(args as OfficeConvertArgs),
       "office.cancel": cancel,
+      "fs.pickFiles": () => [],
       "fs.pickFolder": () => ({ handle: "parent", name: "합성 폴더" }),
       "fs.createOutputFolder": () => ({ batchId: "batch", folder: { handle: "output", name: "변환한 문서" } }),
       "fs.closeOutputFolder": () => null,
@@ -52,6 +53,72 @@ const result = (args: OfficeConvertArgs) => ({
   warnings: ["review_layout"],
 });
 describe("installed Office SDK workflow", () => {
+  it("retains completed results and failed-only retry when no new supported document is added", async () => {
+    const { host, deck } = await setup((args) => {
+      if (args.sourceHandle === "failed") throw new DeckCallError("INTERNAL", "합성 오류");
+      return result(args);
+    });
+    const existing = [file("done", "합성 완료.xls"), file("failed", "합성 실패.xls")];
+    host.emit("fs.dropped", { files: existing });
+    await screen.findByText("2개 문서");
+    fireEvent.click(screen.getByRole("button", { name: "출력 폴더 선택하고 변환" }));
+    await screen.findByRole("button", { name: "실패한 문서 다시 변환" });
+    for (const incoming of [[file("unsupported", "합성.txt")], existing, []]) {
+      host.emit("fs.dropped", { files: incoming });
+      await waitFor(() => expect(screen.getByRole("button", { name: "결과 확인" })).toBeTruthy());
+      expect(screen.getByRole("button", { name: "실패한 문서 다시 변환" })).toBeTruthy();
+      expect(screen.getByText("2개 문서")).toBeTruthy();
+    }
+    fireEvent.click(screen.getByRole("button", { name: "문서 추가" }));
+    await waitFor(() => expect(host.requests.some((request) => request.method === "pickFiles")).toBe(true));
+    expect(screen.getByRole("button", { name: "결과 확인" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "실패한 문서 다시 변환" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "실패한 문서 다시 변환" }));
+    await screen.findByRole("button", { name: "실패한 문서 다시 변환" });
+    expect(host.requests.filter((request) => request.method === "convert").map((request) => request.args)).toEqual([
+      expect.objectContaining({ sourceHandle: "done" }),
+      expect.objectContaining({ sourceHandle: "failed" }),
+      expect.objectContaining({ sourceHandle: "failed" }),
+    ]);
+    deck.dispose();
+  });
+  it("counts each handle once within a single drop and accepts it again after clearing the list", async () => {
+    const { host, deck } = await setup(result);
+    const incoming = file("same", "합성.xls");
+    host.emit("fs.dropped", { files: [incoming, incoming] });
+    await screen.findByText("1개 문서");
+    fireEvent.click(screen.getByRole("button", { name: "목록 비우기" }));
+    await screen.findByText("0개 문서");
+    host.emit("fs.dropped", { files: [incoming] });
+    await screen.findByText("1개 문서");
+    deck.dispose();
+  });
+  it("uses a compact add row after selection and shows stop, retry and results only when needed", async () => {
+    let complete: ((value: ReturnType<typeof result>) => void) | undefined;
+    let pendingArgs: OfficeConvertArgs | undefined;
+    const { host, deck } = await setup((args) => {
+      pendingArgs = args;
+      return new Promise((resolve) => {
+        complete = resolve;
+      });
+    });
+    expect(screen.getByText("HWP·XLS·PPT·DOC 문서를 선택하거나 덱 창에 놓아 주세요.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "중지" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "실패한 문서 다시 변환" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "변환 결과" })).toBeNull();
+    host.emit("fs.dropped", { files: [file("plain", "합성 문서.xls")] });
+    await screen.findByRole("button", { name: "문서 추가" });
+    expect(screen.queryByText("HWP·XLS·PPT·DOC 문서를 선택하거나 덱 창에 놓아 주세요.")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "출력 폴더 선택하고 변환" }));
+    await screen.findByRole("button", { name: "중지" });
+    await waitFor(() => expect(complete).toBeTypeOf("function"));
+    if (pendingArgs) complete?.(result(pendingArgs));
+    await screen.findByText("변환을 마쳤어요. 새 문서의 표·그림·수식과 서식을 확인해 주세요.");
+    expect(screen.queryByRole("button", { name: "중지" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "실패한 문서 다시 변환" })).toBeNull();
+    expect(screen.getByRole("button", { name: "결과 폴더 열기" })).toBeTruthy();
+    deck.dispose();
+  });
   it("explains bounded Hancom access and the cleaned job after timeout", async () => {
     let rejectPending: ((reason: DeckCallError) => void) | undefined;
     const { host, deck } = await setup(
