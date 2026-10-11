@@ -4,13 +4,31 @@ Windows 11 Fluent 2를 따르고 PowerToys 설정 앱 구조를 레퍼런스로 
 
 ## 1. 화면 구조
 
-- **상단바**: 창은 테두리 없음(`decorations: false`)이고 셸이 상단바를 직접 그린다(`apps/desktop/src/TitleBar.tsx`). 높이 40px, 왼쪽은 앱 아이콘과 이름이고 오른쪽은 WinUI 캡션 버튼(최소화·최대화/복원·닫기, 46px, Segoe Fluent Icons, 닫기는 빨간 hover)이다. 버튼을 뺀 영역은 Tauri 드래그 영역이라 끌면 창이 움직이고 더블클릭하면 최대화된다. 그림자·둥근 모서리·크기 조절·스냅은 OS가 유지한다. 최대화 버튼 hover 시 스냅 레이아웃 메뉴는 뜨지 않는다(Tauri 한계, Win+Z는 동작).
-- **좌측 내비게이션 레일**: 홈(덱), 카테고리, 설정, 정보.
+- **상단바**: 창은 테두리 없음(`decorations: false`)이고 셸이 상단바를 직접 그린다(`apps/desktop/src/TitleBar.tsx`). 높이 40px, 왼쪽은 뒤로 버튼(돌아갈 화면이 있을 때만, WinUI TitleBar BackButton, Alt+←·마우스 뒤로 버튼과 같은 기록), 앱 아이콘과 이름이고 오른쪽은 WinUI 캡션 버튼(최소화·최대화/복원·닫기, 46px, Segoe Fluent Icons, 닫기는 빨간 hover)이다. 버튼을 뺀 영역은 Tauri 드래그 영역이라(버튼은 드래그 영역 밖에 둔다) 끌면 창이 움직이고 더블클릭하면 최대화된다. 그림자·둥근 모서리·크기 조절·스냅은 OS가 유지한다. 최대화 버튼 hover 시 스냅 레이아웃 메뉴는 뜨지 않는다(Tauri 한계, Win+Z는 동작).
+- **시작 화면**: 셸이 앱 정보와 모듈 목록을 받는 동안 셸 안에서 그린다(별도 창 없음). 덱 카드가 펼쳐지는 짧은 애니메이션을 보여 주고 로딩이 끝나면 바로 홈으로 넘어간다. 고정 대기 시간은 두지 않고 최소 표시 시간만 둔다. 업데이트로 새 도구가 생긴 뒤 첫 실행에는 새 도구 수를 알린다.
+- **좌측 내비게이션 레일**: 홈(덱), 카테고리, 설정, 정보. 모듈 화면에서는 숨겨 도구가 창 너비를 모두 쓰고, 상단바의 뒤로 버튼으로 나간다. 선택 항목 왼쪽에 강조 막대(pill)가 있고, 선택이 바뀌면 막대가 새 항목으로 미끄러져 이동한다(WinUI NavigationView).
 - **우측 콘텐츠**
-  - 홈: 모듈 카드 그리드와 검색. 카드에 해석기 상태 배지를 표시한다([versioning.md](versioning.md#ui-배지)).
+  - 홈(덱): 위에서부터 인사·날짜와 검색(Ctrl+F), 즐겨찾기(별을 누른 순서), 카테고리별 전체 도구 그리드. 즐겨찾기가 없으면 즐겨찾기 묶음은 숨긴다. 검색 중에는 결과 그리드 하나만 보인다. 카드는 아이콘(32px, 아이콘이 없으면 카테고리 아이콘), 이름, 두 줄 설명으로 구성하고 해석기 상태 배지([versioning.md](versioning.md#ui-배지))와 새 도구 배지를 표시한다. 카드 오른쪽 위의 별 토글로 즐겨찾기에 넣고 뺀다. 즐겨찾기·본 도구 목록은 셸 저장소에 모듈 id만 저장한다.
+  - 카테고리: 해당 카테고리 카드 그리드와 검색.
   - 모듈 화면: 헤더(아이콘·이름·버전·상태)와 iframe.
-  - 설정: SettingsCard / SettingsExpander 패턴. 테마(시스템/라이트/다크)를 고른다.
+  - 설정: SettingsCard / SettingsExpander 패턴. 테마(시스템/라이트/다크)와 애니메이션 효과(켬/끔)를 고른다.
   - 정보: About/크레딧 화면([5절](#5-about크레딧-화면)).
+
+### 셸 모션
+
+셸 모션은 WinUI 패턴을 따른다([ADR-0024](../adr/0024-shell-motion-and-home.md)).
+
+| 상황 | 모션 | 시간·곡선 |
+| --- | --- | --- |
+| 레일 선택 변경 | 강조 막대가 새 항목으로 이동 | `durationNormal`, `curveDecelerateMid` |
+| 레일로 페이지 전환 | Entrance: 새 페이지가 `deckTokens.motionPageOffset`만큼 아래에서 올라오며 나타남 | `durationGentle`, `curveDecelerateMax` |
+| 카드로 모듈 열기 | Drill-in: 모듈 화면이 살짝 작은 크기에서 커지며 나타남 | `durationSlow`, `curveDecelerateMax` |
+| 카드 그리드 등장 | 카드가 `deckTokens.motionStagger` 간격으로 순서대로 나타남(앞 8장까지만 지연) | `durationGentle`, `curveDecelerateMid` |
+| 카드 hover·누름 | 테두리 강조와 함께 살짝 떠오름, 누르면 살짝 작아짐 | `durationFaster`, `curveEasyEase` |
+
+- 이전 화면의 퇴장 애니메이션은 두지 않는다. 새 화면만 들어온다.
+- 모듈 iframe 자체에는 모션을 걸지 않는다. 셸의 모듈 레이어만 움직인다.
+- OS의 `prefers-reduced-motion`(Windows "애니메이션 효과" 끔)이나 설정의 "애니메이션 효과" 끔이면 모든 셸 모션을 끝난 상태로 바로 그린다.
 
 ## 2. 토큰과 테마
 
@@ -25,6 +43,7 @@ Windows 11 Fluent 2를 따르고 PowerToys 설정 앱 구조를 레퍼런스로 
 - 셸 창은 투명 배경에 `window-vibrancy`로 Mica를 적용한다. 셸 루트와 iframe 배경은 투명하다.
 - 표면(카드, 패널)은 Fluent 레이어 토큰으로 표현한다.
 - Windows 10에서는 Mica가 없으므로 불투명 배경으로 폴백한다. 이 정보는 `ThemePayload.mica`로 모듈에 전달된다.
+- Mica는 Windows 테마를 따른다. 설정에서 Windows와 다른 테마(예: Windows는 다크, 앱은 라이트)를 고르면 대비가 깨지므로 셸과 모듈 모두 불투명 배경으로 폴백한다(`ThemePayload.mica = false`).
 - 구현 시 `banatic/Hypercool`의 기존 Mica 구현(`src-tauri/src/commands/window.rs` 등)을 참고했다. TeacherDeck은 `window-vibrancy`의 Mica API만 써서 `unsafe` 없이 구현한다(`src-tauri/src/platform.rs`).
 
 ## 4. 폰트
@@ -116,3 +135,4 @@ UI-007을 따른다. 예시:
   — 강제: [manual]
 
 - **UI-008** [MUST] 일괄 처리 도구는 `ToolLayout`(입력 → 옵션 → 미리보기 → 실행 → 결과) 골격을 따른다. — 강제: [manual]
+- **UI-009** [MUST] 모션은 `transform`·`opacity`만 움직이고 Fluent `duration*`·`curve*` 토큰과 `@deck/ui` 모션 토큰으로 쓰며, `prefers-reduced-motion`과 셸의 애니메이션 효과 설정을 존중한다. 레이아웃 속성(크기·위치·여백)을 애니메이션하지 않고, 모듈 iframe에 모션을 걸지 않는다([1절 셸 모션](#셸-모션)). — 강제: [manual]
