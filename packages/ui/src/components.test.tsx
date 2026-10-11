@@ -212,15 +212,15 @@ describe("@deck/ui", () => {
     expect(ui.FONT_STACK).not.toMatch(/Pretendard/);
   });
 
-  it("tints native scrollbars with the theme without touching color-scheme", () => {
+  it("gives the root the theme's scrollbar colors without touching color-scheme", () => {
     const root = document.documentElement.style;
+    const thumb = () => root.getPropertyValue("--deck-scrollbar-thumb");
     const { rerender } = render(<ui.DeckProvider theme={ui.themeToPayload("dark", false)}>x</ui.DeckProvider>);
-    const dark = root.scrollbarColor;
-    expect(dark).not.toBe("");
+    expect(thumb()).toBe(ui.createDeckTheme("dark").colorNeutralStroke1);
     rerender(<ui.DeckProvider theme={ui.themeToPayload("light", false)}>x</ui.DeckProvider>);
-    expect(root.scrollbarColor).not.toBe(dark);
+    expect(thumb()).toBe(ui.createDeckTheme("light").colorNeutralStroke1);
     expect(root.colorScheme).toBe("");
     cleanup();
-    expect(root.scrollbarColor).toBe("");
+    expect(thumb()).toBe("");
   });
 });
