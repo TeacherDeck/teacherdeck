@@ -3,7 +3,10 @@
 import { FluentProvider, type Theme, makeStaticStyles, makeStyles, tokens } from "@fluentui/react-components";
 import type { Deck, ThemePayload } from "@deck/sdk";
 import { type ReactNode, useEffect, useState } from "react";
-import { createDeckTheme, payloadToTheme } from "./tokens/index.ts";
+import { createDeckTheme, deckTokens, payloadToTheme } from "./tokens/index.ts";
+
+const THUMB_VAR = "--deck-scrollbar-thumb";
+const THUMB_HOVER_VAR = "--deck-scrollbar-thumb-hover";
 
 // Clip sideways overflow without creating another scroll container. `overflow-x: hidden`
 // implicitly turns overflow-y into auto; an unbounded body then traps wheel chaining when
@@ -17,6 +20,23 @@ const useDocumentStyles = makeStaticStyles({
     touchAction: "pan-y",
   },
   "*, *::before, *::after": { boxSizing: "border-box" },
+  // Slim themed scrollbars everywhere. Theme tokens are CSS variables on the provider element,
+  // which the document viewport's scrollbar can't see, so DeckProvider copies the thumb colors
+  // onto the root. No color-scheme: it repaints the canvas and makes iframes opaque (UI-004).
+  "::-webkit-scrollbar": {
+    width: deckTokens.scrollbarSize,
+    height: deckTokens.scrollbarSize,
+    backgroundColor: "transparent",
+  },
+  "::-webkit-scrollbar-track, ::-webkit-scrollbar-corner": { backgroundColor: "transparent" },
+  "::-webkit-scrollbar-button": { display: "none" },
+  "::-webkit-scrollbar-thumb": {
+    backgroundColor: `var(${THUMB_VAR})`,
+    backgroundClip: "padding-box",
+    border: `${deckTokens.scrollbarThumbInset} solid transparent`,
+    borderRadius: deckTokens.scrollbarThumbRadius,
+  },
+  "::-webkit-scrollbar-thumb:hover": { backgroundColor: `var(${THUMB_HOVER_VAR})` },
 });
 
 const useStyles = makeStyles({
@@ -51,14 +71,23 @@ export function DeckProvider({ deck, theme, mica, children }: DeckProviderProps)
   const [payload, setPayload] = useState<ThemePayload | undefined>(deck?.theme);
   useEffect(() => deck?.on("theme.changed", setPayload), [deck]);
 
-  const resolved = theme !== undefined ? toTheme(theme) : payload !== undefined ? payloadToTheme(payload) : createDeckTheme("light");
+  const resolved =
+    theme !== undefined ? toTheme(theme) : payload !== undefined ? payloadToTheme(payload) : createDeckTheme("light");
   const transparent = mica ?? payload?.mica ?? false;
-  // Native scrollbars and form controls follow color-scheme on the root element, so they match
-  // the theme instead of staying light in dark mode.
-  const mode = theme !== undefined ? ("mode" in theme ? theme.mode : undefined) : payload?.mode;
+  // Scrollbar thumb colors for the document styles above, resolved from this theme. Nested
+  // providers (gallery previews) restore the outer values on unmount.
+  const thumb = resolved.colorNeutralStroke1;
+  const thumbHover = resolved.colorNeutralStroke1Hover;
   useEffect(() => {
-    document.documentElement.style.colorScheme = mode ?? "light";
-  }, [mode]);
+    const root = document.documentElement.style;
+    const previous = [root.getPropertyValue(THUMB_VAR), root.getPropertyValue(THUMB_HOVER_VAR)] as const;
+    root.setProperty(THUMB_VAR, thumb);
+    root.setProperty(THUMB_HOVER_VAR, thumbHover);
+    return () => {
+      root.setProperty(THUMB_VAR, previous[0]);
+      root.setProperty(THUMB_HOVER_VAR, previous[1]);
+    };
+  }, [thumb, thumbHover]);
   return (
     <FluentProvider theme={resolved} className={styles.provider}>
       <div className={transparent ? styles.transparent : styles.opaque}>{children}</div>

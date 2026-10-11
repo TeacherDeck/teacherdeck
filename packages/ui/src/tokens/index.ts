@@ -73,6 +73,10 @@ export const deckTokens = {
   captureToolbarButtonSize: "28px",
   /** Keep native capture actions usable even for a tiny captured pixel rectangle. */
   captureToolbarMinWidth: "300px",
+  /** Scrollbars: a 12px gutter with a rounded thumb inset 3px on each side (WinUI-like, slim). */
+  scrollbarSize: "12px",
+  scrollbarThumbInset: "3px",
+  scrollbarThumbRadius: "6px",
   /** A nonzero alpha keeps the otherwise transparent Windows region draggable. */
   captureHitTestFill: "rgba(0, 0, 0, 0.004)",
   /**
