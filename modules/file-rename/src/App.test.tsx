@@ -41,6 +41,27 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("rename screen workflows", () => {
+  it("keeps preview and manual edits before the single run area, with a keyboard shortcut past the list", async () => {
+    const { deck, view } = await setup();
+    fireEvent.click(screen.getByRole("button", { name: "파일 추가" }));
+    await screen.findByText("합성자료1.txt");
+    const steps = [...view.container.querySelectorAll("[data-step]")].map((section) =>
+      section.getAttribute("data-step"),
+    );
+    expect(steps).toEqual(["input", "options", "preview", "run", "result"]);
+    const previewSection = view.container.querySelector('[data-step="preview"]') as HTMLElement;
+    const runSection = view.container.querySelector('[data-step="run"]') as HTMLElement;
+    expect(within(previewSection).getAllByRole("textbox", { name: "최종 파일명 (확장자 포함)" })).toHaveLength(2);
+    expect(within(previewSection).queryByRole("button", { name: "새 폴더에 복사" })).toBeNull();
+    expect(within(runSection).getByRole("button", { name: "새 폴더에 복사" })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "실행 방식" }).closest("[data-step]")?.getAttribute("data-step")).toBe(
+      "options",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "실행 영역으로 이동" }));
+    expect(document.activeElement).toBe(screen.getByRole("group", { name: "파일 작업 실행" }));
+    view.unmount();
+    deck.dispose();
+  });
   it("preserves partial results on plan expiry and requires a fresh preview for the remaining files", async () => {
     const partial = {
       historyHandle: "history",
@@ -157,7 +178,11 @@ describe("rename screen workflows", () => {
     fireEvent.click(screen.getByRole("button", { name: "원본 이름 변경" }));
     const dialog = await screen.findByRole("dialog");
     expect(host.requests.some((r) => r.method === "executeRename")).toBe(false);
-    fireEvent.click(within(dialog).getByText("호스트 확인 후 변경"));
+    fireEvent.click(within(dialog).getByText("취소"));
+    expect(host.requests.some((r) => r.method === "executeRename")).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "원본 이름 변경" }));
+    const confirmedDialog = await screen.findByRole("dialog");
+    fireEvent.click(within(confirmedDialog).getByText("호스트 확인 후 변경"));
     await screen.findByRole("button", { name: "실패·미처리 새 미리보기" });
     fireEvent.click(screen.getByRole("button", { name: "실패·미처리 새 미리보기" }));
     expect(screen.queryByText("합성자료1.txt")).toBeNull();

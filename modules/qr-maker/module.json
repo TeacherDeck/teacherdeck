@@ -4,7 +4,7 @@
   "id": "qr-maker",
   "name": "QR 코드 만들기",
   "description": "링크와 글을 QR 코드로 만들고 PNG·SVG로 저장해요.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "category": "utility",
   "icon": "icon.svg",
   "entry": "index.html",

@@ -127,10 +127,11 @@ describe("Home dashboard", () => {
     );
     expect(sectionNames()).toEqual(["즐겨찾기", "수업", "이미지", "문서"]);
     const favorites = screen.getByRole("region", { name: "즐겨찾기" });
-    expect(within(favorites).getAllByRole("button", { name: /열기$/ }).map((b) => b.getAttribute("aria-label"))).toEqual([
-      "합성 타이머 열기",
-      "합성 캡처 열기",
-    ]);
+    expect(
+      within(favorites)
+        .getAllByRole("button", { name: /열기$/ })
+        .map((b) => b.getAttribute("aria-label")),
+    ).toEqual(["합성 타이머 열기", "합성 캡처 열기"]);
   });
 
   it("hides the favorites section until something is starred", () => {
@@ -190,5 +191,44 @@ describe("Home dashboard", () => {
     );
     fireEvent.keyDown(window, { key: "f", ctrlKey: true });
     expect(document.activeElement).toBe(screen.getByRole("searchbox"));
+  });
+
+  it("keeps description access and status badges on compact favorite launchers", () => {
+    render(
+      <DeckProvider>
+        <Home {...base} favorites={["sample-update"]} fresh={new Set(["sample-update"])} />
+      </DeckProvider>,
+    );
+    const region = screen.getByRole("region", { name: "즐겨찾기" });
+    const launcher = within(region).getByRole("button", { name: "합성 새 도구 업데이트 확인" });
+    expect(within(launcher).queryByText("합성 도구 설명")).toBeNull();
+    expect(within(launcher).getByText("새 도구")).toBeTruthy();
+    expect(within(launcher).getByText("앱 업데이트 후 사용 가능")).toBeTruthy();
+    launcher.focus();
+    const describedBy = launcher.getAttribute("aria-describedby");
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy ?? "")?.textContent).toBe("합성 도구 설명");
+    fireEvent.click(launcher);
+    expect(base.onNeedsUpdate).toHaveBeenCalled();
+  });
+
+  it("falls back when a module icon fails while preserving the launch action", () => {
+    const withIcon = {
+      ...entry("sample-capture", "합성 캡처", "image"),
+      iconUrl: "http://deckmod.sample-capture.modules.localhost/icon.svg",
+    };
+    const onOpen = vi.fn();
+    const { container } = render(
+      <DeckProvider>
+        <Home {...base} modules={[withIcon]} onOpen={onOpen} />
+      </DeckProvider>,
+    );
+    const icon = container.querySelector("img");
+    expect(icon).toBeTruthy();
+    if (icon === null) throw new Error("Expected a module icon before its load error");
+    fireEvent.error(icon);
+    expect(container.querySelector("img")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "합성 캡처 열기" }));
+    expect(onOpen).toHaveBeenCalledExactlyOnceWith("sample-capture");
   });
 });

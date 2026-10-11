@@ -122,7 +122,7 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
-async function open(saved: unknown = null) {
+async function open(saved: unknown = null, expandRoster = true) {
   const values = new Map<string, unknown>([[STATE_KEY, saved]]);
   let failKey = "";
   const host = createMockHost({
@@ -150,6 +150,8 @@ async function open(saved: unknown = null) {
     </DeckProvider>,
   );
   await screen.findByRole("heading", { name: "지도일배정기" });
+  const rosterToggle = screen.getByRole("button", { name: "명단 준비" });
+  if (expandRoster && rosterToggle.getAttribute("aria-expanded") === "false") fireEvent.click(rosterToggle);
   return {
     deck,
     values,
@@ -267,7 +269,7 @@ describe("planner user flow", () => {
     expect(required(await loadLedger(deck)).current.input.teachers.map((t) => t.name)).toEqual(["교사A", "교사B"]);
     deck.dispose();
   });
-  it("adds a teacher with a plain name and shows the calendar before bulk roster editing", async () => {
+  it("adds a teacher with a plain name then closes roster preparation for calendar editing", async () => {
     const { deck } = await open();
     expect(screen.queryByRole("textbox", { name: "교사 명단" })).toBeNull();
     fireEvent.change(screen.getByRole("textbox", { name: "교사 이름" }), { target: { value: "교사A" } });
@@ -275,7 +277,11 @@ describe("planner user flow", () => {
     expect((screen.getByRole("button", { name: "배정" }) as HTMLButtonElement).disabled).toBe(false);
     const calendar = screen.getByRole("region", { name: "월별 배정 달력" });
     const roster = screen.getByRole("region", { name: "교사 명단과 배정 횟수" });
-    expect(calendar.compareDocumentPosition(roster) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(roster.compareDocumentPosition(calendar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "명단 준비 완료" }));
+    expect(screen.queryByRole("textbox", { name: "교사 이름" })).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "명단 준비" })));
+    expect(screen.getByRole("button", { name: "6일 배정 편집" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
     await screen.findByText("이 PC에 명단·조건·배정표를 저장했어요.");
     expect(required(await loadLedger(deck)).current.input.teachers[0]?.past).toBe(0);
@@ -491,3 +497,20 @@ function required<T>(value: T | null | undefined): T {
   if (value === null || value === undefined) throw new Error("SYNTHETIC_FIXTURE_MISSING");
   return value;
 }
+
+it("restores a prepared roster with calendar editing visible and compact monthly summary", async () => {
+  const state = initialState(new Date(2026, 9, 1));
+  state.input.teachers = [{ id: "A", name: "합성교사A", past: 0, fixed: [], excluded: [], weekdays: [] }];
+  const { deck } = await open(state, false);
+  expect(screen.getByRole("button", { name: "명단 준비" }).getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("textbox", { name: "교사 이름" })).toBeNull();
+  expect(screen.getByText("하루 1명 · 명단 1명 · 참여 1명")).toBeTruthy();
+  const actions = within(screen.getByRole("region", { name: "이번 달 배정" }));
+  expect(actions.getByRole("button", { name: "배정" })).toBeTruthy();
+  expect(actions.queryByRole("textbox", { name: "교사 이름" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "6일 배정 편집" }));
+  expect(within(screen.getByRole("region", { name: "날짜별 직접 배정" })).getByText("6일 화요일")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "명단 준비" }));
+  expect(screen.getByRole("textbox", { name: "교사 이름" })).toBeTruthy();
+  deck.dispose();
+});

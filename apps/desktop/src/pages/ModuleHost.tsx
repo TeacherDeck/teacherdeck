@@ -15,10 +15,12 @@ const useStyles = makeStyles({
     display: "flex",
     flexShrink: 0,
     alignItems: "center",
-    gap: deckTokens.inlineGap,
-    padding: `${tokens.spacingVerticalM} ${tokens.spacingHorizontalXXL}`,
+    flexWrap: "wrap",
+    gap: tokens.spacingHorizontalS,
+    padding: `${tokens.spacingVerticalXS} ${deckTokens.pagePadding}`,
   },
-  icon: { width: tokens.fontSizeHero700, height: tokens.fontSizeHero700 },
+  icon: { width: tokens.fontSizeBase500, height: tokens.fontSizeBase500, flexShrink: 0 },
+  name: { minWidth: 0, overflowWrap: "anywhere" },
   frames: { flexGrow: 1, minHeight: 0, position: "relative" },
   frame: {
     position: "absolute",
@@ -71,9 +73,9 @@ export function ModuleHost({ bridge, modules, mounted, active, loadErrors }: Mod
   return (
     <div className={s.wrap}>
       {current !== undefined && (
-        <header className={s.header}>
+        <header className={s.header} aria-label="도구 정보">
           {current.iconUrl !== null && <img className={s.icon} src={current.iconUrl} alt="" />}
-          <Body1>{current.manifest?.name ?? current.resolution.id}</Body1>
+          <Body1 className={s.name}>{current.manifest?.name ?? current.resolution.id}</Body1>
           <Caption1>v{current.resolution.picked?.version ?? "?"}</Caption1>
           {STATE_BADGES[current.resolution.state] !== null && (
             <Badge appearance="tint" color="warning">

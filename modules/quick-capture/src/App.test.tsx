@@ -17,6 +17,7 @@ async function open(
     cancelPick?: boolean;
     shortcutSucceeds?: boolean;
     failOverlay?: boolean;
+    unavailableDestination?: boolean;
   } = {},
 ) {
   const prefs = defaults(createDeckTheme("light").colorBrandStroke1);
@@ -44,7 +45,10 @@ async function open(
     handlers: {
       "storage.get": () => null,
       "storage.set": save,
-      "fs.destinationStatus": () => null,
+      "fs.destinationStatus": () =>
+        options.unavailableDestination
+          ? { grantHandle: "grant", label: "합성 폴더", persistent: true, available: false }
+          : null,
       "fs.pickDestination": () =>
         options.cancelPick
           ? null
@@ -196,6 +200,7 @@ it("records physical key codes and attempts a conflicting shortcut only once", a
 });
 it("applies color automatically and does not loop when native state matches", async () => {
   const { deck, host, view } = await open(true);
+  fireEvent.click(screen.getByRole("button", { name: "저장·영역 설정" }));
   fireEvent.input(screen.getByLabelText("테두리 색"), {
     target: { value: createDeckTheme("dark").colorPaletteRedBorderActive },
   });
@@ -210,6 +215,7 @@ it("applies color automatically and does not loop when native state matches", as
 
 it("queues settings edited during a native capture and applies after completion", async () => {
   const { deck, host, view, endBusy } = await open(true, true);
+  fireEvent.click(screen.getByRole("button", { name: "저장·영역 설정" }));
   fireEvent.input(screen.getByLabelText("테두리 색"), {
     target: { value: createDeckTheme("dark").colorPaletteRedBorderActive },
   });
@@ -226,6 +232,7 @@ it("queues settings edited during a native capture and applies after completion"
 it("does not overwrite a pending color choice with an old native geometry event", async () => {
   const { deck, host, view } = await open(true);
   const color = createDeckTheme("dark").colorPaletteRedBorderActive;
+  fireEvent.click(screen.getByRole("button", { name: "저장·영역 설정" }));
   fireEvent.input(screen.getByLabelText("테두리 색"), { target: { value: color } });
   const prefs = defaults(createDeckTheme("light").colorBrandStroke1);
   host.emit("overlay.changed", {
@@ -290,6 +297,7 @@ it("retries a formerly conflicting combination when the user explicitly records 
 
 it("resynchronizes the applied native shortcut after a later overlay failure without retry loops", async () => {
   const { deck, host, view } = await open(true, false, { shortcutSucceeds: true, failOverlay: true });
+  fireEvent.click(screen.getByRole("button", { name: "저장·영역 설정" }));
   fireEvent.input(screen.getByLabelText("테두리 색"), {
     target: { value: createDeckTheme("dark").colorPaletteRedBorderActive },
   });
@@ -307,6 +315,7 @@ it("resynchronizes the applied native shortcut after a later overlay failure wit
 it("applies the latest color before immediate manual capture without waiting for debounce", async () => {
   const { deck, host, view } = await open(true);
   const color = createDeckTheme("dark").colorPaletteRedBorderActive;
+  fireEvent.click(screen.getByRole("button", { name: "저장·영역 설정" }));
   fireEvent.input(screen.getByLabelText("테두리 색"), { target: { value: color } });
   fireEvent.click(screen.getByRole("button", { name: "지금 캡처" }));
   await waitFor(() => expect(host.requests.some((r) => r.cap === "capture" && r.method === "trigger")).toBe(true));
@@ -320,12 +329,41 @@ it("applies the latest color before immediate manual capture without waiting for
 });
 it("does not trigger manual capture when applying the latest settings fails", async () => {
   const { deck, host, view } = await open(true, false, { failOverlay: true });
+  fireEvent.click(screen.getByRole("button", { name: "저장·영역 설정" }));
   fireEvent.input(screen.getByLabelText("테두리 색"), {
     target: { value: createDeckTheme("dark").colorPaletteRedBorderActive },
   });
   fireEvent.click(screen.getByRole("button", { name: "지금 캡처" }));
   await screen.findByText(/작업하지 못했어요/);
   expect(host.requests.some((r) => r.cap === "capture" && r.method === "trigger")).toBe(false);
+  view.unmount();
+  deck.dispose();
+});
+
+it("keeps repeated capture controls visible with file and border settings collapsed", async () => {
+  const { deck, host, view } = await open(true);
+  expect(screen.queryByLabelText("테두리 색")).toBeNull();
+  expect(screen.queryByRole("combobox", { name: "파일 형식" })).toBeNull();
+  expect(screen.getByText("현재 단축키: Alt + G")).toBeTruthy();
+  expect(screen.getByText(/0장 저장/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "지금 캡처" }));
+  await waitFor(() => expect(host.requests.some((r) => r.cap === "capture" && r.method === "trigger")).toBe(true));
+  expect(screen.getByText(/1장 저장/)).toBeTruthy();
+  expect(screen.queryByLabelText("테두리 색")).toBeNull();
+  view.unmount();
+  deck.dispose();
+});
+it("shows a lost destination and capture errors outside collapsed settings", async () => {
+  const { deck, host, view } = await open(true, false, { unavailableDestination: true });
+  expect(screen.getByText("저장 폴더 연결이 끊겼어요. 폴더를 다시 선택해 주세요.")).toBeTruthy();
+  host.emit("capture.failed", { sessionHandle: "session", error: { code: "INTERNAL", message: "합성 실패" } });
+  await screen.findByText(/캡처를 저장하지 못했어요/);
+  expect(screen.queryByLabelText("테두리 색")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Alt + G" }));
+  fireEvent.keyDown(window, { code: "KeyC", ctrlKey: true, shiftKey: true });
+  await screen.findByText(/기존 단축키를 유지해요/);
+  expect(screen.getByText("현재 단축키: Alt + G")).toBeTruthy();
+  expect(screen.queryByLabelText("테두리 색")).toBeNull();
   view.unmount();
   deck.dispose();
 });

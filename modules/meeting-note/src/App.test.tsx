@@ -187,7 +187,7 @@ describe("original meeting interaction flow", () => {
     const state = seeded();
     const meeting: Meeting = {
       ...state,
-      entries: Array.from({ length: 40 }, (_, i) => ({
+      entries: Array.from({ length: 100 }, (_, i) => ({
         id: `entry-${i}`,
         kind: "발언",
         text: `합성 기록 ${i}`,
@@ -203,7 +203,7 @@ describe("original meeting interaction flow", () => {
     try {
       const input = await screen.findByRole("textbox", { name: "발언 입력" });
       const before = formatted.mock.calls.length;
-      expect(before).toBeGreaterThanOrEqual(40);
+      expect(before).toBeGreaterThanOrEqual(100);
       for (const value of ["빠", "빠르", "빠르게", "빠르게 입력"]) {
         fireEvent.change(input, { target: { value } });
       }
@@ -507,6 +507,78 @@ it("respects Space on a focused action button instead of moving focus into the c
   button.focus();
   fireEvent.keyDown(button, { key: " ", code: "Space" });
   expect(document.activeElement).toBe(button);
+  view.unmount();
+  deck.dispose();
+});
+
+it("retains all twelve speaker shortcuts and recording focus beside compact management and save groups", async () => {
+  const speakers = Array.from({ length: 12 }, (_, index) => `합성 참석자 ${index + 1}`);
+  const { deck, view } = await setup({
+    ...emptyMeeting(),
+    title: "합성 회의의 긴 한국어 제목 ".repeat(6),
+    speakers,
+    selected: speakers[0],
+  });
+  const input = await screen.findByRole("textbox", { name: "발언 입력" });
+  const management = screen.getByRole("group", { name: "회의 관리" });
+  expect(within(management).getAllByRole("button")).toHaveLength(2);
+  const state = screen.getByRole("group", { name: "기록 되돌리기와 저장" });
+  expect(within(state).getByRole("button", { name: "지금 저장" })).toBeTruthy();
+  const codes = [
+    "Digit1",
+    "Digit2",
+    "Digit3",
+    "Digit4",
+    "Digit5",
+    "Digit6",
+    "Digit7",
+    "Digit8",
+    "Digit9",
+    "Digit0",
+    "Minus",
+    "Equal",
+  ];
+  await act(async () => {
+    for (const [index, code] of codes.entries()) {
+      fireEvent.keyDown(input, { code, altKey: true });
+      fireEvent.change(input, { target: { value: `합성 발언 ${index}` } });
+      fireEvent.keyDown(input, { key: "Enter" });
+    }
+  });
+  const rows = screen.getByRole("list", { name: "회의 기록" }).querySelectorAll("[role='listitem']");
+  expect(rows).toHaveLength(12);
+  for (const index of codes.keys()) {
+    expect(rows[index]?.textContent).toContain(`합성 발언 ${index}`);
+    expect(rows[index]?.textContent).toContain(speakers[index] ?? "");
+  }
+  expect(document.activeElement).toBe(input);
+  fireEvent.keyDown(input, { code: "ArrowDown", altKey: true });
+  expect(screen.getByRole("button", { name: "합성 참석자 1 · Alt+1" }).getAttribute("aria-pressed")).toBe("true");
+  fireEvent.keyDown(input, { code: "ArrowUp", altKey: true });
+  expect(screen.getByRole("button", { name: "합성 참석자 12 · Alt+=" }).getAttribute("aria-pressed")).toBe("true");
+  view.unmount();
+  deck.dispose();
+});
+
+it("keeps a failed management action visible next to input after autosave succeeds", async () => {
+  const { deck, view } = await setup(seeded(), async (key) => {
+    if (key === "library.v1") throw new Error("SYNTHETIC_QUOTA");
+  });
+  const input = await screen.findByRole("textbox", { name: "발언 입력" });
+  fireEvent.change(input, { target: { value: "관리 실패 전에 보관할 합성 기록" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  fireEvent.click(screen.getByRole("button", { name: "새 회의" }));
+  fireEvent.click(screen.getByRole("button", { name: "새 회의 시작" }));
+  const error = await screen.findByText(
+    "처리하지 못했어요. 현재 회의는 그대로 두었어요. 저장 공간과 파일을 확인해 주세요.",
+  );
+  expect(error.closest("[role='group']")).toBeTruthy();
+  fireEvent.change(input, { target: { value: "실패 뒤에도 보존할 합성 초안" } });
+  await screen.findByText("저장했어요.");
+  expect(
+    screen.getByText("처리하지 못했어요. 현재 회의는 그대로 두었어요. 저장 공간과 파일을 확인해 주세요."),
+  ).toBeTruthy();
+  expect((input as HTMLTextAreaElement).value).toBe("실패 뒤에도 보존할 합성 초안");
   view.unmount();
   deck.dispose();
 });

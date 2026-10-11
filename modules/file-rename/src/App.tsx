@@ -54,6 +54,13 @@ const useStyles = makeStyles({
   half: { flex: "1 1 16rem", minWidth: 0 },
   materials: { display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalS },
   text: { overflowWrap: "anywhere" },
+  previewList: { maxHeight: "40vh", overflowY: "auto" },
+  runPanel: {
+    display: "flex",
+    flexDirection: "column",
+    gap: tokens.spacingVerticalM,
+    ":focus-visible": { outline: `${tokens.strokeWidthThick} solid ${tokens.colorStrokeFocus2}` },
+  },
 });
 const today = () => {
   const date = new Date();
@@ -113,6 +120,7 @@ export function App({ deck }: { deck: Deck }) {
   const [total, setTotal] = useState(0);
   const [confirm, setConfirm] = useState(false);
   const lock = useRef(false);
+  const runPanel = useRef<HTMLDivElement>(null);
   const controller = useRef<AbortController | null>(null);
   const table = useMemo(() => {
     const current = book?.sheets[Number(sheet)];
@@ -415,7 +423,7 @@ export function App({ deck }: { deck: Deck }) {
       title="파일명 정리"
       description="원본을 보며 새 이름을 정하고 새 폴더에 복사해요. 원본 이름 변경은 별도 확인 후 실행해요."
     >
-      {message && <InfoBar message={message} onClose={() => setMessage("")} />}
+      {message && !results.length && !renameResult && <InfoBar message={message} onClose={() => setMessage("")} />}
       <ToolLayout.Section step="input" title="1. 파일 추가">
         {!entries.length && (
           <DropZone
@@ -670,8 +678,6 @@ export function App({ deck }: { deck: Deck }) {
             </div>
           </div>
         </SettingsExpander>
-      </ToolLayout.Section>
-      <ToolLayout.Section step="preview" title="3. 이름 미리보기">
         <ComboBox
           header="실행 방식"
           value={operation}
@@ -688,59 +694,16 @@ export function App({ deck }: { deck: Deck }) {
             message="원본 이름이 바뀌어요. 먼저 충돌을 확인하고 실행 요약과 호스트 확인창에서 승인해 주세요. 수정·대체된 결과는 자동 복구하지 않아요."
           />
         )}
+      </ToolLayout.Section>
+      <ToolLayout.Section step="preview" title="3. 이름 미리보기">
         <div className={s.actions}>
           {operation === "rename" && (
             <Button disabled={busy || ran || invalid > 0 || !entries.length} onClick={() => void hostPreview()}>
               원본 폴더 충돌 확인
             </Button>
           )}
-          <Button
-            appearance="primary"
-            disabled={busy || ran || invalid > 0 || !entries.length || (operation === "rename" && !hostReady)}
-            onClick={() => (operation === "rename" ? setConfirm(true) : void run())}
-          >
-            {operation === "copy" ? "새 폴더에 복사" : "원본 이름 변경"}
-          </Button>
-          <Button disabled={!busy} onClick={() => controller.current?.abort()}>
-            취소
-          </Button>
-          {operation === "copy" && results.some((row) => row.status !== "success") && (
-            <Button disabled={busy || invalid > 0} onClick={() => void run(true)}>
-              실패·미처리 다시 시도
-            </Button>
-          )}
-          {operation === "rename" && renameResult && !renameResult.done && (
-            <Button disabled={busy || !plan} onClick={() => void run()}>
-              남은 변경 계속
-            </Button>
-          )}
-          {operation === "rename" && renameResult && (renameResult.failed > 0 || renameResult.notStarted > 0) && (
-            <Button
-              disabled={busy}
-              onClick={() => {
-                const failed = new Set(
-                  renameResult.items
-                    .filter((item) => ["failed", "changed", "conflict", "notStarted"].includes(item.status))
-                    .map((item) => item.sourceHandle),
-                );
-                setEntries((old) => old.filter((entry) => failed.has(entry.file.handle)));
-                setRenameResult(null);
-                setPlan(null);
-                setSelected(new Set());
-                setPage(0);
-                setMessage(
-                  "실패·미처리만 새 미리보기로 옮겼어요. 이미 변경한 파일은 이력에서 유지해요. 원본 폴더 충돌을 다시 확인해 주세요.",
-                );
-              }}
-            >
-              실패·미처리 새 미리보기
-            </Button>
-          )}
+          <Button onClick={() => runPanel.current?.focus()}>실행 영역으로 이동</Button>
         </div>
-        {busy && <ProgressBar header="진행" value={total ? (done / total) * 100 : 0} />}
-        <Caption>
-          이름 교환은 한 묶음으로 처리해요. 원본 변경 취소는 다음 묶음 시작을 막으며 완료한 변경은 이력에 남아요.
-        </Caption>
 
         <div className={s.actions}>
           <ComboBox
@@ -795,133 +758,135 @@ export function App({ deck }: { deck: Deck }) {
             {entries.length}개 · 실행 전 수정 필요{invalid}개
           </Body>
         </div>
-        <ListView
-          header="이름 미리보기"
-          items={rows}
-          getKey={(row) => row.entry.file.handle}
-          emptyText="파일을 추가하거나 검색 조건을 바꿔 주세요."
-          renderItem={(row) => (
-            <div className={s.row}>
-              <div className={s.actions}>
-                <div className={s.half}>
-                  <CheckBox
-                    content={row.entry.file.name}
-                    checked={selected.has(row.entry.file.handle)}
-                    onChange={(checked) =>
-                      setSelected((old) => {
-                        const next = new Set(old);
-                        if (checked) next.add(row.entry.file.handle);
-                        else next.delete(row.entry.file.handle);
-                        return next;
-                      })
-                    }
-                  />
-                </div>
-                <div className={s.half}>
-                  <TextBox
-                    header="최종 파일명 (확장자 포함)"
-                    value={row.name}
-                    disabled={busy || ran}
-                    onChange={(edited) => update(row.entry.file.handle, (e) => ({ ...e, edited }))}
-                    {...(row.errors.length ? { validationMessage: row.errors.join(" ") } : {})}
-                  />
-                </div>
-                <Caption>
-                  {statusLabel(
-                    plan?.items.find((item) => item.sourceHandle === row.entry.file.handle)?.status ??
-                      renameResult?.items.find((item) => item.sourceHandle === row.entry.file.handle)?.status ??
-                      "preview",
-                  )}
-                </Caption>
-                <Button onClick={() => setDetail(detail === row.entry.file.handle ? null : row.entry.file.handle)}>
-                  {detail === row.entry.file.handle ? "이름 재료 접기" : "이름 재료 보기"}
-                </Button>
-              </div>
-              {detail === row.entry.file.handle && (
-                <div className={s.stack}>
-                  <Caption>
-                    {row.reason} · {row.entry.file.size.toLocaleString()}바이트 ·{" "}
-                    {new Date(row.entry.file.modifiedAt).toLocaleDateString()}
-                  </Caption>
-                  {mode === "excel" && (
-                    <Caption>
-                      파일 연결 키:{" "}
-                      {match.mode === "order" ? "현재 목록 순서" : fileKey(row.entry.file, match) || "(공란)"} · 연결
-                      행: {row.linked?.row ?? "미연결"}
-                    </Caption>
-                  )}
-                  <div className={s.actions}>
-                    <Button
-                      disabled={busy || ran || row.entry.edited === undefined}
-                      onClick={() =>
-                        update(row.entry.file.handle, (entry) => {
-                          const rest = { ...entry };
-                          delete rest.edited;
-                          return rest;
+        <div className={s.previewList}>
+          <ListView
+            header="이름 미리보기"
+            items={rows}
+            getKey={(row) => row.entry.file.handle}
+            emptyText="파일을 추가하거나 검색 조건을 바꿔 주세요."
+            renderItem={(row) => (
+              <div className={s.row}>
+                <div className={s.actions}>
+                  <div className={s.half}>
+                    <CheckBox
+                      content={row.entry.file.name}
+                      checked={selected.has(row.entry.file.handle)}
+                      onChange={(checked) =>
+                        setSelected((old) => {
+                          const next = new Set(old);
+                          if (checked) next.add(row.entry.file.handle);
+                          else next.delete(row.entry.file.handle);
+                          return next;
                         })
                       }
-                    >
-                      패턴으로 되돌리기
-                    </Button>
+                    />
+                  </div>
+                  <div className={s.half}>
+                    <TextBox
+                      header="최종 파일명 (확장자 포함)"
+                      value={row.name}
+                      disabled={busy || ran}
+                      onChange={(edited) => update(row.entry.file.handle, (e) => ({ ...e, edited }))}
+                      {...(row.errors.length ? { validationMessage: row.errors.join(" ") } : {})}
+                    />
+                  </div>
+                  <Caption>
+                    {statusLabel(
+                      plan?.items.find((item) => item.sourceHandle === row.entry.file.handle)?.status ??
+                        renameResult?.items.find((item) => item.sourceHandle === row.entry.file.handle)?.status ??
+                        "preview",
+                    )}
+                  </Caption>
+                  <Button onClick={() => setDetail(detail === row.entry.file.handle ? null : row.entry.file.handle)}>
+                    {detail === row.entry.file.handle ? "이름 재료 접기" : "이름 재료 보기"}
+                  </Button>
+                </div>
+                {detail === row.entry.file.handle && (
+                  <div className={s.stack}>
+                    <Caption>
+                      {row.reason} · {row.entry.file.size.toLocaleString()}바이트 ·{" "}
+                      {new Date(row.entry.file.modifiedAt).toLocaleDateString()}
+                    </Caption>
                     {mode === "excel" && (
-                      <NumberBox
-                        header="직접 연결할 엑셀 행 (0은 자동)"
-                        value={row.entry.manualRow ?? 0}
-                        min={0}
-                        max={1048576}
-                        disabled={busy || ran}
-                        onChange={(manualRow) =>
+                      <Caption>
+                        파일 연결 키:{" "}
+                        {match.mode === "order" ? "현재 목록 순서" : fileKey(row.entry.file, match) || "(공란)"} · 연결
+                        행: {row.linked?.row ?? "미연결"}
+                      </Caption>
+                    )}
+                    <div className={s.actions}>
+                      <Button
+                        disabled={busy || ran || row.entry.edited === undefined}
+                        onClick={() =>
                           update(row.entry.file.handle, (entry) => {
                             const rest = { ...entry };
-                            delete rest.manualRow;
-                            return manualRow ? { ...rest, manualRow } : rest;
+                            delete rest.edited;
+                            return rest;
                           })
                         }
+                      >
+                        패턴으로 되돌리기
+                      </Button>
+                      {mode === "excel" && (
+                        <NumberBox
+                          header="직접 연결할 엑셀 행 (0은 자동)"
+                          value={row.entry.manualRow ?? 0}
+                          min={0}
+                          max={1048576}
+                          disabled={busy || ran}
+                          onChange={(manualRow) =>
+                            update(row.entry.file.handle, (entry) => {
+                              const rest = { ...entry };
+                              delete rest.manualRow;
+                              return manualRow ? { ...rest, manualRow } : rest;
+                            })
+                          }
+                        />
+                      )}
+                    </div>
+                    <TextBox
+                      header="연결한 이름 재료"
+                      multiline
+                      readOnly
+                      value={Object.entries(row.materials)
+                        .map(([key, value]) => key + ": " + value)
+                        .join("\n")}
+                      onChange={() => undefined}
+                    />
+                    {mode === "document" &&
+                      (["year", "month", "subject", "main", "sub", "grade"] as const).map((field, index) => (
+                        <TextBox
+                          key={field}
+                          header={["연도", "월", "분류", "상위분류", "하위분류", "학년"][index] ?? field}
+                          value={row.entry.metadata?.[field] ?? ""}
+                          disabled={busy || ran}
+                          onChange={(value) =>
+                            update(row.entry.file.handle, (entry) => ({
+                              ...entry,
+                              metadata: {
+                                ...(entry.metadata ?? metadataFrom("", entry.file.name, [])),
+                                [field]: value,
+                                source: "직접 확인한 문서 정보",
+                              } as Metadata,
+                            }))
+                          }
+                        />
+                      ))}
+                    {row.entry.metadata?.header && (
+                      <TextBox
+                        header="분석한 문서 상단"
+                        value={row.entry.metadata.header}
+                        multiline
+                        readOnly
+                        onChange={() => undefined}
                       />
                     )}
                   </div>
-                  <TextBox
-                    header="연결한 이름 재료"
-                    multiline
-                    readOnly
-                    value={Object.entries(row.materials)
-                      .map(([key, value]) => key + ": " + value)
-                      .join("\n")}
-                    onChange={() => undefined}
-                  />
-                  {mode === "document" &&
-                    (["year", "month", "subject", "main", "sub", "grade"] as const).map((field, index) => (
-                      <TextBox
-                        key={field}
-                        header={["연도", "월", "분류", "상위분류", "하위분류", "학년"][index] ?? field}
-                        value={row.entry.metadata?.[field] ?? ""}
-                        disabled={busy || ran}
-                        onChange={(value) =>
-                          update(row.entry.file.handle, (entry) => ({
-                            ...entry,
-                            metadata: {
-                              ...(entry.metadata ?? metadataFrom("", entry.file.name, [])),
-                              [field]: value,
-                              source: "직접 확인한 문서 정보",
-                            } as Metadata,
-                          }))
-                        }
-                      />
-                    ))}
-                  {row.entry.metadata?.header && (
-                    <TextBox
-                      header="분석한 문서 상단"
-                      value={row.entry.metadata.header}
-                      multiline
-                      readOnly
-                      onChange={() => undefined}
-                    />
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        />
+                )}
+              </div>
+            )}
+          />
+        </div>
         <div className={s.actions}>
           <Button disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>
             이전50개
@@ -934,10 +899,62 @@ export function App({ deck }: { deck: Deck }) {
           </Button>
         </div>
       </ToolLayout.Section>
-      <ToolLayout.Section step="run" title="4. 실행 상태">
-        <Caption>미리보기 위에서 실행해요. 완료한 결과는 아래에서 확인해 주세요.</Caption>
+      <ToolLayout.Section step="run" title="4. 실행">
+        <div ref={runPanel} className={s.runPanel} role="group" aria-label="파일 작업 실행" tabIndex={-1}>
+          <div className={s.actions}>
+            <Button
+              appearance="primary"
+              disabled={busy || ran || invalid > 0 || !entries.length || (operation === "rename" && !hostReady)}
+              onClick={() => (operation === "rename" ? setConfirm(true) : void run())}
+            >
+              {operation === "copy" ? "새 폴더에 복사" : "원본 이름 변경"}
+            </Button>
+            <Button disabled={!busy} onClick={() => controller.current?.abort()}>
+              취소
+            </Button>
+            {operation === "copy" && results.some((row) => row.status !== "success") && (
+              <Button disabled={busy || invalid > 0} onClick={() => void run(true)}>
+                실패·미처리 다시 시도
+              </Button>
+            )}
+            {operation === "rename" && renameResult && !renameResult.done && (
+              <Button disabled={busy || !plan} onClick={() => void run()}>
+                남은 변경 계속
+              </Button>
+            )}
+            {operation === "rename" && renameResult && (renameResult.failed > 0 || renameResult.notStarted > 0) && (
+              <Button
+                disabled={busy}
+                onClick={() => {
+                  const failed = new Set(
+                    renameResult.items
+                      .filter((item) => ["failed", "changed", "conflict", "notStarted"].includes(item.status))
+                      .map((item) => item.sourceHandle),
+                  );
+                  setEntries((old) => old.filter((entry) => failed.has(entry.file.handle)));
+                  setRenameResult(null);
+                  setPlan(null);
+                  setSelected(new Set());
+                  setPage(0);
+                  setMessage(
+                    "실패·미처리만 새 미리보기로 옮겼어요. 이미 변경한 파일은 이력에서 유지해요. 원본 폴더 충돌을 다시 확인해 주세요.",
+                  );
+                }}
+              >
+                실패·미처리 새 미리보기
+              </Button>
+            )}
+          </div>
+          {busy && <ProgressBar header="진행" value={total ? (done / total) * 100 : 0} />}
+          <Caption>
+            이름 교환은 한 묶음으로 처리해요. 원본 변경 취소는 다음 묶음 시작을 막으며 완료한 변경은 이력에 남아요.
+          </Caption>
+        </div>
       </ToolLayout.Section>
       <ToolLayout.Section step="result" title="5. 결과와 보호된 되돌리기">
+        {message && (results.length > 0 || renameResult) && (
+          <InfoBar message={message} onClose={() => setMessage("")} />
+        )}
         {results.length > 0 && (
           <TextBox
             header="복사 결과"

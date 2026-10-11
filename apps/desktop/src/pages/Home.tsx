@@ -3,7 +3,7 @@
 // Deck home (design-system.md §1): greeting and search, favorites, then every tool grouped by
 // category. Category pages and searches show one grid. Each card has a star toggle for favorites,
 // staggers in when motion is on (UI-009) and carries resolver badges (versioning.md §3).
-import { Badge, Button, SearchBox, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { Badge, Button, SearchBox, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { AppsRegular, StarFilled, StarRegular } from "@fluentui/react-icons";
 import { Body, BodyStrong, Caption, EmptyState, Subtitle, deckTokens } from "@deck/ui";
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
@@ -30,7 +30,7 @@ const useStyles = makeStyles({
   section: { display: "flex", flexDirection: "column", gap: deckTokens.itemGap },
   grid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 320px), 1fr))",
+    gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 280px), 1fr))",
     gap: deckTokens.itemGap,
   },
   // Grid cell holding the card and its star toggle, which cannot nest inside the card button.
@@ -48,7 +48,7 @@ const useStyles = makeStyles({
     height: "100%",
     minWidth: 0,
     minHeight: deckTokens.cardMinHeight,
-    padding: deckTokens.cardPadding,
+    padding: deckTokens.itemGap,
     // Room for the star toggle in the top-right corner.
     paddingInlineEnd: `calc(${tokens.spacingHorizontalXXL} + ${tokens.spacingHorizontalS})`,
     gap: deckTokens.inlineGap,
@@ -97,6 +97,13 @@ const useStyles = makeStyles({
     fontSize: deckTokens.cardIconSize,
   },
   iconImage: { width: "100%", height: "100%" },
+  favoritesGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 220px), 1fr))",
+    gap: tokens.spacingVerticalS,
+  },
+  compactCard: { minHeight: deckTokens.listItemHeight, alignItems: "center" },
+  compactIcon: { width: tokens.fontSizeBase600, height: tokens.fontSizeBase600, fontSize: tokens.fontSizeBase600 },
   text: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXXS, minWidth: 0, flexGrow: 1 },
   star: { position: "absolute", top: tokens.spacingVerticalS, insetInlineEnd: tokens.spacingHorizontalS },
   // Colors sit on the glyph itself so Fluent's hover/pressed icon colors cannot repaint the star.
@@ -190,16 +197,14 @@ function CategoryHome({
     () =>
       q === ""
         ? listed
-        : listed.filter((m) =>
-            `${m.manifest?.name ?? ""} ${m.manifest?.description ?? ""}`.toLowerCase().includes(q),
-          ),
+        : listed.filter((m) => `${m.manifest?.name ?? ""} ${m.manifest?.description ?? ""}`.toLowerCase().includes(q)),
     [listed, q],
   );
   const dashboard = category === undefined && q === "";
 
   // Running index across sections so the stagger flows down the whole page.
   let order = 0;
-  const card = (m: ModuleEntry) => (
+  const card = (m: ModuleEntry, compact = false) => (
     <ModuleCard
       key={m.resolution.id}
       entry={m}
@@ -207,6 +212,7 @@ function CategoryHome({
       favorite={favorites.includes(m.resolution.id)}
       fresh={fresh.has(m.resolution.id)}
       motion={motion}
+      compact={compact}
       onOpen={onOpen}
       onNeedsUpdate={onNeedsUpdate}
       {...(onToggleFavorite === undefined ? {} : { onToggleFavorite })}
@@ -260,7 +266,7 @@ function CategoryHome({
               <BodyStrong as="h2" id="deck-favorites">
                 즐겨찾기
               </BodyStrong>
-              <div className={s.grid}>{starred.map(card)}</div>
+              <div className={s.favoritesGrid}>{starred.map((m) => card(m, true))}</div>
             </section>
           )}
           {sections.map((sec) => (
@@ -268,12 +274,12 @@ function CategoryHome({
               <BodyStrong as="h2" id={`deck-${sec.key}`}>
                 {sec.label}
               </BodyStrong>
-              <div className={s.grid}>{sec.items.map(card)}</div>
+              <div className={s.grid}>{sec.items.map((m) => card(m))}</div>
             </section>
           ))}
         </>
       ) : (
-        <div className={s.grid}>{matches.map(card)}</div>
+        <div className={s.grid}>{matches.map((m) => card(m))}</div>
       )}
     </div>
   );
@@ -285,6 +291,7 @@ interface ModuleCardProps {
   favorite: boolean;
   fresh: boolean;
   motion: boolean;
+  compact: boolean;
   onOpen(id: string): void;
   onNeedsUpdate(): void;
   onToggleFavorite?(id: string): void;
@@ -296,6 +303,7 @@ function ModuleCard({
   favorite,
   fresh,
   motion,
+  compact,
   onOpen,
   onNeedsUpdate,
   onToggleFavorite,
@@ -306,6 +314,7 @@ function ModuleCard({
   const badge = STATE_BADGES[m.resolution.state];
   const runnable = m.entryUrl !== null;
   const category = m.manifest?.category;
+  const [failedIconUrl, setFailedIconUrl] = useState<string | null>(null);
   const delay: CSSProperties | undefined = motion
     ? {
         animationDelay: `calc(${deckTokens.motionStagger} * ${Math.min(index, STAGGER_LIMIT)})`,
@@ -313,52 +322,44 @@ function ModuleCard({
     : undefined;
 
   return (
-    <div
-      className={mergeClasses(
-        s.cell,
-        motion && s.cellMotion,
-        motion && s.cellEnter,
-      )}
-      style={delay}
-    >
-      <Button
-        className={s.card}
-        onClick={() => (runnable ? onOpen(id) : onNeedsUpdate())}
-        aria-label={`${name} ${runnable ? "열기" : "업데이트 확인"}`}
-      >
-        <span className={s.icon}>
-          {m.iconUrl !== null ? (
-            <img className={s.iconImage} src={m.iconUrl} alt="" />
-          ) : (
-            category !== undefined && CATEGORY_ICONS[category]
-          )}
-        </span>
-        <span className={s.text}>
-          <BodyStrong>{name}</BodyStrong>
-          <span className={s.description} title={m.manifest?.description}>
-            <Body secondary>{m.manifest?.description ?? ""}</Body>
+    <div className={mergeClasses(s.cell, motion && s.cellMotion, motion && s.cellEnter)} style={delay}>
+      <Tooltip content={m.manifest?.description ?? name} relationship="description" withArrow>
+        <Button
+          className={mergeClasses(s.card, compact && s.compactCard)}
+          onClick={() => (runnable ? onOpen(id) : onNeedsUpdate())}
+          aria-label={`${name} ${runnable ? "열기" : "업데이트 확인"}`}
+        >
+          <span className={mergeClasses(s.icon, compact && s.compactIcon)}>
+            {m.iconUrl !== null && failedIconUrl !== m.iconUrl ? (
+              <img className={s.iconImage} src={m.iconUrl} alt="" onError={() => setFailedIconUrl(m.iconUrl)} />
+            ) : (
+              category !== undefined && CATEGORY_ICONS[category]
+            )}
           </span>
-          {(fresh || badge !== null) && (
-            <span className={s.badges}>
-              {fresh && (
-                <Badge appearance="filled" color="brand">
-                  새 도구
-                </Badge>
-              )}
-              {badge !== null && (
-                <Badge
-                  appearance="tint"
-                  color={
-                    m.resolution.state === "invalid" ? "danger" : "warning"
-                  }
-                >
-                  {badge}
-                </Badge>
-              )}
-            </span>
-          )}
-        </span>
-      </Button>
+          <span className={s.text}>
+            <BodyStrong>{name}</BodyStrong>
+            {!compact && (
+              <span className={s.description}>
+                <Body secondary>{m.manifest?.description ?? ""}</Body>
+              </span>
+            )}
+            {(fresh || badge !== null) && (
+              <span className={s.badges}>
+                {fresh && (
+                  <Badge appearance="filled" color="brand">
+                    새 도구
+                  </Badge>
+                )}
+                {badge !== null && (
+                  <Badge appearance="tint" color={m.resolution.state === "invalid" ? "danger" : "warning"}>
+                    {badge}
+                  </Badge>
+                )}
+              </span>
+            )}
+          </span>
+        </Button>
+      </Tooltip>
       {onToggleFavorite !== undefined && (
         <Button
           className={s.star}
