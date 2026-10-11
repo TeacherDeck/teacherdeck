@@ -1,44 +1,144 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-// Deck home: module cards, search and resolver badges (design-system.md §1).
-import { Badge, Body1, Button, Caption1, SearchBox, makeStyles, tokens } from "@fluentui/react-components";
-import { AppsRegular } from "@fluentui/react-icons";
-import { EmptyState, Title, deckTokens } from "@deck/ui";
-import { useMemo, useState } from "react";
+// Deck home (design-system.md §1): greeting and search, favorites, then every tool grouped by
+// category. Category pages and searches show one grid. Each card has a star toggle for favorites,
+// staggers in when motion is on (UI-009) and carries resolver badges (versioning.md §3).
+import { Badge, Button, SearchBox, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { AppsRegular, StarFilled, StarRegular } from "@fluentui/react-icons";
+import { Body, BodyStrong, Caption, EmptyState, Subtitle, deckTokens } from "@deck/ui";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { CATEGORY_ICONS, CATEGORY_ORDER } from "../categories.tsx";
 import type { Category } from "../generated/Category.ts";
 import type { ModuleEntry } from "../generated/ModuleEntry.ts";
 import { CATEGORY_LABELS, STATE_BADGES } from "../labels.ts";
 
+/** Cards after this many appear together instead of waiting for their turn. */
+const STAGGER_LIMIT = 8;
+
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: deckTokens.sectionGap, padding: deckTokens.pagePadding },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 240px), 1fr))",
+  // Greeting on the left, search on the right; the search drops below on narrow windows.
+  header: {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
     gap: deckTokens.itemGap,
   },
+  heading: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXXS, minWidth: 0 },
+  search: { width: "min(100%, 320px)" },
+  section: { display: "flex", flexDirection: "column", gap: deckTokens.itemGap },
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 320px), 1fr))",
+    gap: deckTokens.itemGap,
+  },
+  // Grid cell holding the card and its star toggle, which cannot nest inside the card button.
+  cell: { position: "relative", minWidth: 0 },
+  // Same surface as SettingsCard (WinUI card brushes). Large icon on the left, text on the right,
+  // pinned to the top so every card in a row lines up regardless of description length.
   card: {
     display: "flex",
-    flexDirection: "column",
-    alignItems: "stretch",
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "flex-start",
     textAlign: "start",
     whiteSpace: "normal",
+    width: "100%",
+    height: "100%",
     minWidth: 0,
-    backgroundColor: deckTokens.layer,
-    padding: tokens.spacingHorizontalL,
-    gap: tokens.spacingVerticalS,
+    minHeight: deckTokens.cardMinHeight,
+    padding: deckTokens.cardPadding,
+    // Room for the star toggle in the top-right corner.
+    paddingInlineEnd: `calc(${tokens.spacingHorizontalXXL} + ${tokens.spacingHorizontalS})`,
+    gap: deckTokens.inlineGap,
+    fontWeight: tokens.fontWeightRegular,
+    backgroundColor: deckTokens.cardFill,
+    border: `${tokens.strokeWidthThin} solid ${deckTokens.cardStroke}`,
+    borderRadius: deckTokens.cardRadius,
+    ":hover": {
+      backgroundColor: deckTokens.cardFillHover,
+      border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1Hover}`,
+    },
+    ":hover:active": {
+      backgroundColor: deckTokens.cardFill,
+      border: `${tokens.strokeWidthThin} solid ${deckTokens.cardStroke}`,
+    },
   },
-  head: { display: "flex", alignItems: "center", gap: deckTokens.inlineGap },
-  icon: { width: tokens.fontSizeHero800, height: tokens.fontSizeHero800 },
-  search: { maxWidth: "420px" },
+  // Lift on hover, settle on press (design-system.md §1 셸 모션). Transform only (UI-009). Applied
+  // to the cell so the star moves with its card.
+  cellMotion: {
+    transitionProperty: "transform",
+    transitionDuration: tokens.durationFaster,
+    transitionTimingFunction: tokens.curveEasyEase,
+    ":hover": { transform: `translateY(${deckTokens.motionCardLift})` },
+    ":hover:active": { transform: `scale(${deckTokens.motionPressScale})` },
+  },
+  // "backwards" fill: the start frame holds during the stagger delay, and the finished animation
+  // stops overriding the hover transform.
+  cellEnter: {
+    animationName: {
+      from: { opacity: 0, transform: `translateY(calc(${deckTokens.motionPageOffset} / 2))` },
+      to: { opacity: 1, transform: "none" },
+    },
+    animationDuration: tokens.durationGentle,
+    animationTimingFunction: tokens.curveDecelerateMid,
+    animationFillMode: "backwards",
+  },
+  // Module icon shown large; tools without one fall back to their category glyph.
+  icon: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    width: deckTokens.cardIconSize,
+    height: deckTokens.cardIconSize,
+    color: tokens.colorNeutralForeground2,
+    fontSize: deckTokens.cardIconSize,
+  },
+  iconImage: { width: "100%", height: "100%" },
+  text: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXXS, minWidth: 0, flexGrow: 1 },
+  star: { position: "absolute", top: tokens.spacingVerticalS, insetInlineEnd: tokens.spacingHorizontalS },
+  // Colors sit on the glyph itself so Fluent's hover/pressed icon colors cannot repaint the star.
+  starOff: { color: tokens.colorNeutralForeground3 },
+  starOn: { color: tokens.colorPaletteMarigoldForeground1 },
+  // Two lines at most so rows keep one height; the full text is in the tooltip.
+  description: {
+    display: "-webkit-box",
+    WebkitBoxOrient: "vertical",
+    WebkitLineClamp: 2,
+    overflow: "hidden",
+  },
+  badges: { display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalXS },
 });
+
+/** Time-of-day greeting for the deck home (UI-007 해요체). */
+export function greeting(hour: number): string {
+  if (hour >= 5 && hour < 11) return "좋은 아침이에요";
+  if (hour >= 11 && hour < 17) return "오늘 수업도 힘내세요";
+  if (hour >= 17 && hour < 22) return "오늘도 수고 많으셨어요";
+  return "늦은 시간까지 수고 많으세요";
+}
+
+const DATE_FORMAT = new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", weekday: "long" });
 
 export interface HomeProps {
   modules: ModuleEntry[];
   /** Restrict to one category. */
   category?: Category;
   dev: boolean;
+  /** Favorite module ids in the order they were starred. */
+  favorites?: string[];
+  /** Tools added since the previous launch; they get a "새 도구" badge. */
+  fresh?: ReadonlySet<string>;
+  /** Plays card motion (design-system.md §1 셸 모션). */
+  motion?: boolean;
+  /** Clock for the greeting and date; tests pass a fixed one. */
+  now?: Date;
   onOpen(id: string): void;
   onNeedsUpdate(): void;
+  /** Stars or unstars a tool; without it cards have no star toggle. */
+  onToggleFavorite?(id: string): void;
 }
 
 export function Home(props: HomeProps) {
@@ -46,61 +146,230 @@ export function Home(props: HomeProps) {
   return <CategoryHome key={props.category ?? "all"} {...props} />;
 }
 
-function CategoryHome({ modules, category, dev, onOpen, onNeedsUpdate }: HomeProps) {
+const NO_IDS: string[] = [];
+const NO_FRESH: ReadonlySet<string> = new Set();
+
+function CategoryHome({
+  modules,
+  category,
+  dev,
+  favorites = NO_IDS,
+  fresh = NO_FRESH,
+  motion = false,
+  now,
+  onOpen,
+  onNeedsUpdate,
+  onToggleFavorite,
+}: HomeProps) {
   const s = useStyles();
   const [query, setQuery] = useState("");
-  const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return modules
-      .filter((m) => dev || m.resolution.state !== "invalid")
-      .filter((m) => category === undefined || m.manifest?.category === category)
-      .filter(
-        (m) => q === "" || `${m.manifest?.name ?? ""} ${m.manifest?.description ?? ""}`.toLowerCase().includes(q),
-      );
-  }, [modules, category, dev, query]);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [clock] = useState(() => now ?? new Date());
+
+  // Ctrl+F jumps to the search box instead of the WebView find bar.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const listed = useMemo(
+    () =>
+      modules
+        .filter((m) => dev || m.resolution.state !== "invalid")
+        .filter((m) => category === undefined || m.manifest?.category === category),
+    [modules, category, dev],
+  );
+  const q = query.trim().toLowerCase();
+  const matches = useMemo(
+    () =>
+      q === ""
+        ? listed
+        : listed.filter((m) =>
+            `${m.manifest?.name ?? ""} ${m.manifest?.description ?? ""}`.toLowerCase().includes(q),
+          ),
+    [listed, q],
+  );
+  const dashboard = category === undefined && q === "";
+
+  // Running index across sections so the stagger flows down the whole page.
+  let order = 0;
+  const card = (m: ModuleEntry) => (
+    <ModuleCard
+      key={m.resolution.id}
+      entry={m}
+      index={order++}
+      favorite={favorites.includes(m.resolution.id)}
+      fresh={fresh.has(m.resolution.id)}
+      motion={motion}
+      onOpen={onOpen}
+      onNeedsUpdate={onNeedsUpdate}
+      {...(onToggleFavorite === undefined ? {} : { onToggleFavorite })}
+    />
+  );
+
+  const byId = new Map(listed.map((m) => [m.resolution.id, m]));
+  const starred = dashboard ? favorites.flatMap((id) => byId.get(id) ?? []) : [];
+  const sections: { key: string; label: string; items: ModuleEntry[] }[] = dashboard
+    ? [
+        ...CATEGORY_ORDER.map((c) => ({
+          key: c,
+          label: CATEGORY_LABELS[c],
+          items: listed.filter((m) => m.manifest?.category === c),
+        })),
+        // Invalid modules have no manifest and therefore no category (dev builds only).
+        { key: "other", label: "기타", items: listed.filter((m) => m.manifest === null) },
+      ].filter((sec) => sec.items.length > 0)
+    : [];
 
   return (
     <div className={s.page}>
-      <Title as="h1">{category === undefined ? "덱" : CATEGORY_LABELS[category]}</Title>
-      <SearchBox
-        className={s.search}
-        placeholder="도구 검색"
-        aria-label="도구 검색"
-        value={query}
-        onChange={(_, d) => setQuery(d.value)}
-      />
-      {visible.length === 0 ? (
+      <header className={s.header}>
+        {category === undefined ? (
+          <div className={s.heading}>
+            <Caption secondary>{DATE_FORMAT.format(clock)}</Caption>
+            <Subtitle as="h1">{greeting(clock.getHours())}</Subtitle>
+          </div>
+        ) : (
+          <Subtitle as="h1">{CATEGORY_LABELS[category]}</Subtitle>
+        )}
+        <SearchBox
+          input={{ ref: searchRef }}
+          className={s.search}
+          placeholder="도구 검색"
+          aria-label="도구 검색"
+          value={query}
+          onChange={(_, d) => setQuery(d.value)}
+        />
+      </header>
+      {matches.length === 0 ? (
         <EmptyState
           icon={<AppsRegular />}
-          title={query === "" ? "아직 설치된 도구가 없어요" : "검색 결과가 없어요"}
-          description={query === "" ? "앱을 업데이트하면 새 도구가 추가돼요." : "다른 단어로 검색해 보세요."}
+          title={q === "" ? "아직 설치된 도구가 없어요" : "검색 결과가 없어요"}
+          description={q === "" ? "앱을 업데이트하면 새 도구가 추가돼요." : "다른 단어로 검색해 보세요."}
         />
+      ) : dashboard ? (
+        <>
+          {starred.length > 0 && (
+            <section className={s.section} aria-labelledby="deck-favorites">
+              <BodyStrong as="h2" id="deck-favorites">
+                즐겨찾기
+              </BodyStrong>
+              <div className={s.grid}>{starred.map(card)}</div>
+            </section>
+          )}
+          {sections.map((sec) => (
+            <section key={sec.key} className={s.section} aria-labelledby={`deck-${sec.key}`}>
+              <BodyStrong as="h2" id={`deck-${sec.key}`}>
+                {sec.label}
+              </BodyStrong>
+              <div className={s.grid}>{sec.items.map(card)}</div>
+            </section>
+          ))}
+        </>
       ) : (
-        <div className={s.grid}>
-          {visible.map((m) => {
-            const badge = STATE_BADGES[m.resolution.state];
-            const runnable = m.entryUrl !== null;
-            return (
-              <Button
-                key={m.resolution.id}
-                className={s.card}
-                onClick={() => (runnable ? onOpen(m.resolution.id) : onNeedsUpdate())}
-                aria-label={`${m.manifest?.name ?? m.resolution.id} ${runnable ? "열기" : "업데이트 확인"}`}
-              >
-                <span className={s.head}>
-                  {m.iconUrl !== null && <img className={s.icon} src={m.iconUrl} alt="" />}
-                  <Body1>{m.manifest?.name ?? m.resolution.id}</Body1>
-                </span>
-                <Caption1>{m.manifest?.description ?? ""}</Caption1>
-                {badge !== null && (
-                  <Badge appearance="tint" color={m.resolution.state === "invalid" ? "danger" : "warning"}>
-                    {badge}
-                  </Badge>
-                )}
-              </Button>
-            );
-          })}
-        </div>
+        <div className={s.grid}>{matches.map(card)}</div>
+      )}
+    </div>
+  );
+}
+
+interface ModuleCardProps {
+  entry: ModuleEntry;
+  index: number;
+  favorite: boolean;
+  fresh: boolean;
+  motion: boolean;
+  onOpen(id: string): void;
+  onNeedsUpdate(): void;
+  onToggleFavorite?(id: string): void;
+}
+
+function ModuleCard({
+  entry: m,
+  index,
+  favorite,
+  fresh,
+  motion,
+  onOpen,
+  onNeedsUpdate,
+  onToggleFavorite,
+}: ModuleCardProps) {
+  const s = useStyles();
+  const id = m.resolution.id;
+  const name = m.manifest?.name ?? id;
+  const badge = STATE_BADGES[m.resolution.state];
+  const runnable = m.entryUrl !== null;
+  const category = m.manifest?.category;
+  const delay: CSSProperties | undefined = motion
+    ? {
+        animationDelay: `calc(${deckTokens.motionStagger} * ${Math.min(index, STAGGER_LIMIT)})`,
+      }
+    : undefined;
+
+  return (
+    <div
+      className={mergeClasses(
+        s.cell,
+        motion && s.cellMotion,
+        motion && s.cellEnter,
+      )}
+      style={delay}
+    >
+      <Button
+        className={s.card}
+        onClick={() => (runnable ? onOpen(id) : onNeedsUpdate())}
+        aria-label={`${name} ${runnable ? "열기" : "업데이트 확인"}`}
+      >
+        <span className={s.icon}>
+          {m.iconUrl !== null ? (
+            <img className={s.iconImage} src={m.iconUrl} alt="" />
+          ) : (
+            category !== undefined && CATEGORY_ICONS[category]
+          )}
+        </span>
+        <span className={s.text}>
+          <BodyStrong>{name}</BodyStrong>
+          <span className={s.description} title={m.manifest?.description}>
+            <Body secondary>{m.manifest?.description ?? ""}</Body>
+          </span>
+          {(fresh || badge !== null) && (
+            <span className={s.badges}>
+              {fresh && (
+                <Badge appearance="filled" color="brand">
+                  새 도구
+                </Badge>
+              )}
+              {badge !== null && (
+                <Badge
+                  appearance="tint"
+                  color={
+                    m.resolution.state === "invalid" ? "danger" : "warning"
+                  }
+                >
+                  {badge}
+                </Badge>
+              )}
+            </span>
+          )}
+        </span>
+      </Button>
+      {onToggleFavorite !== undefined && (
+        <Button
+          className={s.star}
+          appearance="subtle"
+          size="small"
+          aria-pressed={favorite}
+          icon={favorite ? <StarFilled className={s.starOn} /> : <StarRegular className={s.starOff} />}
+          aria-label={`${name} 즐겨찾기`}
+          title={favorite ? "즐겨찾기에서 빼기" : "즐겨찾기에 추가"}
+          onClick={() => onToggleFavorite(id)}
+        />
       )}
     </div>
   );

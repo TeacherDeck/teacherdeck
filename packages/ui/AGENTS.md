@@ -13,6 +13,7 @@
 | UI-005 | 키보드 조작, 포커스 표시, 텍스트 150%·DPI 200%, WCAG AA를 지킨다. | 같은 문서 |
 | UI-007 | 문구는 해요체로 쓰고, 버튼은 동작어로, 오류는 사과 없이 쓴다. | 같은 문서 |
 | UI-008 | 일괄 처리 골격은 `ToolLayout`으로 제공한다. | 같은 문서 |
+| UI-009 | 모션은 `transform`·`opacity`만, Fluent duration·curve와 `@deck/ui` 모션 토큰으로 쓰고 reduced-motion을 존중한다. | 같은 문서 |
 | 추가 | Fluent 컴포넌트를 감쌀 때 Fluent의 접근성 속성과 키보드 동작을 지우지 않는다. | 이 문서 |
 | 추가 | 새 컨트롤은 WinUI에 있는 컨트롤의 이름·props·모양을 따른다. WinUI에 없는 패턴(Drawer, Toast 등)은 만들지 않는다. | [ADR-0011](../../docs/adr/0011-winui-aligned-deck-ui.md) |
 | 추가 | 입력 컨트롤은 `header`(접근성 이름 겸 머리글)를 필수로 받고 `showHeader`로 숨길 수 있게 한다. | 이 문서 |

@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-// Custom title bar for the borderless main window (design-system.md §1). The left part is a Tauri
-// drag region: drag moves the window, double-click maximizes. Caption buttons copy WinUI: 46px wide,
-// Segoe Fluent Icons glyphs, red close on hover.
+// Custom title bar for the borderless main window (design-system.md §1). An optional back button
+// sits at the far left (WinUI TitleBar), then a Tauri drag region: drag moves the window, double-click
+// maximizes. Caption buttons copy WinUI: 46px wide, Segoe Fluent Icons glyphs, red close on hover.
+// Buttons stay outside the "deep" drag region so it never swallows their clicks.
 import { makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { deckTokens } from "@deck/ui";
 import { useEffect, useState } from "react";
 import type { WindowControls } from "./host.ts";
 
 /** Segoe Fluent Icons / MDL2 code points. */
-const GLYPH = { minimize: "", maximize: "", restore: "", close: "" } as const;
+const GLYPH = { back: "", minimize: "", maximize: "", restore: "", close: "" } as const;
 
 const useStyles = makeStyles({
   bar: {
@@ -67,9 +68,11 @@ const useStyles = makeStyles({
 export interface TitleBarProps {
   title: string;
   controls: WindowControls;
+  /** Goes back in the shell history; the button is hidden when there is nowhere to go back to. */
+  onBack?: () => void;
 }
 
-export function TitleBar({ title, controls }: TitleBarProps) {
+export function TitleBar({ title, controls, onBack }: TitleBarProps) {
   const s = useStyles();
   const [maximized, setMaximized] = useState(false);
 
@@ -92,6 +95,11 @@ export function TitleBar({ title, controls }: TitleBarProps) {
 
   return (
     <header className={s.bar}>
+      {onBack !== undefined && (
+        <button type="button" className={s.caption} aria-label="뒤로" title="뒤로 (Alt+←)" onClick={onBack}>
+          {GLYPH.back}
+        </button>
+      )}
       <div className={s.drag} data-tauri-drag-region="deep">
         <img className={s.logo} src="/app-icon.png" alt="" />
         <span className={s.title}>{title}</span>

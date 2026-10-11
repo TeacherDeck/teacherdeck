@@ -88,7 +88,10 @@ export function ModuleHost({ bridge, modules, mounted, active, loadErrors }: Mod
         </MessageBar>
       )}
       <div className={s.frames}>
-        {mounted.map((id) => {
+        {/* Fixed order, not `mounted` (active first): reordering keyed iframes makes React move their
+            DOM nodes, and a moved iframe reloads as a new window the bridge has never registered, so
+            the tool never gets init ("도구를 시작하지 못했어요"). Visibility alone picks the active one. */}
+        {[...mounted].sort().map((id) => {
           const entry = byId.get(id);
           return entry === undefined ? null : <Frame key={id} bridge={bridge} entry={entry} visible={id === active} />;
         })}

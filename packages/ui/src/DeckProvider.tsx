@@ -48,19 +48,14 @@ const useDocumentStyles = makeStaticStyles({
 });
 
 const useStyles = makeStyles({
+  // Fluent copies the provider className onto every portal mount node (applyStylesToPortals), so
+  // it must not size, paint or clip: a full-height background here covered the app whenever a
+  // Dropdown or Menu opened, and overflow clipping on the zero-height mount node makes popup
+  // positioning squeeze lists to max-height 0. Transparent replaces Fluent's default background.
+  provider: { backgroundColor: "transparent", color: tokens.colorNeutralForeground1 },
   // UI-004: transparent root so the Mica backdrop shows through; surfaces use layer tokens.
-  transparent: {
-    backgroundColor: "transparent",
-    minHeight: "100vh",
-    overflowX: "clip",
-    color: tokens.colorNeutralForeground1,
-  },
-  opaque: {
-    backgroundColor: tokens.colorNeutralBackground2,
-    minHeight: "100vh",
-    overflowX: "clip",
-    color: tokens.colorNeutralForeground1,
-  },
+  transparent: { backgroundColor: "transparent", minHeight: "100vh", overflowX: "clip" },
+  opaque: { backgroundColor: tokens.colorNeutralBackground2, minHeight: "100vh", overflowX: "clip" },
 });
 
 export interface DeckProviderProps {
@@ -114,12 +109,15 @@ export function DeckProvider({ deck, theme, mica, children }: DeckProviderProps)
   }, [nested, thumb, thumbHover]);
   return (
     <ParentDeckProvider.Provider value={true}>
-      <FluentProvider
-        theme={resolved}
-        className={transparent ? styles.transparent : styles.opaque}
-        style={{ [THUMB_VAR]: thumb, [THUMB_HOVER_VAR]: thumbHover } as CSSProperties}
-      >
-        <FocusManagementLifetime>{children}</FocusManagementLifetime>
+      <FluentProvider theme={resolved} className={styles.provider}>
+        <FocusManagementLifetime>
+          <div
+            className={transparent ? styles.transparent : styles.opaque}
+            style={{ [THUMB_VAR]: thumb, [THUMB_HOVER_VAR]: thumbHover } as CSSProperties}
+          >
+            {children}
+          </div>
+        </FocusManagementLifetime>
       </FluentProvider>
     </ParentDeckProvider.Provider>
   );

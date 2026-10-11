@@ -24,6 +24,15 @@ export function savePreference(p: ThemePreference): void {
   }
 }
 
+/**
+ * Whether the window may stay transparent over Mica (design-system.md §3). Mica follows the
+ * Windows theme, so a light page over dark Mica (or the reverse) loses contrast; an explicit choice
+ * that differs from Windows falls back to the opaque background (UI-004, UI-005).
+ */
+export function micaFor(available: boolean, mode: "light" | "dark", systemMode: "light" | "dark"): boolean {
+  return available && mode === systemMode;
+}
+
 /** Resolves the preference against the OS color scheme and follows OS changes. */
 export function useColorMode(pref: ThemePreference): "light" | "dark" {
   const query = "(prefers-color-scheme: dark)";

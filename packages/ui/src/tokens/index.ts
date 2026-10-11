@@ -79,6 +79,22 @@ export const deckTokens = {
   scrollbarThumbRadius: "6px",
   /** A nonzero alpha keeps the otherwise transparent Windows region draggable. */
   captureHitTestFill: "rgba(0, 0, 0, 0.004)",
+  /**
+   * Shell motion distances and scales (design-system.md §1 셸 모션, UI-009). Timing always comes
+   * from Fluent `duration*` / `curve*` tokens.
+   */
+  motionPageOffset: "16px",
+  motionCardLift: "-2px",
+  motionPressScale: "0.98",
+  motionDrillScale: "0.96",
+  motionStagger: "30ms",
+  /** Selection pill of the navigation rail (WinUI NavigationView: 3 x 16px). */
+  navPillHeight: "16px",
+  /** Module icon on deck cards (no colored tile behind it). */
+  cardIconSize: "32px",
+  /** Fanned deck on the launch screen. */
+  launchCardWidth: "72px",
+  launchCardHeight: "96px",
 } as const;
 
 /** Fluent theme for a color mode with the deck fonts and WinUI extras. */

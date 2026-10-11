@@ -52,7 +52,7 @@
 | MOD-015 | MUST | vitest 단위 테스트와 mock host 테스트를 갖춘다. |
 | MOD-016 | MAY | 모듈 전용 지침은 모듈 디렉터리에 AGENTS.md + CLAUDE.md 쌍으로 둔다. |
 
-관련 규칙: UI-001~008([design-system.md](../docs/spec/design-system.md#8-규칙)), PRV-003·004·006([privacy.md](../docs/spec/privacy.md#4-규칙)), VER-004([versioning.md](../docs/spec/versioning.md#4-규칙)).
+관련 규칙: UI-001~009([design-system.md](../docs/spec/design-system.md#8-규칙)), PRV-003·004·006([privacy.md](../docs/spec/privacy.md#4-규칙)), VER-004([versioning.md](../docs/spec/versioning.md#4-규칙)).
 
 ## 완료 체크리스트
 

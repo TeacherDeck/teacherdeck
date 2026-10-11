@@ -290,7 +290,7 @@ export function Gallery() {
   const [large, setLarge] = useState(false);
   return (
     <div className={s.page}>
-      <Title as="h1">UI 갤러리</Title>
+      <Subtitle as="h1">UI 갤러리</Subtitle>
       <ToggleSwitch header="텍스트 150%" checked={large} onChange={setLarge} />
       {COMPONENTS.map((name) => (
         <section key={name} aria-label={name}>

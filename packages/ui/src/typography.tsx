@@ -66,12 +66,12 @@ export function BodyStrong(props: TypographyProps) {
   return render(Body1Strong, useTextProps(props, false));
 }
 
-/** 20/26 semibold. Dialog and empty-state titles. */
+/** 20/26 semibold. Page titles on every screen (use as="h1"), dialog and empty-state titles. */
 export function Subtitle(props: TypographyProps) {
   return render(Subtitle1, useTextProps(props, true));
 }
 
-/** 28/36 semibold. Page titles (use as="h1"). */
+/** 28/36 semibold. Large headings inside a page; page titles use Subtitle. */
 export function Title(props: TypographyProps) {
   return render(Title2, useTextProps(props, true));
 }
