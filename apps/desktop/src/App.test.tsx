@@ -1,0 +1,168 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms: see LICENSE-ADDITIONAL-TERMS
+// @vitest-environment jsdom
+// Shell-level handshake: opening a tool from the deck must answer its `hello` with `init`
+// (BRG-003). Without init the module shows "도구를 시작하지 못했어요" after its timeout. Kept-alive
+// tools must keep their iframe window: a moved iframe reloads as a window the bridge never saw.
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PROTOCOL_VERSION } from "@deck/sdk";
+import type { ModuleEntry } from "./generated/ModuleEntry.ts";
+
+const entry = (id: string, name: string, keepAlive = false): ModuleEntry => ({
+  resolution: {
+    id,
+    state: "ready",
+    picked: { version: "0.1.0", source: "bundled" },
+    newest: "0.1.0",
+    unmetRequires: [],
+    unmetOptional: [],
+  },
+  manifest: {
+    manifestVersion: 1,
+    id,
+    name,
+    description: "합성 도구 설명",
+    version: "0.1.0",
+    category: "classroom",
+    icon: "icon.svg",
+    entry: "index.html",
+    authors: [{ name: "합성 기여자" }],
+    requires: {},
+    optional: {},
+    ...(keepAlive ? { ui: { keepAlive: true } } : {}),
+  },
+  entryUrl: `http://deckmod.${id}.modules.localhost/${id}/0.1.0/index.html`,
+  iconUrl: null,
+});
+
+const noop = () => Promise.resolve(() => undefined);
+vi.mock("./host.ts", () => ({
+  host: {
+    shellInfo: vi.fn(() =>
+      Promise.resolve({
+        appVersion: "0.2.2",
+        mica: false,
+        caps: {},
+        moduleOrigin: "http://deckmod.localhost",
+        dev: false,
+        secProbe: false,
+      }),
+    ),
+    listModules: vi.fn(() =>
+      Promise.resolve([
+        entry("sample-timer", "합성 타이머"),
+        entry("sample-clock", "합성 시계", true),
+        entry("sample-notes", "합성 메모", true),
+      ]),
+    ),
+    moduleActivated: vi.fn(() => Promise.resolve([])),
+    moduleVisibility: vi.fn(() => Promise.resolve()),
+    moduleUnloaded: vi.fn(() => Promise.resolve()),
+    hostInvoke: vi.fn(() => Promise.resolve(null)),
+    checkUpdate: vi.fn(),
+    installUpdate: vi.fn(),
+    restartApp: vi.fn(),
+    secProbeReport: vi.fn(),
+    onModuleEvent: vi.fn(noop),
+    onShowModule: vi.fn(noop),
+    onFsDropped: vi.fn(noop),
+  },
+  windowControls: {
+    minimize: vi.fn(),
+    toggleMaximize: vi.fn(),
+    close: vi.fn(),
+    isMaximized: vi.fn(() => Promise.resolve(false)),
+    onResized: vi.fn(noop),
+  },
+}));
+
+const { App } = await import("./App.tsx");
+
+beforeEach(() => window.localStorage.setItem("deck.shell.motion", "off"));
+afterEach(() => {
+  cleanup();
+  window.localStorage.clear();
+});
+
+async function openTool() {
+  render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "합성 타이머 열기" }));
+  const frame = (await screen.findByTitle("합성 타이머")) as HTMLIFrameElement;
+  const win = frame.contentWindow;
+  if (win === null) throw new Error("iframe window missing");
+  return win;
+}
+
+function hello(win: Window, id = "sample-timer") {
+  window.dispatchEvent(
+    new MessageEvent("message", {
+      data: { deck: PROTOCOL_VERSION, kind: "hello", sdk: "test" },
+      origin: `http://deckmod.${id}.modules.localhost`,
+      source: win,
+    }),
+  );
+}
+
+const frameWindow = (name: string) => (screen.getByTitle(name) as HTMLIFrameElement).contentWindow;
+
+async function open(name: string) {
+  const back = screen.queryByRole("button", { name: "뒤로" });
+  if (back !== null && screen.queryByRole("navigation", { name: "메뉴" }) === null) fireEvent.click(back);
+  fireEvent.click(await screen.findByRole("button", { name: `${name} 열기` }));
+  await screen.findByTitle(name);
+}
+
+describe("tool handshake", () => {
+  it("answers hello with init right after opening a tool", async () => {
+    const win = await openTool();
+    const post = vi.spyOn(win, "postMessage");
+    act(() => hello(win));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "init" }),
+        "http://deckmod.sample-timer.modules.localhost",
+      ),
+    );
+  });
+
+  it("still answers when the tool says hello a few seconds later", async () => {
+    const win = await openTool();
+    const post = vi.spyOn(win, "postMessage");
+    await act(() => new Promise((r) => setTimeout(r, 1500)));
+    act(() => hello(win));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(expect.objectContaining({ kind: "init" }), expect.any(String)),
+    );
+  });
+
+  it("keeps kept-alive tool windows while switching between them", async () => {
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+    await screen.findByRole("button", { name: "합성 시계 열기" });
+    await open("합성 시계");
+    await open("합성 메모");
+    const clock = frameWindow("합성 시계");
+    const notes = frameWindow("합성 메모");
+    // Switching back and forth reorders the most-recently-used list; the iframes must not move.
+    await open("합성 시계");
+    await open("합성 메모");
+    await open("합성 시계");
+    expect(frameWindow("합성 시계")).toBe(clock);
+    expect(frameWindow("합성 메모")).toBe(notes);
+    // A reloaded tool says hello again from the same window and gets init back.
+    const win = frameWindow("합성 시계");
+    if (win === null) throw new Error("iframe window missing");
+    const post = vi.spyOn(win, "postMessage");
+    act(() => hello(win, "sample-clock"));
+    await waitFor(() => expect(post).toHaveBeenCalledWith(expect.objectContaining({ kind: "init" }), expect.any(String)));
+  });
+});

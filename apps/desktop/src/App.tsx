@@ -1,34 +1,28 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 // Shell root: navigation rail + pages (design-system.md §1), bridge wiring and theme push.
-import { Button, Spinner, makeStyles, tokens } from "@fluentui/react-components";
-import {
-  DocumentRegular,
-  FolderRegular,
-  HomeRegular,
-  ImageRegular,
-  InfoRegular,
-  PaintBrushRegular,
-  PeopleTeamRegular,
-  SettingsRegular,
-  WrenchRegular,
-} from "@fluentui/react-icons";
+import { Button, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { HomeRegular, InfoRegular, PaintBrushRegular, SettingsRegular } from "@fluentui/react-icons";
 import { type InitPayload } from "@deck/sdk";
 import { DeckProvider, EmptyState, deckTokens, themeToPayload } from "@deck/ui";
-import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ModuleBridge, moduleEntryOrigin } from "./bridge/ModuleBridge.ts";
 import { KeepAliveSet } from "./bridge/keepAlive.ts";
+import { CATEGORY_ICONS, CATEGORY_ORDER } from "./categories.tsx";
+import { loadFavorites, saveFavorites, takeFreshModules, withFavoriteToggled } from "./deckState.ts";
 import type { Category } from "./generated/Category.ts";
 import type { ModuleEntry } from "./generated/ModuleEntry.ts";
 import type { ShellInfo } from "./generated/ShellInfo.ts";
 import { host, windowControls } from "./host.ts";
 import { CATEGORY_LABELS } from "./labels.ts";
+import { LaunchScreen } from "./LaunchScreen.tsx";
+import { loadMotionPreference, playMotion, saveMotionPreference, useOsReducedMotion } from "./motion.ts";
 import { About } from "./pages/About.tsx";
 import { Gallery } from "./pages/Gallery.tsx";
 import { Home } from "./pages/Home.tsx";
 import { ModuleHost } from "./pages/ModuleHost.tsx";
 import { Settings } from "./pages/Settings.tsx";
-import { type ThemePreference, loadPreference, savePreference, useColorMode } from "./theme.ts";
+import { type ThemePreference, loadPreference, micaFor, savePreference, useColorMode } from "./theme.ts";
 import { TitleBar } from "./TitleBar.tsx";
 
 type Page =
@@ -39,19 +33,37 @@ type Page =
   | { kind: "about" }
   | { kind: "gallery" };
 
-const CATEGORY_ICONS: Record<Category, ReactElement> = {
-  classroom: <PeopleTeamRegular />,
-  file: <FolderRegular />,
-  image: <ImageRegular />,
-  document: <DocumentRegular />,
-  utility: <WrenchRegular />,
-};
+/** Rail item a page belongs to; module pages have none. */
+function railKey(page: Page): string | null {
+  switch (page.kind) {
+    case "module":
+      return null;
+    case "category":
+      return `category:${page.category}`;
+    default:
+      return page.kind;
+  }
+}
+
+/** Shortest launch screen, so the fan-out finishes instead of flashing (ADR-0024). */
+const LAUNCH_MIN_MS = 700;
+/** Longer when new tools arrived, so the count can be read. */
+const LAUNCH_MIN_FRESH_MS = 1600;
 
 const useStyles = makeStyles({
   // The shell never scrolls as a whole; only the content pane scrolls, and only vertically.
   shell: { display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" },
+  stage: { display: "flex", flexGrow: 1, minHeight: 0, position: "relative" },
   body: { display: "flex", flexGrow: 1, minHeight: 0 },
+  // Fades in under the leaving launch screen (design-system.md §1 셸 모션).
+  bodyEnter: {
+    animationName: { from: { opacity: 0 }, to: { opacity: 1 } },
+    animationDuration: tokens.durationGentle,
+    animationTimingFunction: tokens.curveDecelerateMid,
+    animationFillMode: "backwards",
+  },
   rail: {
+    position: "relative",
     display: "flex",
     flexDirection: "column",
     gap: tokens.spacingVerticalXS,
@@ -62,6 +74,44 @@ const useStyles = makeStyles({
   },
   spacer: { flexGrow: 1 },
   railButton: { justifyContent: "flex-start" },
+  // WinUI NavigationView: selected item gets the subtle selected fill and an accent pill.
+  railSelected: { backgroundColor: tokens.colorSubtleBackgroundSelected },
+  pill: {
+    position: "absolute",
+    top: 0,
+    left: tokens.spacingHorizontalS,
+    display: "flex",
+    alignItems: "center",
+    pointerEvents: "none",
+    opacity: 0,
+  },
+  pillShown: { opacity: 1 },
+  pillMove: {
+    transitionProperty: "transform, opacity",
+    transitionDuration: tokens.durationNormal,
+    transitionTimingFunction: tokens.curveDecelerateMid,
+  },
+  pillFade: {
+    transitionProperty: "opacity",
+    transitionDuration: tokens.durationNormal,
+    transitionTimingFunction: tokens.curveDecelerateMid,
+  },
+  pillBar: {
+    width: tokens.strokeWidthThicker,
+    height: deckTokens.navPillHeight,
+    borderRadius: tokens.borderRadiusCircular,
+    backgroundColor: tokens.colorCompoundBrandStroke,
+  },
+  // Entrance: only the new page moves; the old one is simply gone (design-system.md §1 셸 모션).
+  pageEnter: {
+    animationName: {
+      from: { opacity: 0, transform: `translateY(${deckTokens.motionPageOffset})` },
+      to: { opacity: 1, transform: "none" },
+    },
+    animationDuration: tokens.durationGentle,
+    animationTimingFunction: tokens.curveDecelerateMax,
+    animationFillMode: "backwards",
+  },
   content: {
     flexGrow: 1,
     minWidth: 0,
@@ -73,6 +123,8 @@ const useStyles = makeStyles({
     // Straight divider between the rail and the content pane.
     borderLeft: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
   },
+  // Tools take the whole width: no rail, so no divider either.
+  contentFull: { borderLeft: "none" },
   moduleLayer: { position: "absolute", inset: 0 },
   hidden: { display: "none" },
 });
@@ -159,22 +211,46 @@ export function App() {
   const [loadErrors, setLoadErrors] = useState<ReadonlySet<string>>(new Set());
   const [pref, setPref] = useState<ThemePreference>(loadPreference);
   const mode = useColorMode(pref);
-  const mica = info?.mica ?? false;
+  const systemMode = useColorMode("system");
+  const mica = micaFor(info?.mica ?? false, mode, systemMode);
   const themePayload = useMemo(() => themeToPayload(mode, mica), [mode, mica]);
   const themeRef = useRef(themePayload);
   themeRef.current = themePayload;
   const keepAlive = useRef(new KeepAliveSet());
   const modulesRef = useRef(modules);
   modulesRef.current = modules;
+  const [motionPref, setMotionPref] = useState(loadMotionPreference);
+  const osReducedMotion = useOsReducedMotion();
+  const motion = motionPref && !osReducedMotion;
+  const [favorites, setFavorites] = useState(loadFavorites);
+  const [fresh, setFresh] = useState<ReadonlySet<string>>(new Set());
+  // Taken once per launch; StrictMode re-runs the load effect, refs survive it.
+  const freshRef = useRef<ReadonlySet<string> | null>(null);
+  const [launch, setLaunch] = useState<"loading" | "leaving" | "done">("loading");
+  const launchStart = useRef(performance.now());
 
   useEffect(() => {
     Promise.all([host.shellInfo(), host.listModules()])
       .then(([i, m]) => {
+        freshRef.current ??= new Set(takeFreshModules(m.map((e) => e.resolution.id)));
+        setFresh(freshRef.current);
         setInfo(i);
         setModules(m);
       })
       .catch(() => setError("앱 정보를 불러오지 못했어요. 앱을 다시 시작해 주세요."));
   }, []);
+
+  // The launch screen stays only as long as loading takes, plus a short minimum (ADR-0024).
+  useEffect(() => {
+    if (info === null || launch !== "loading") return undefined;
+    if (!motion) {
+      setLaunch("done");
+      return undefined;
+    }
+    const min = fresh.size > 0 ? LAUNCH_MIN_FRESH_MS : LAUNCH_MIN_MS;
+    const timer = setTimeout(() => setLaunch("leaving"), Math.max(0, min - (performance.now() - launchStart.current)));
+    return () => clearTimeout(timer);
+  }, [info, launch, motion, fresh]);
 
   const bridge = useMemo(
     () =>
@@ -234,22 +310,37 @@ export function App() {
   );
 
   // Every page change is a history entry, so the mouse back/forward buttons and Alt+←/→ work like
-  // a browser. WebView2 handles those natively, also while the pointer is over a module iframe.
+  // a browser. WebView2 handles those natively, also while the pointer is over a module iframe. The
+  // entry index tells the title bar whether there is anywhere to go back to.
+  const [historyIndex, setHistoryIndex] = useState(0);
   const navigate = useCallback(
     (next: Page) => {
       if (JSON.stringify(next) === JSON.stringify(page)) return;
-      window.history.pushState({ page: next }, "");
+      window.history.pushState({ page: next, index: historyIndex + 1 }, "");
+      setHistoryIndex(historyIndex + 1);
+      // The "새 도구" badge has done its job once the tool is opened.
+      if (next.kind === "module" && fresh.has(next.id)) setFresh(new Set([...fresh].filter((id) => id !== next.id)));
       show(next);
     },
-    [page, show],
+    [page, show, fresh, historyIndex],
   );
+  const toggleFavorite = (id: string) => {
+    const next = withFavoriteToggled(favorites, id);
+    saveFavorites(next);
+    setFavorites(next);
+  };
+  const changeMotion = (on: boolean) => {
+    saveMotionPreference(on);
+    setMotionPref(on);
+  };
   const showRef = useRef(show);
   showRef.current = show;
   useEffect(() => {
-    window.history.replaceState({ page: { kind: "home" } satisfies Page }, "");
+    window.history.replaceState({ page: { kind: "home" } satisfies Page, index: 0 }, "");
     const onPop = (e: PopStateEvent) => {
-      const next = (e.state as { page?: Page } | null)?.page;
-      if (next !== undefined) showRef.current(next);
+      const state = e.state as { page?: Page; index?: number } | null;
+      if (state?.page !== undefined) showRef.current(state.page);
+      setHistoryIndex(state?.index ?? 0);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -284,95 +375,184 @@ export function App() {
     setPref(p);
   };
 
-  if (error !== null || info === null) {
+  const activeModule = page.kind === "module" ? page.id : null;
+  const currentRail = railKey(page);
+  const usedCategories = CATEGORY_ORDER.filter((c) => modules.some((m) => m.manifest?.category === c));
+  const shellReady = info !== null && launch !== "loading";
+
+  // Rail selection pill: slides to the selected item and fades out on module pages, which have no
+  // rail item (design-system.md §1 셸 모션).
+  const railRef = useRef<HTMLElement>(null);
+  const railItems = useRef(new Map<string, HTMLButtonElement>());
+  const [pill, setPill] = useState({ y: 0, height: 0, shown: false, move: false });
+  const placePill = useCallback(
+    (move: boolean) => {
+      const el = currentRail === null ? undefined : railItems.current.get(currentRail);
+      setPill((prev) =>
+        el === undefined
+          ? { ...prev, shown: false, move: false }
+          : { y: el.offsetTop, height: el.offsetHeight, shown: true, move: move && prev.shown },
+      );
+    },
+    [currentRail],
+  );
+  useLayoutEffect(() => placePill(true), [placePill, shellReady, usedCategories.length]);
+  useEffect(() => {
+    const rail = railRef.current;
+    if (rail === null || typeof ResizeObserver === "undefined") return undefined;
+    // Text scaling and window size move the items; follow them without sliding.
+    const observer = new ResizeObserver(() => placePill(false));
+    observer.observe(rail);
+    return () => observer.disconnect();
+  }, [placePill, shellReady]);
+
+  // Drill-in for the module layer. Its iframes stay mounted, so the motion is played, not remounted.
+  const moduleLayerRef = useRef<HTMLDivElement>(null);
+  const shownModule = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const el = moduleLayerRef.current;
+    if (motion && el !== null && activeModule !== null && activeModule !== shownModule.current) {
+      playMotion(
+        el,
+        [
+          { opacity: 0, transform: `scale(${deckTokens.motionDrillScale})` },
+          { opacity: 1, transform: "none" },
+        ],
+        tokens.durationSlow,
+        tokens.curveDecelerateMax,
+      );
+    }
+    shownModule.current = activeModule;
+  }, [activeModule, motion]);
+
+  if (error !== null) {
     return (
       <DeckProvider theme={themePayload} mica={false}>
         <div className={s.shell}>
           <TitleBar title="TeacherDeck" controls={windowControls} />
-          {error === null ? (
-            <Spinner label="불러오는 중" />
-          ) : (
-            <EmptyState title="문제가 생겼어요" description={error} />
-          )}
+          <EmptyState title="문제가 생겼어요" description={error} />
         </div>
       </DeckProvider>
     );
   }
 
-  const railItem = (label: string, icon: ReactElement, target: Page, current: boolean) => (
-    <Button
-      key={label}
-      className={s.railButton}
-      appearance={current ? "secondary" : "subtle"}
-      icon={icon}
-      aria-current={current ? "page" : undefined}
-      onClick={() => navigate(target)}
-    >
-      {label}
-    </Button>
+  const launchMessage =
+    info === null ? "도구를 준비하고 있어요" : fresh.size > 0 ? `새 도구 ${fresh.size}개가 추가됐어요` : "준비됐어요";
+  const launchScreen = launch !== "done" && (
+    <LaunchScreen
+      motion={motion}
+      leaving={launch === "leaving"}
+      message={launchMessage}
+      onLeft={() => setLaunch("done")}
+    />
   );
-  const usedCategories = [...new Set(modules.flatMap((m) => (m.manifest === null ? [] : [m.manifest.category])))];
-  const activeModule = page.kind === "module" ? page.id : null;
+
+  if (!shellReady) {
+    return (
+      <DeckProvider theme={themePayload} mica={mica}>
+        <div className={s.shell}>
+          <TitleBar title="TeacherDeck" controls={windowControls} />
+          <div className={s.stage}>{launchScreen}</div>
+        </div>
+      </DeckProvider>
+    );
+  }
+
+  const railItem = (key: string, label: string, icon: ReactElement, target: Page) => {
+    const current = key === currentRail;
+    return (
+      <Button
+        key={key}
+        ref={(el: HTMLButtonElement | null) => {
+          if (el === null) railItems.current.delete(key);
+          else railItems.current.set(key, el);
+        }}
+        className={mergeClasses(s.railButton, current && s.railSelected)}
+        appearance="subtle"
+        icon={icon}
+        aria-current={current ? "page" : undefined}
+        onClick={() => navigate(target)}
+      >
+        {label}
+      </Button>
+    );
+  };
+  const homeProps = {
+    modules,
+    dev: info.dev,
+    favorites,
+    fresh,
+    motion,
+    onOpen: (id: string) => navigate({ kind: "module", id }),
+    onNeedsUpdate: () => navigate({ kind: "settings" }),
+    onToggleFavorite: toggleFavorite,
+  };
 
   return (
     <DeckProvider theme={themePayload} mica={mica}>
       <div className={s.shell}>
-        <TitleBar title="TeacherDeck" controls={windowControls} />
-        <div className={s.body}>
-          <nav className={s.rail} aria-label="메뉴">
-            {railItem("덱", <HomeRegular />, { kind: "home" }, page.kind === "home")}
-            {usedCategories.map((c) =>
-              railItem(
-                CATEGORY_LABELS[c],
-                CATEGORY_ICONS[c],
-                { kind: "category", category: c },
-                page.kind === "category" && page.category === c,
-              ),
-            )}
-            <div className={s.spacer} />
-            {info.dev && railItem("UI 갤러리", <PaintBrushRegular />, { kind: "gallery" }, page.kind === "gallery")}
-            {railItem("설정", <SettingsRegular />, { kind: "settings" }, page.kind === "settings")}
-            {railItem("정보", <InfoRegular />, { kind: "about" }, page.kind === "about")}
-          </nav>
-          <main className={s.content}>
-            <div className={activeModule === null ? s.hidden : s.moduleLayer}>
-              <ModuleHost
-                bridge={bridge}
-                modules={modules}
-                mounted={mounted}
-                active={activeModule}
-                loadErrors={loadErrors}
-              />
-            </div>
-            {page.kind === "home" && (
-              <Home
-                modules={modules}
-                dev={info.dev}
-                onOpen={(id) => navigate({ kind: "module", id })}
-                onNeedsUpdate={() => navigate({ kind: "settings" })}
-              />
-            )}
-            {page.kind === "category" && (
-              <Home
-                modules={modules}
-                category={page.category}
-                dev={info.dev}
-                onOpen={(id) => navigate({ kind: "module", id })}
-                onNeedsUpdate={() => navigate({ kind: "settings" })}
-              />
-            )}
-            {page.kind === "settings" && (
-              <Settings
-                theme={pref}
-                onTheme={changeTheme}
-                checkUpdate={host.checkUpdate}
-                installUpdate={host.installUpdate}
-                restart={host.restartApp}
-              />
-            )}
-            {page.kind === "about" && <About appVersion={info.appVersion} modules={modules} />}
-            {page.kind === "gallery" && info.dev && <Gallery />}
-          </main>
+        <TitleBar
+          title="TeacherDeck"
+          controls={windowControls}
+          {...(historyIndex > 0 ? { onBack: () => window.history.back() } : {})}
+        />
+        <div className={s.stage}>
+          <div className={mergeClasses(s.body, motion && launch === "leaving" && s.bodyEnter)}>
+            {/* Tools get the whole width; the title bar back button leads out (design-system.md §1). */}
+            <nav ref={railRef} className={mergeClasses(s.rail, activeModule !== null && s.hidden)} aria-label="메뉴">
+              {railItem("home", "덱", <HomeRegular />, { kind: "home" })}
+              {usedCategories.map((c) =>
+                railItem(`category:${c}`, CATEGORY_LABELS[c], CATEGORY_ICONS[c], { kind: "category", category: c }),
+              )}
+              <div className={s.spacer} />
+              {info.dev && railItem("gallery", "UI 갤러리", <PaintBrushRegular />, { kind: "gallery" })}
+              {railItem("settings", "설정", <SettingsRegular />, { kind: "settings" })}
+              {railItem("about", "정보", <InfoRegular />, { kind: "about" })}
+              <span
+                aria-hidden
+                className={mergeClasses(
+                  s.pill,
+                  pill.shown && s.pillShown,
+                  motion && (pill.move ? s.pillMove : s.pillFade),
+                )}
+                style={{ transform: `translateY(${pill.y}px)`, height: `${pill.height}px` }}
+              >
+                <span className={s.pillBar} />
+              </span>
+            </nav>
+            <main className={mergeClasses(s.content, activeModule !== null && s.contentFull)}>
+              <div ref={moduleLayerRef} className={activeModule === null ? s.hidden : s.moduleLayer}>
+                <ModuleHost
+                  bridge={bridge}
+                  modules={modules}
+                  mounted={mounted}
+                  active={activeModule}
+                  loadErrors={loadErrors}
+                />
+              </div>
+              {currentRail !== null && (
+                <div key={currentRail} className={motion ? s.pageEnter : undefined}>
+                  {page.kind === "home" && <Home {...homeProps} />}
+                  {page.kind === "category" && <Home {...homeProps} category={page.category} />}
+                  {page.kind === "settings" && (
+                    <Settings
+                      theme={pref}
+                      onTheme={changeTheme}
+                      motion={motionPref}
+                      osReducedMotion={osReducedMotion}
+                      onMotion={changeMotion}
+                      checkUpdate={host.checkUpdate}
+                      installUpdate={host.installUpdate}
+                      restart={host.restartApp}
+                    />
+                  )}
+                  {page.kind === "about" && <About appVersion={info.appVersion} modules={modules} />}
+                  {page.kind === "gallery" && info.dev && <Gallery />}
+                </div>
+              )}
+            </main>
+          </div>
+          {launchScreen}
         </div>
       </div>
       {info.secProbe && <SecProbe origin={info.moduleOrigin} modules={modules} />}

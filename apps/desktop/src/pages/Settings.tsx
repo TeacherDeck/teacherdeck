@@ -2,8 +2,8 @@
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 // Settings (PowerToys SettingsCard pattern). Updates are only applied after the user agrees (SEC-008).
 import { Button, Dropdown, Option, Title3, makeStyles } from "@fluentui/react-components";
-import { ArrowSyncRegular, DarkThemeRegular } from "@fluentui/react-icons";
-import { SettingsCard, deckTokens } from "@deck/ui";
+import { ArrowSyncRegular, DarkThemeRegular, SparkleRegular } from "@fluentui/react-icons";
+import { SettingsCard, ToggleSwitch, deckTokens } from "@deck/ui";
 import { useState } from "react";
 import type { UpdateStatus } from "../generated/UpdateStatus.ts";
 import type { ThemePreference } from "../theme.ts";
@@ -31,12 +31,26 @@ function describe(status: UpdateStatus | null): string {
 export interface SettingsProps {
   theme: ThemePreference;
   onTheme(p: ThemePreference): void;
+  /** Shell setting for motion (design-system.md §1 셸 모션). */
+  motion: boolean;
+  /** Windows asks for reduced motion, which wins over the setting (UI-009). */
+  osReducedMotion: boolean;
+  onMotion(on: boolean): void;
   checkUpdate(): Promise<UpdateStatus>;
   installUpdate(): Promise<void>;
   restart(): Promise<void>;
 }
 
-export function Settings({ theme, onTheme, checkUpdate, installUpdate, restart }: SettingsProps) {
+export function Settings({
+  theme,
+  onTheme,
+  motion,
+  osReducedMotion,
+  onMotion,
+  checkUpdate,
+  installUpdate,
+  restart,
+}: SettingsProps) {
   const s = useStyles();
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [phase, setPhase] = useState<"idle" | "checking" | "installing" | "installed">("idle");
@@ -79,6 +93,16 @@ export function Settings({ theme, onTheme, checkUpdate, installUpdate, restart }
             ))}
           </Dropdown>
         }
+      />
+      <SettingsCard
+        icon={<SparkleRegular />}
+        header="애니메이션 효과"
+        description={
+          osReducedMotion
+            ? "Windows에서 애니메이션 효과를 꺼 두어서 화면이 움직이지 않아요."
+            : "화면 전환과 카드 움직임을 보여 줘요. 느린 PC에서는 끄면 가벼워져요."
+        }
+        action={<ToggleSwitch header="애니메이션 효과" showHeader={false} checked={motion} onChange={onMotion} />}
       />
       <SettingsCard
         icon={<ArrowSyncRegular />}

@@ -16,7 +16,7 @@
 | BRG-009    | `fs.dropped`는 fs 캡이 있는 활성 모듈에만 보낸다.                                                              | 같은 문서                                                       |
 | CAP-008    | 셸의 권한 검사는 보조일 뿐이다. 최종 검사는 Rust가 한다.                                                       | [capabilities.md](../../docs/spec/capabilities.md#6-규칙)       |
 | SEC-002    | 셸 문서에 모듈 스크립트를 주입하지 않는다. 모듈은 모듈 origin iframe으로만 띄운다.                             | [security.md](../../docs/spec/security.md#3-규칙)               |
-| UI-001~008 | 셸 UI도 디자인 규칙을 모두 따른다.                                                                             | [design-system.md](../../docs/spec/design-system.md#8-규칙)     |
+| UI-001~009 | 셸 UI도 디자인 규칙을 모두 따른다. 셸 모션은 UI-009를 따른다.                                                  | [design-system.md](../../docs/spec/design-system.md#8-규칙)     |
 | GEN-007    | About/크레딧 화면의 저자 표기를 지우거나 약화하지 않는다.                                                      | [process.md](../../docs/spec/process.md#5-규칙)                 |
 
 ## 파일 지도
@@ -28,7 +28,11 @@
 | `src/bridge/keepAlive.ts`    | keepAlive LRU                                                                                                                                   |
 | `src/App.tsx`                | 상단바, 내비 레일, 페이지 전환, 테마 push, `fs.dropped` 전달                                                                                    |
 | `src/CaptureOverlay.tsx`     | 승인된 고정 `/overlay` 셸 화면. 영역·툴바 전용 명령만 사용하며 모듈을 로드하지 않음([ADR-0017](../../docs/adr/0017-native-capture-sessions.md)) |
-| `src/TitleBar.tsx`           | 테두리 없는 창의 상단바(드래그 영역, 캡션 버튼). 창 조작은 `host.ts`의 `windowControls`로만 한다                                                |
+| `src/LaunchScreen.tsx`       | 셸 안에서 그리는 시작 화면. 로딩 동안만 보이고 프레임이 없어도 타이머로 넘어간다([ADR-0024](../../docs/adr/0024-shell-motion-and-home.md)) |
+| `src/motion.ts`              | 애니메이션 효과 설정, OS reduced-motion, 다시 마운트할 수 없는 레이어용 `playMotion`(UI-009)                                                  |
+| `src/deckState.ts`           | 덱 홈의 즐겨찾기·본 도구 목록. 셸 localStorage에 모듈 id만 저장한다(PRV-003)                                                                   |
+| `src/categories.tsx`         | 카테고리 순서·아이콘(레일과 덱 홈 공용)                                                                                                      |
+| `src/TitleBar.tsx`           | 테두리 없는 창의 상단바(뒤로 버튼, 드래그 영역, 캡션 버튼). 창 조작은 `host.ts`의 `windowControls`로만 한다                                    |
 | `src/pages/`                 | 덱(Home), 모듈 화면(ModuleHost), 설정, 정보(About, GEN-007 테스트), UI 갤러리(dev)                                                              |
 | `src/generated/`             | Rust에서 생성한 타입과 서드파티 목록(GEN-006)                                                                                                   |
 
@@ -36,6 +40,7 @@
 
 - `ui.keepAlive: true` 모듈은 화면을 전환해도 iframe을 숨긴 채 유지한다. 최대 3개이며 LRU로 내린다.
 - 숨기거나 보일 때 `module.visibility` 이벤트를 보낸다.
+- iframe은 고정 순서로 렌더한다. LRU 순서대로 렌더하면 React가 iframe을 옮기고, 옮겨진 iframe은 브리지가 모르는 새 창으로 다시 로드돼 `init`을 받지 못한다(`App.test.tsx`).
 - 모듈이 숨겨지거나 내려가면 호스트가 창 상태(항상 위, 전체화면)를 되돌린다.
 - 상세: [modules.md 생명주기](../../docs/spec/modules.md#3-생명주기)
 

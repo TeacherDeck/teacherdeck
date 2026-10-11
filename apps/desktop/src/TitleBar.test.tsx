@@ -44,6 +44,21 @@ describe("TitleBar", () => {
     expect(c.close).toHaveBeenCalledOnce();
   });
 
+  it("shows the back button only when there is somewhere to go back to", () => {
+    const { rerender } = render(<TitleBar title="TeacherDeck" controls={fakeControls()} />);
+    expect(screen.queryByRole("button", { name: "뒤로" })).toBeNull();
+    const onBack = vi.fn();
+    rerender(<TitleBar title="TeacherDeck" controls={fakeControls()} onBack={onBack} />);
+    fireEvent.click(screen.getByRole("button", { name: "뒤로" }));
+    expect(onBack).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the back button out of the drag region so dragging never swallows the click", () => {
+    const { container } = render(<TitleBar title="TeacherDeck" controls={fakeControls()} onBack={vi.fn()} />);
+    const drag = container.querySelector('[data-tauri-drag-region="deep"]');
+    expect(drag?.contains(screen.getByRole("button", { name: "뒤로" }))).toBe(false);
+  });
+
   it("switches the maximize button to restore after maximizing", async () => {
     const c = fakeControls();
     render(<TitleBar title="TeacherDeck" controls={c} />);

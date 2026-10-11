@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DeckProvider } from "@deck/ui";
 import type { Category } from "../generated/Category.ts";
 import type { ModuleEntry } from "../generated/ModuleEntry.ts";
-import { Home } from "./Home.tsx";
+import { Home, greeting } from "./Home.tsx";
 
 afterEach(cleanup);
 function entry(id: string, name: string, category: Category, runnable = true): ModuleEntry {
@@ -97,5 +97,98 @@ describe("Home task navigation", () => {
     );
     expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("");
     expect(screen.getByRole("button", { name: "합성 캡처 열기" })).toBeTruthy();
+  });
+});
+
+describe("Home dashboard", () => {
+  const base = { modules, dev: false, onOpen: vi.fn(), onNeedsUpdate: vi.fn() };
+  const sectionNames = () => screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+
+  it("greets by time of day and shows the date", () => {
+    render(
+      <DeckProvider>
+        <Home {...base} now={new Date(2026, 9, 12, 8, 30)} />
+      </DeckProvider>,
+    );
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("좋은 아침이에요");
+    expect(screen.getByText("10월 12일 월요일")).toBeTruthy();
+    expect([greeting(13), greeting(19), greeting(2)]).toEqual([
+      "오늘 수업도 힘내세요",
+      "오늘도 수고 많으셨어요",
+      "늦은 시간까지 수고 많으세요",
+    ]);
+  });
+
+  it("groups tools by category and lists favorites first, in starring order", () => {
+    render(
+      <DeckProvider>
+        <Home {...base} favorites={["sample-timer", "gone", "sample-capture"]} onToggleFavorite={vi.fn()} />
+      </DeckProvider>,
+    );
+    expect(sectionNames()).toEqual(["즐겨찾기", "수업", "이미지", "문서"]);
+    const favorites = screen.getByRole("region", { name: "즐겨찾기" });
+    expect(within(favorites).getAllByRole("button", { name: /열기$/ }).map((b) => b.getAttribute("aria-label"))).toEqual([
+      "합성 타이머 열기",
+      "합성 캡처 열기",
+    ]);
+  });
+
+  it("hides the favorites section until something is starred", () => {
+    render(
+      <DeckProvider>
+        <Home {...base} onToggleFavorite={vi.fn()} />
+      </DeckProvider>,
+    );
+    expect(sectionNames()).toEqual(["수업", "이미지", "문서"]);
+  });
+
+  it("toggles a favorite with the star without opening the tool", () => {
+    const onToggleFavorite = vi.fn();
+    render(
+      <DeckProvider>
+        <Home {...base} favorites={["sample-capture"]} onToggleFavorite={onToggleFavorite} />
+      </DeckProvider>,
+    );
+    const timerStar = screen.getByRole("button", { name: "합성 타이머 즐겨찾기" });
+    expect(timerStar.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(timerStar);
+    expect(onToggleFavorite).toHaveBeenCalledExactlyOnceWith("sample-timer");
+    expect(base.onOpen).not.toHaveBeenCalled();
+    // A starred tool shows a pressed star in both the favorites and its category section.
+    const captureStars = screen.getAllByRole("button", { name: "합성 캡처 즐겨찾기" });
+    expect(captureStars.map((b) => b.getAttribute("aria-pressed"))).toEqual(["true", "true"]);
+  });
+
+  it("shows one result grid while searching", () => {
+    render(
+      <DeckProvider>
+        <Home {...base} favorites={["sample-capture"]} />
+      </DeckProvider>,
+    );
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "타이머" } });
+    expect(screen.queryAllByRole("heading", { level: 2 })).toHaveLength(0);
+    expect(screen.getAllByRole("button", { name: /열기$/ }).map((b) => b.getAttribute("aria-label"))).toEqual([
+      "합성 타이머 열기",
+    ]);
+  });
+
+  it("badges tools added since the last launch", () => {
+    render(
+      <DeckProvider>
+        <Home {...base} fresh={new Set(["sample-timer"])} />
+      </DeckProvider>,
+    );
+    expect(within(screen.getByRole("button", { name: "합성 타이머 열기" })).getByText("새 도구")).toBeTruthy();
+    expect(within(screen.getByRole("button", { name: "합성 캡처 열기" })).queryByText("새 도구")).toBeNull();
+  });
+
+  it("focuses the search box with Ctrl+F", () => {
+    render(
+      <DeckProvider>
+        <Home {...base} />
+      </DeckProvider>,
+    );
+    fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    expect(document.activeElement).toBe(screen.getByRole("searchbox"));
   });
 });
