@@ -31,7 +31,7 @@ import {
   type PlanInput,
   type PlanResult,
 } from "./planner.ts";
-import { HOLIDAYS, HOLIDAY_YEAR } from "./holidays.ts";
+import { HOLIDAYS, HOLIDAY_FIRST_YEAR, HOLIDAY_LAST_YEAR } from "./holidays.ts";
 import { initialState, loadState, type PlannerState } from "./state.ts";
 import {
   closeMonth,
@@ -44,7 +44,6 @@ import {
   monthKey,
   recordAssigned,
   readBackup,
-  saveMonth,
   selectCurrent,
   switchMonth,
   writeExport,
@@ -53,6 +52,8 @@ import {
 import { calendarStatus } from "./calendar-view.ts";
 import { parseTimetable } from "./timetable.ts";
 import { changeConditions, isValidAssignment, validSelectedDay } from "./condition-changes.ts";
+import { loadLedger, replaceLedger, saveLedgerMonths } from "./ledger.ts";
+import { decodeLegacy } from "./legacy.ts";
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: deckTokens.itemGap, padding: deckTokens.pagePadding },
@@ -111,6 +112,10 @@ export function App({ deck }: { deck: Deck }) {
   const [state, setState] = useState<PlannerState>(initialState);
   const [months, setMonths] = useState<Months>({});
   const [backupText, setBackupText] = useState("");
+  const [legacyYear, setLegacyYear] = useState<number | null>(null);
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  const [restorePreview, setRestorePreview] = useState<{ months: Months; legacy: boolean } | null>(null);
+  const [replacementPending, setReplacementPending] = useState(false);
   const [timetableText, setTimetableText] = useState("");
   const [roster, setRoster] = useState("");
   const [message, setMessage] = useState("");
@@ -128,6 +133,7 @@ export function App({ deck }: { deck: Deck }) {
   const nameInput = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const composingName = useRef(false);
   const workerRef = useRef<Worker | null>(null);
+  const saving = useRef(false);
   const cumulative = cumulativeInput(state, months);
   const input = { ...state.input, holidays: HOLIDAYS };
   const daySlots = slotsForDay(input, Number(selectedDay));
@@ -140,11 +146,16 @@ export function App({ deck }: { deck: Deck }) {
   const projected = counts(input, { ...validManual, ...state.assignments });
   useEffect(() => {
     let active = true;
-    Promise.all([loadState(deck), loadMonths(deck)])
-      .then(([latestState, storedMonths]) => {
-        const saved = selectCurrent(latestState, storedMonths);
-        setMonths(storedMonths);
+    const read = async () => {
+      const ledger = await loadLedger(deck);
+      if (ledger) return ledger;
+      const [latestState, storedMonths] = await Promise.all([loadState(deck), loadMonths(deck)]);
+      return { current: selectCurrent(latestState, storedMonths), months: storedMonths };
+    };
+    void read()
+      .then(({ current: saved, months: storedMonths }) => {
         if (!active) return;
+        setMonths(storedMonths);
         if (saved) {
           setState(saved);
           setRoster(saved.input.teachers.map((t) => `${t.name}\t${t.past}`).join("\n"));
@@ -154,7 +165,7 @@ export function App({ deck }: { deck: Deck }) {
       .catch(() => {
         if (active) {
           setMessage(
-            "저장한 내용을 불러오지 못했어요. 기존 저장값을 보호하려고 저장을 잠갔어요. 도구를 다시 열어 주세요.",
+            "저장한 내용을 불러오지 못했어요. 기존 저장값을 보호하려고 저장을 잠갔어요. JSON 백업 복원에서 정상 파일을 확인해 복구해 주세요.",
           );
           setStorageBlocked(true);
           setLoaded(true);
@@ -193,9 +204,57 @@ export function App({ deck }: { deck: Deck }) {
     setIssues([]);
   }
   async function persist(next = state) {
-    for (const draft of Object.values({ ...months, [monthKey(next)]: next })) await saveMonth(deck, draft);
-    await saveMonth(deck, next);
-    setMonths((prev) => ({ ...prev, [monthKey(next)]: next }));
+    if (saving.current) throw new Error("SAVE_BUSY");
+    saving.current = true;
+    setBusy(true);
+    try {
+      const drafts = { ...months, [monthKey(next)]: next };
+      if (replacementPending) {
+        await replaceLedger(deck, drafts, monthKey(next));
+        setReplacementPending(false);
+      } else {
+        await saveLedgerMonths(deck, drafts, monthKey(next));
+      }
+      setMonths(drafts);
+    } finally {
+      saving.current = false;
+      setBusy(false);
+    }
+  }
+  async function restoreConfirmed(preview: { months: Months; legacy: boolean }) {
+    const first = Object.values(preview.months)[0];
+    if (!first || saving.current) return;
+    saving.current = true;
+    setBusy(true);
+    try {
+      if (storageBlocked) await replaceLedger(deck, preview.months, monthKey(first));
+      setMonths(preview.months);
+      setState(first);
+      setReplacementPending(!storageBlocked);
+      setRoster(first.input.teachers.map((t) => `${t.name}\t${t.past}`).join("\n"));
+      setStorageBlocked(false);
+      setIssues([]);
+      setTeacherId("");
+      setMessage(
+        storageBlocked
+          ? "정상 자료를 새 복구 세대에 저장했어요. 기존 손상값은 보존하고 저장 잠금을 풀었어요."
+          : "백업을 화면에 복원했어요. 내용을 확인하고 저장해 주세요.",
+      );
+    } catch {
+      setMessage("복구 자료를 저장하지 못했어요. 기존 저장값과 잠금을 유지했으니 다시 시도해 주세요.");
+    } finally {
+      saving.current = false;
+      setBusy(false);
+    }
+  }
+  function legacyExport() {
+    try {
+      void exportFile("legacy.json", exportLegacy({ ...months, [monthKey(state)]: state }));
+    } catch {
+      setMessage(
+        "기존 형식은 같은 연도와 하루 두 명까지만 보존해요. 전체 자료는 JSON 백업 또는 현재 달 CSV로 저장해 주세요.",
+      );
+    }
   }
   async function exportFile(name: string, text: string) {
     try {
@@ -342,6 +401,9 @@ export function App({ deck }: { deck: Deck }) {
       <BodyStrong>
         {selectedDay}일 {currentDay ? WEEKDAYS[currentDay.weekday] : ""}요일
       </BodyStrong>
+      {(state.legacyMissing?.[selectedDay]?.length ?? 0) > 0 && (
+        <Caption secondary>기존 자료에 배정불가 표시가 있는 날짜예요. 담당자를 확인하거나 다시 배정해 주세요.</Caption>
+      )}
       {currentDay?.excluded ? (
         <Body>{currentDay.reason}로 제외된 날짜예요.</Body>
       ) : (
@@ -774,6 +836,30 @@ export function App({ deck }: { deck: Deck }) {
       >
         {dateEditor}
       </ContentDialog>
+      <ContentDialog
+        open={restoreOpen}
+        title="백업 복원 확인"
+        primaryButtonText="확인하고 복원"
+        closeButtonText="취소"
+        defaultButton="close"
+        onClose={(result) => {
+          setRestoreOpen(false);
+          if (result === "primary" && restorePreview) void restoreConfirmed(restorePreview);
+        }}
+      >
+        <Body>{Object.keys(restorePreview?.months ?? {}).length}개월의 자료로 현재 작업을 바꿔요.</Body>
+        {restorePreview?.legacy && (
+          <Body>
+            기존 형식의 연도는 {legacyYear ?? input.year}년으로 확인했어요. 누적 횟수는 기초 횟수로 읽고 배정표를 실제
+            수행으로 기록하지 않아요. 원본의 제외일에 내장 공휴일도 적용해요.
+          </Body>
+        )}
+        <Body>
+          {storageBlocked
+            ? "기존 저장값을 보존한 새 복구 세대에 저장하고, 저장이 성공한 뒤에만 잠금을 풀어요."
+            : "화면의 미저장 작업이 바뀌어요. 저장을 누르기 전까지 PC 저장값은 유지해요."}
+        </Body>
+      </ContentDialog>
       <section className={s.card} aria-label="교사 명단과 배정 횟수">
         <BodyStrong>교사 명단 · {input.teachers.length}명</BodyStrong>
         <div className={s.row}>
@@ -858,7 +944,7 @@ export function App({ deck }: { deck: Deck }) {
           <Button onClick={() => void exportFile("schedule.csv", exportCsv({ ...state, input }))}>
             Excel CSV 저장
           </Button>
-          <Button onClick={() => void exportFile("legacy.json", exportLegacy({ ...months, [monthKey(state)]: state }))}>
+          <Button disabled={busy} onClick={legacyExport}>
             기존 형식 JSON 저장
           </Button>
           <Button
@@ -877,22 +963,33 @@ export function App({ deck }: { deck: Deck }) {
           <InfoBar message="마감한 달이에요. 수행 기록을 수정하려면 마감 수정 열기를 누르고 수정 후 다시 저장·마감해 주세요." />
         )}
         <SettingsExpander header="JSON 백업 복원">
-          <TextBox header="복원할 JSON" multiline value={backupText} onChange={setBackupText} />
+          <TextBox header="복원할 JSON" multiline value={backupText} onChange={setBackupText} disabled={busy} />
+          <NumberBox
+            header="기존 형식의 연도"
+            value={legacyYear ?? input.year}
+            min={1900}
+            max={2100}
+            step={1}
+            onChange={setLegacyYear}
+          />
+          <Caption secondary>
+            원작 JSON에는 연도가 없어요. 해당 자료의 연도를 확인해 주세요. TeacherDeck 백업은 파일의 연도를 그대로
+            사용해요.
+          </Caption>
           <Caption>복원은 화면의 작업 상태를 바꿔요. 확인 후 저장을 누르면 복원한 모든 달이 이 PC에 저장돼요.</Caption>
           <Button
-            disabled={storageBlocked}
+            disabled={busy}
             onClick={() => {
-              const restored = decodeBackup(backupText);
+              const own = decodeBackup(backupText);
+              const restored = own ?? decodeLegacy(backupText, legacyYear ?? input.year);
               if (!restored) {
-                setMessage("TeacherDeck 백업 구조를 확인해 주세요.");
+                setMessage(
+                  "백업 구조와 기존 형식의 연도·요일을 확인해 주세요. 중복 월·날짜·이름이나 범위를 벗어난 값은 복원하지 않아요.",
+                );
                 return;
               }
-              const first = Object.values(restored)[0];
-              if (!first) return;
-              setMonths(restored);
-              setState(first);
-              setRoster(first.input.teachers.map((t) => `${t.name}\t${t.past}`).join("\n"));
-              setMessage("백업을 화면에 복원했어요. 내용을 확인하고 저장해 주세요.");
+              setRestorePreview({ months: restored, legacy: !own });
+              setRestoreOpen(true);
             }}
           >
             복원 적용
@@ -900,9 +997,11 @@ export function App({ deck }: { deck: Deck }) {
         </SettingsExpander>
       </SettingsExpander>
       <Caption secondary>
-        {input.year === HOLIDAY_YEAR
-          ? "2026년 법정 공휴일은 자동 제외해요. 임시공휴일·학교 휴업일은 달력에서 추가해 주세요."
-          : "공휴일 자동 제외는 2026년만 지원해요. 이 연도 공휴일은 달력에서 직접 제외해 주세요."}
+        {input.year >= HOLIDAY_FIRST_YEAR && input.year <= HOLIDAY_LAST_YEAR
+          ? input.year === 2026
+            ? "2026년 법정 공휴일은 자동 제외해요. 임시공휴일·학교 휴업일은 달력에서 추가해 주세요."
+            : "2027~2030년 내장 공휴일을 자동 제외해요. 향후 월력요항·법령 변경은 확인해 주세요. 2030년 선거일과 임시공휴일·학교 휴업일은 직접 추가해 주세요."
+          : "공휴일 자동 제외는 2026~2030년을 지원해요. 이 연도 공휴일은 달력에서 직접 제외해 주세요."}
       </Caption>
       <Caption secondary>
         다시 배정해도 실제 수행 횟수는 늘지 않아요. 월별 조건과 수행 기록을 따로 보관해요. 명단은 이 모듈에만 저장돼요.

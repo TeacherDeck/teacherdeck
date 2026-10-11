@@ -4,6 +4,7 @@ import type { Deck } from "@deck/sdk";
 import { calendar, counts } from "./planner.ts";
 import { initialState, sanitizeState, saveState, type PlannerState } from "./state.ts";
 import { HOLIDAYS } from "./holidays.ts";
+import { saveLedgerMonth } from "./ledger.ts";
 const PREFIX = "planner.month.";
 export function monthKey(state: PlannerState): string {
   return `${state.input.year}-${String(state.input.month).padStart(2, "0")}`;
@@ -25,6 +26,7 @@ export function selectCurrent(saved: PlannerState | null, months: Months): Plann
 export async function saveMonth(deck: Pick<Deck, "storage">, state: PlannerState): Promise<void> {
   if (!sanitizeState(state)) throw new Error("STATE_INVALID");
   if (new TextEncoder().encode(JSON.stringify(state)).length > 256 * 1024) throw new Error("STORAGE_SIZE_LIMIT");
+  if (await saveLedgerMonth(deck, state)) return;
   await deck.storage.set(PREFIX + monthKey(state), state);
   await saveState(deck, state);
 }
@@ -68,7 +70,7 @@ export function recordAssigned(state: PlannerState, selected: number[], now = ne
   for (const d of calendar({ ...state.input, holidays: HOLIDAYS }))
     if (selected.includes(d.day)) {
       if (d.date > today) throw new Error("FUTURE_PERFORMANCE");
-      if (!d.excluded) actual[String(d.day)] = [...(state.assignments[String(d.day)] ?? [])];
+      if (!d.excluded) actual[String(d.day)] = (state.assignments[String(d.day)] ?? []).filter(Boolean);
     }
   return { ...state, actual };
 }
@@ -81,6 +83,7 @@ export function encodeBackup(months: Months): string {
 }
 export function decodeBackup(text: string): Months | null {
   try {
+    if (new TextEncoder().encode(text).length > 5 * 1024 * 1024) return null;
     const v: unknown = JSON.parse(text);
     if (
       typeof v !== "object" ||
@@ -99,7 +102,7 @@ export function decodeBackup(text: string): Months | null {
       if (!s || key !== monthKey(s)) return null;
       result[key] = s;
     }
-    return Object.keys(result).length ? result : null;
+    return Object.keys(result).length && Object.keys(result).length <= 2412 ? result : null;
   } catch {
     return null;
   }
@@ -129,30 +132,49 @@ export function exportCsv(state: PlannerState): string {
   );
 }
 export function exportLegacy(months: Months): string {
+  if (
+    new Set(Object.values(months).map((s) => s.input.year)).size > 1 ||
+    Object.values(months).some((s) =>
+      [...Object.values(s.assignments), ...Object.values(s.actual ?? {})].some((row) => row.length > 2),
+    )
+  )
+    throw new Error("LEGACY_FORMAT_LIMIT");
   const totals = new Map<string, number>();
   const records = Object.values(months).map((s) => {
-    for (const t of s.input.teachers) totals.set(t.name, Math.max(totals.get(t.name) ?? 0, t.past));
+    for (const t of s.input.teachers)
+      if (t.participating !== false) totals.set(t.name, Math.max(totals.get(t.name) ?? 0, t.past));
     return {
       sheetName: `${s.input.month}월 데이터`,
-      data: calendar({ ...s.input, holidays: HOLIDAYS }).map((d) => {
-        const names = (s.assignments[String(d.day)] ?? []).map(
-          (id) => s.input.teachers.find((t) => t.id === id)?.name ?? "",
-        );
-        return {
-          date: d.date.slice(5).replace("-", "/"),
-          dayKor: "일월화수목금토"[d.weekday],
-          exclude: d.excluded,
-          exam: s.input.exam?.includes(d.day) ?? false,
-          final1: names[0] ?? "",
-          final2: names[1] ?? "",
-          memo: s.memo?.[String(d.day)] ?? "",
-        };
-      }),
+      data: calendar({ ...s.input, holidays: HOLIDAYS })
+        .filter(
+          (d) =>
+            !s.legacyDays ||
+            s.legacyDays.includes(d.day) ||
+            !d.excluded ||
+            (s.assignments[String(d.day)]?.length ?? 0) > 0 ||
+            (s.actual?.[String(d.day)]?.length ?? 0) > 0 ||
+            !!s.memo?.[String(d.day)],
+        )
+        .map((d) => {
+          const names = (s.assignments[String(d.day)] ?? []).map(
+            (id) => s.input.teachers.find((t) => t.id === id)?.name ?? "",
+          );
+          return {
+            date: d.date.slice(5).replace("-", "/"),
+            dayKor: "일월화수목금토"[d.weekday],
+            exclude: d.excluded,
+            exam: s.input.exam?.includes(d.day) ?? false,
+            final1: names[0] || (s.legacyMissing?.[String(d.day)]?.includes(0) ? "배정불가" : ""),
+            final2: names[1] || (s.legacyMissing?.[String(d.day)]?.includes(1) ? "배정불가" : ""),
+            memo: s.memo?.[String(d.day)] ?? "",
+          };
+        }),
     };
   });
   for (const s of Object.values(months).filter((s) => s.closed)) {
     const actual = performanceCounts(s);
-    for (const t of s.input.teachers) totals.set(t.name, (totals.get(t.name) ?? 0) + (actual[t.id] ?? 0));
+    for (const t of s.input.teachers)
+      if (t.participating !== false) totals.set(t.name, (totals.get(t.name) ?? 0) + (actual[t.id] ?? 0));
   }
   return JSON.stringify({ months: records, counts: [...totals].map(([name, count]) => ({ name, count })) }, null, 2);
 }

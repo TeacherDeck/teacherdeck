@@ -9,6 +9,9 @@ export interface PlannerState {
   actual?: Record<string, string[]>;
   memo?: Record<string, string>;
   closed?: boolean;
+  /** Original GAS rows, so a compatibility re-export need not fabricate absent dates. */
+  legacyDays?: number[];
+  legacyMissing?: Record<string, number[]>;
 }
 export function initialState(now = new Date()): PlannerState {
   return {
@@ -59,7 +62,7 @@ function teacher(v: unknown): v is Teacher {
     (v["participating"] === undefined || typeof v["participating"] === "boolean")
   );
 }
-function assignments(v: unknown, ids: Set<string>): v is Record<string, string[]> {
+function assignments(v: unknown, ids: Set<string>, empty = false): v is Record<string, string[]> {
   return (
     object(v) &&
     Object.entries(v).every(
@@ -67,8 +70,8 @@ function assignments(v: unknown, ids: Set<string>): v is Record<string, string[]
         /^([1-9]|[12][0-9]|3[01])$/.test(k) &&
         Array.isArray(values) &&
         values.length <= 3 &&
-        values.every((id: unknown) => typeof id === "string" && ids.has(id)) &&
-        new Set(values).size === values.length,
+        values.every((id: unknown) => typeof id === "string" && (ids.has(id) || (empty && id === ""))) &&
+        new Set(values.filter((id) => id !== "")).size === values.filter((id) => id !== "").length,
     )
   );
 }
@@ -101,10 +104,18 @@ export function sanitizeState(value: unknown): PlannerState | null {
     ids.size !== teachers.length ||
     new Set(teachers.map((t) => t.name)).size !== teachers.length ||
     !assignments(i["manual"], ids) ||
-    !assignments(value["assignments"], ids) ||
+    !assignments(value["assignments"], ids, true) ||
     (value["actual"] !== undefined && !assignments(value["actual"], ids)) ||
     (i["exam"] !== undefined && !ints(i["exam"], 1, 31)) ||
     (value["closed"] !== undefined && typeof value["closed"] !== "boolean") ||
+    (value["legacyDays"] !== undefined &&
+      (!ints(value["legacyDays"], 1, 31) || new Set(value["legacyDays"]).size !== value["legacyDays"].length)) ||
+    (value["legacyMissing"] !== undefined &&
+      (!object(value["legacyMissing"]) ||
+        Object.entries(value["legacyMissing"]).some(
+          ([day, slots]) =>
+            !/^([1-9]|[12][0-9]|3[01])$/.test(day) || !ints(slots, 0, 1) || new Set(slots).size !== slots.length,
+        ))) ||
     (value["memo"] !== undefined &&
       (!object(value["memo"]) ||
         Object.entries(value["memo"]).some(
@@ -129,6 +140,10 @@ export function sanitizeState(value: unknown): PlannerState | null {
     actual: (value["actual"] as Record<string, string[]> | undefined) ?? {},
     memo: (value["memo"] as Record<string, string> | undefined) ?? {},
     closed: (value["closed"] as boolean | undefined) ?? false,
+    ...(value["legacyDays"] === undefined ? {} : { legacyDays: value["legacyDays"] as number[] }),
+    ...(value["legacyMissing"] === undefined
+      ? {}
+      : { legacyMissing: value["legacyMissing"] as Record<string, number[]> }),
   };
 }
 export async function loadState(deck: Pick<Deck, "storage">): Promise<PlannerState | null> {
