@@ -52,6 +52,7 @@ Windows 11 Fluent 2를 따르고 PowerToys 설정 앱 구조를 레퍼런스로 
 - 20px 이상(Subtitle 이상): `"Segoe UI Variable Display", ...`
 - UI 폰트는 번들하지 않는다. 셸과 모듈 iframe이 같은 시스템 폰트를 쓰므로 외관이 같다. PDF 원문 렌더링만 [ADR-0018](../adr/0018-pdf-resource-notices.md)의 한정 대체 글꼴 자산을 사용한다. CDN 폰트는 금지한다(PRV-001, MOD-008).
 - 타입 램프(WinUI): Caption 12/16, Body 14/20, BodyStrong 14/20, Subtitle 20/26, Title 28/36, TitleLarge 40/52, Display 68/92. `@deck/ui`의 같은 이름 컴포넌트로 쓴다.
+- 화면 제목(h1)은 덱·카테고리·설정·정보·도구 화면 모두 Subtitle(20/26)로 같게 쓴다. 도구는 `PageHeader`가 이 크기를 쓴다. 내비 레일(Body 14)과 비율을 맞추고, 화면을 옮길 때 제목 크기가 바뀌지 않게 한다.
 
 ## 5. About/크레딧 화면
 

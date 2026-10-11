@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 // Settings (PowerToys SettingsCard pattern). Updates are only applied after the user agrees (SEC-008).
-import { Button, Dropdown, Option, Title3, makeStyles } from "@fluentui/react-components";
+import { Button, Dropdown, Option, makeStyles } from "@fluentui/react-components";
 import { ArrowSyncRegular, BookContactsRegular, DarkThemeRegular, SparkleRegular } from "@fluentui/react-icons";
-import { SettingsCard, ToggleSwitch, deckTokens } from "@deck/ui";
+import { SettingsCard, Subtitle, ToggleSwitch, deckTokens } from "@deck/ui";
 import { useState } from "react";
 import type { UpdateStatus } from "../generated/UpdateStatus.ts";
 import type { ThemePreference } from "../theme.ts";
@@ -76,7 +76,7 @@ export function Settings({
 
   return (
     <div className={s.page}>
-      <Title3 as="h1">설정</Title3>
+      <Subtitle as="h1">설정</Subtitle>
       {onSchoolData !== undefined && <SettingsCard
         icon={<BookContactsRegular />}
         header="우리 반·수업 자료"

@@ -13,11 +13,10 @@ import {
   TableHeader,
   TableHeaderCell,
   TableRow,
-  Title3,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { SettingsExpander, deckTokens } from "@deck/ui";
+import { SettingsExpander, Subtitle, deckTokens } from "@deck/ui";
 import licenseText from "../../../../LICENSE?raw";
 import additionalTerms from "../../../../LICENSE-ADDITIONAL-TERMS?raw";
 import type { ModuleEntry } from "../generated/ModuleEntry.ts";
@@ -82,7 +81,7 @@ export function About({ appVersion, modules }: AboutProps) {
   const credits = moduleCredits(modules);
   return (
     <div className={s.page}>
-      <Title3 as="h1">정보</Title3>
+      <Subtitle as="h1">정보</Subtitle>
       <section className={s.block} aria-label="앱 정보">
         <Subtitle2>TeacherDeck {appVersion}</Subtitle2>
         <Body1>{attributionLine(additionalTerms)}</Body1>

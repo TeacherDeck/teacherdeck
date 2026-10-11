@@ -9,7 +9,7 @@ import type { Deck } from "@deck/sdk";
 import { type ReactNode, createContext, useContext, useId, useState } from "react";
 import { InfoBar } from "./controls.tsx";
 import { deckTokens } from "./tokens/index.ts";
-import { Body, BodyStrong, Caption, Subtitle, Title } from "./typography.tsx";
+import { Body, BodyStrong, Caption, Subtitle } from "./typography.tsx";
 
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: deckTokens.sectionGap, padding: deckTokens.pagePadding },
@@ -92,12 +92,12 @@ export interface PageHeaderProps {
   description?: string;
 }
 
-/** Page title (WinUI Title, 28px) with an optional one-line description. */
+/** Page title (Subtitle, 20px: every screen's h1, design-system.md §4) with an optional one-line description. */
 export function PageHeader({ title, description }: PageHeaderProps) {
   const s = useStyles();
   return (
     <header className={s.pageHeader}>
-      <Title as="h1">{title}</Title>
+      <Subtitle as="h1">{title}</Subtitle>
       {description !== undefined && <Body secondary>{description}</Body>}
     </header>
   );
