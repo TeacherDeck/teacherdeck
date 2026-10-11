@@ -27,11 +27,12 @@ import {
   applySetup,
   changePerformer,
   complete,
+  completeSelected,
   conditions,
   emptyState,
   nextCycle,
   parseJobs,
-  parseRoster,
+  parseTaskRoster,
   setCondition,
   totalCounts,
   undoCompletion,
@@ -51,10 +52,9 @@ const useStyles = makeStyles({
   },
   row: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: deckTokens.inlineGap },
   workspace: {
-    display: "grid",
-    gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1fr)",
+    display: "flex",
+    flexDirection: "column",
     gap: deckTokens.sectionGap,
-    "@media (max-width: 760px)": { gridTemplateColumns: "minmax(0, 1fr)" },
   },
   card: {
     display: "flex",
@@ -98,6 +98,25 @@ export function App({ deck }: { deck: Deck }) {
     [newTask, setNewTask] = useState(false);
   const counts = useMemo(() => totalCounts(state), [state]);
   const [generating, setGenerating] = useState(false);
+  const [reconnect, setReconnect] = useState(false);
+  const canReconnect = useMemo(() => {
+    const currentIds = new Set(state.students.map((student) => student.id));
+    return !!state.retiredStudents?.length || state.events.some((event) => !currentIds.has(event.studentId));
+  }, [state.students, state.retiredStudents, state.events]);
+  useEffect(() => setReconnect(false), [state.students]);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkExcluded, setBulkExcluded] = useState<string[]>([]);
+  const completedIds = useMemo(
+    () => new Set(state.events.filter((e) => e.cycle === state.cycle).map((e) => e.studentId)),
+    [state.events, state.cycle],
+  );
+  const bulkStudents = useMemo(() => {
+    const assigned = new Set(state.draft.map((a) => a.studentId));
+    return state.students.filter((student) => assigned.has(student.id) && !completedIds.has(student.id));
+  }, [state.students, state.draft, completedIds]);
+  const bulkSelected = bulkStudents
+    .filter((student) => !bulkExcluded.includes(student.id))
+    .map((student) => student.id);
   const [replaceFrom, setReplaceFrom] = useState(""),
     [replaceTo, setReplaceTo] = useState("");
   const planner = useRef<AbortController | null>(null);
@@ -225,13 +244,28 @@ export function App({ deck }: { deck: Deck }) {
         rows={4}
         disabled={disabled}
       />
+      {canReconnect && (
+        <>
+          <CheckBox
+            content="이 작업의 이전 학생과 기록 연결"
+            checked={reconnect}
+            disabled={disabled}
+            onChange={setReconnect}
+          />
+          <Caption secondary>
+            잠시 명단에서 빠졌던 동일 학생이 돌아올 때만 선택해요. 번호·이름이 같아도 다른 반 학생이면 선택하지 않고 새
+            작업을 시작해요. 연결하면 이전 ID·수행 기록과 보관한 기존횟수를 이어 써요.
+          </Caption>
+        </>
+      )}
       <div className={s.row}>
         <Button
           appearance="primary"
           disabled={disabled || !roster.trim() || !jobsText.trim()}
           onClick={() => {
             void change(
-              () => applySetup(state, parseRoster(roster, state.students), parseJobs(jobsText, state.jobs), label),
+              () =>
+                applySetup(state, parseTaskRoster(state, roster, reconnect), parseJobs(jobsText, state.jobs), label),
               state.students.length
                 ? "명단·역할을 적용했어요. 이전 수행 기록은 보존하고 새 배정을 시작했어요."
                 : "명단·역할을 적용했어요. 바로 역할을 배정해 주세요.",
@@ -355,6 +389,15 @@ export function App({ deck }: { deck: Deck }) {
             >
               학생에게 보여주기
             </Button>
+            <Button
+              disabled={disabled || !bulkStudents.length}
+              onClick={() => {
+                setBulkExcluded([]);
+                setBulkOpen(true);
+              }}
+            >
+              수행 완료 한꺼번에 기록
+            </Button>
           </div>
           <Caption>
             {state.cycle}번째 배정 · 필요인원 {state.jobs.reduce((sum, j) => sum + j.capacity, 0)}명 / 참여{" "}
@@ -414,7 +457,7 @@ export function App({ deck }: { deck: Deck }) {
                 students={state.students.filter((student) => state.draft.some((a) => a.studentId === student.id))}
               >
                 {(visible) => (
-                  <>
+                  <div className={s.publicGrid}>
                     {state.jobs.map((job) => (
                       <section key={job.id} className={s.card} aria-label={job.title}>
                         <BodyStrong>
@@ -432,20 +475,22 @@ export function App({ deck }: { deck: Deck }) {
                                 </BodyStrong>
                                 <div className={s.row}>
                                   {state.students.length <= 100 && (
-                                    <ComboBox
-                                      header={`${student?.number}번 담당자 교환`}
-                                      value={a.studentId}
-                                      disabled={disabled || performed}
-                                      options={state.students
-                                        .filter((s) => !state.excluded.includes(s.id))
-                                        .map((s) => ({ value: s.id, label: `${s.number}번 ${s.name}` }))}
-                                      onChange={(id) => {
-                                        void change(
-                                          () => changePerformer(state, a.studentId, id),
-                                          "담당자를 바꿨어요. 고정·제외 조건은 유지했어요.",
-                                        );
-                                      }}
-                                    />
+                                    <SettingsExpander header={`${student?.number}번 담당자 교환`}>
+                                      <ComboBox
+                                        header={`${student?.number}번 담당자 교환`}
+                                        value={a.studentId}
+                                        disabled={disabled || performed}
+                                        options={state.students
+                                          .filter((s) => !state.excluded.includes(s.id))
+                                          .map((s) => ({ value: s.id, label: `${s.number}번 ${s.name}` }))}
+                                        onChange={(id) => {
+                                          void change(
+                                            () => changePerformer(state, a.studentId, id),
+                                            "담당자를 바꿨어요. 고정·제외 조건은 유지했어요.",
+                                          );
+                                        }}
+                                      />
+                                    </SettingsExpander>
                                   )}
                                   <Button
                                     disabled={disabled || done}
@@ -465,7 +510,7 @@ export function App({ deck }: { deck: Deck }) {
                           })}
                       </section>
                     ))}
-                  </>
+                  </div>
                 )}
               </StudentPage>
               <Caption secondary>
@@ -473,9 +518,11 @@ export function App({ deck }: { deck: Deck }) {
                 조건은 표시하지 않아요.
               </Caption>
             </section>
-            <section className={s.card} aria-label="학생 고정·제외 조건">
-              <BodyStrong>학생 고정·제외 조건</BodyStrong>
-              <StudentPage students={state.students}>
+            <SettingsExpander
+              header="학생 고정·제외 조건"
+              description={`고정 ${Object.keys(state.fixed).length}명 · 제외 ${state.excluded.length}명 · 조건을 펼쳐 번호·이름으로 찾아요.`}
+            >
+              <StudentPage students={state.students} searchable>
                 {(visible) => (
                   <ListView
                     header="학생 조건"
@@ -517,7 +564,7 @@ export function App({ deck }: { deck: Deck }) {
                   />
                 )}
               </StudentPage>
-            </section>
+            </SettingsExpander>
           </div>
           {setup}
         </>
@@ -561,6 +608,49 @@ export function App({ deck }: { deck: Deck }) {
           )}
         />
       </SettingsExpander>
+      {bulkOpen && (
+        <ContentDialog
+          open
+          title="실제 수행 완료를 기록할까요?"
+          {...(bulkSelected.length && !disabled
+            ? { primaryButtonText: `${bulkSelected.length}명 수행 완료 기록` }
+            : {})}
+          closeButtonText="취소"
+          defaultButton="close"
+          onClose={(result) => {
+            setBulkOpen(false);
+            if (result === "primary")
+              void change(
+                () => completeSelected(state, bulkSelected, new Date().toISOString()),
+                `실제 수행 완료 ${bulkSelected.length}명을 한 번씩 기록했어요.`,
+              );
+          }}
+        >
+          <Body>
+            실제로 수행한 학생만 기록해요. 이번에 수행하지 않은 학생을 체크하면 일괄 완료에서 제외해요. 이미 완료한
+            학생은 중복 집계하지 않아요.
+          </Body>
+          <Caption>
+            완료 예정 {bulkSelected.length}명 · 이번 기록에서 제외 {bulkExcluded.length}명
+          </Caption>
+          <StudentPage students={bulkStudents} label="수행 학생" searchable>
+            {(visible) => (
+              <div className={s.item}>
+                {visible.map((student) => (
+                  <CheckBox
+                    key={student.id}
+                    content={`${student.number}번 ${student.name} 이번 기록에서 제외`}
+                    checked={bulkExcluded.includes(student.id)}
+                    onChange={(exclude) =>
+                      setBulkExcluded((ids) => (exclude ? [...ids, student.id] : ids.filter((id) => id !== student.id)))
+                    }
+                  />
+                ))}
+              </div>
+            )}
+          </StudentPage>
+        </ContentDialog>
+      )}
       {newTask && (
         <ContentDialog
           open

@@ -32,6 +32,7 @@ export interface RoleState {
   version: 1;
   label: string;
   students: Student[];
+  retiredStudents?: Student[];
   jobs: Job[];
   excluded: string[];
   fixed: Record<string, string>;
@@ -69,6 +70,40 @@ export function totalCounts(state: RoleState): Map<string, number> {
   const counts = new Map(state.students.map((s) => [s.id, s.baseCount]));
   for (const event of state.events) counts.set(event.studentId, (counts.get(event.studentId) ?? 0) + 1);
   return counts;
+}
+/** Reconnect only after the teacher explicitly confirms that these are the same people. */
+export function parseTaskRoster(state: RoleState, text: string, reconnect = false): Student[] {
+  if (!reconnect) return parseRoster(text, state.students);
+  const entered = parseRoster(text, state.students);
+  const history = new Map<string, Student>();
+  for (const event of state.events)
+    history.set(event.studentId, { id: event.studentId, number: event.number, name: event.name, baseCount: 0 });
+  for (const student of state.retiredStudents ?? []) history.set(student.id, student);
+  const currentIds = new Set(state.students.map((student) => student.id));
+  const previous = [...state.students];
+  for (const student of entered) {
+    if (currentIds.has(student.id)) continue;
+    const matches = [...history.values()].filter(
+      (old) => !currentIds.has(old.id) && old.number === student.number && old.name === student.name,
+    );
+    if (matches.length > 1)
+      throw new Error(
+        "같은 번호·이름의 이전 학생이 여러 명이에요. 자동 연결하지 않았어요. 이전 기록 파일을 확인하거나 새 학생으로 적용해 주세요.",
+      );
+    if (matches[0]) previous.push(matches[0]);
+  }
+  return parseRoster(text, previous);
+}
+function retainRemoved(state: RoleState, students: Student[]): Pick<RoleState, "retiredStudents"> {
+  const ids = new Set(students.map((student) => student.id));
+  const removed = new Map(
+    [...(state.retiredStudents ?? []), ...state.students]
+      .filter((student) => !ids.has(student.id))
+      .map((student) => [student.id, student]),
+  );
+  if (removed.size > 10000)
+    throw new Error("보관 학생이 10,000명이에요. 기록 파일로 보관한 뒤 새 작업을 시작해 주세요.");
+  return removed.size || state.retiredStudents ? { retiredStudents: [...removed.values()] } : {};
 }
 export function parseRoster(
   text: string,
@@ -157,6 +192,7 @@ export function applySetup(state: RoleState, students: Student[], jobs: Job[], l
     label: label.trim(),
     students,
     jobs,
+    ...retainRemoved(state, students),
     excluded: state.excluded.filter((sid) => ids.has(sid)),
     fixed,
     draft: [],
@@ -293,6 +329,49 @@ export function complete(state: RoleState, studentId: string, eventId: string, c
 export function nextCycle(state: RoleState): RoleState {
   return { ...state, draft: [], draftId: "", cycle: state.cycle + 1 };
 }
+/** Explicit actual-performance batch; validation completes before the caller saves anything. */
+export function completeSelected(
+  state: RoleState,
+  studentIds: readonly string[],
+  completedAt: string,
+  newId: () => string = () => crypto.randomUUID(),
+): RoleState {
+  const selected = new Set(studentIds);
+  if (selected.size !== studentIds.length) throw new Error("수행 학생이 중복됐어요.");
+  const issues = draftErrors(state);
+  if (issues.length) throw new Error(issues.join(" "));
+  if (studentIds.some((id) => !state.draft.some((a) => a.studentId === id)))
+    throw new Error("완료할 배정을 확인해 주세요.");
+  const done = new Set(state.events.filter((e) => e.cycle === state.cycle).map((e) => e.studentId));
+  const pending = studentIds.filter((id) => !done.has(id));
+  if (state.events.length + pending.length > MAX_EVENTS)
+    throw new Error("완료 기록이 10,000건을 넘어요. 파일로 보관한 뒤 새 작업을 시작해 주세요.");
+  if (Number.isNaN(Date.parse(completedAt))) throw new Error("완료 시각을 확인해 주세요.");
+  const students = new Map(state.students.map((s) => [s.id, s]));
+  const jobs = new Map(state.jobs.map((j) => [j.id, j]));
+  const assignments = new Map(state.draft.map((a) => [a.studentId, a.jobId]));
+  const ids = new Set(state.events.map((e) => e.id));
+  const events = pending.map((studentId) => {
+    const student = students.get(studentId),
+      job = jobs.get(assignments.get(studentId) ?? ""),
+      id = newId();
+    if (!student || !job || !state.draftId) throw new Error("완료할 배정이 없어요.");
+    if (!id || ids.has(id)) throw new Error("완료 기록 식별자가 중복됐어요. 다시 시도해 주세요.");
+    ids.add(id);
+    return {
+      id,
+      draftId: state.draftId,
+      cycle: state.cycle,
+      studentId,
+      number: student.number,
+      name: student.name,
+      jobId: job.id,
+      jobTitle: job.title,
+      completedAt,
+    };
+  });
+  return events.length ? { ...state, events: [...state.events, ...events] } : state;
+}
 export function undoCompletion(state: RoleState): RoleState {
   if (!state.events.length) throw new Error("되돌릴 완료 기록이 없어요.");
   return { ...state, events: state.events.slice(0, -1) };
@@ -318,7 +397,7 @@ function list(v: unknown, max: number): unknown[] {
 export function decodeState(v: unknown): RoleState {
   const raw = obj(v);
   if (raw["version"] !== 1) throw new Error("기록 파일 버전을 확인해 주세요.");
-  const students = list(raw["students"], 1000).map((v) => {
+  const decodeStudent = (v: unknown): Student => {
     const s = obj(v);
     return {
       id: str(s["id"], 80),
@@ -326,7 +405,16 @@ export function decodeState(v: unknown): RoleState {
       name: str(s["name"], 40),
       baseCount: num(s["baseCount"], 0, 100000),
     };
-  });
+  };
+  const students = list(raw["students"], 1000).map(decodeStudent);
+  const retiredStudents =
+    raw["retiredStudents"] === undefined ? undefined : list(raw["retiredStudents"], 10000).map(decodeStudent);
+  if (
+    retiredStudents &&
+    (new Set(retiredStudents.map((s) => s.id)).size !== retiredStudents.length ||
+      retiredStudents.some((old) => students.some((current) => current.id === old.id)))
+  )
+    throw new Error("보관 학생의 식별자가 중복됐어요.");
   const jobs = list(raw["jobs"], 100).map((v) => {
     const j = obj(v);
     return { id: str(j["id"], 80), title: str(j["title"], 30), capacity: num(j["capacity"], 1, 1000) };
@@ -383,6 +471,7 @@ export function decodeState(v: unknown): RoleState {
     version: 1,
     label: str(raw["label"], 80),
     students,
+    ...(retiredStudents === undefined ? {} : { retiredStudents }),
     jobs,
     excluded,
     fixed,

@@ -6,6 +6,7 @@ import {
   applySetup,
   changePerformer,
   complete,
+  completeSelected,
   conditions,
   decodeState,
   draftErrors,
@@ -14,6 +15,7 @@ import {
   nextCycle,
   parseJobs,
   parseRoster,
+  parseTaskRoster,
   setCondition,
   totalCount,
   undoCompletion,
@@ -32,6 +34,42 @@ function fixture() {
   );
 }
 describe("role allocation and actual performance", () => {
+  it("restores temporary identity and baseline only after explicit same-person confirmation", () => {
+    const original = fixture(),
+      first = original.students[0];
+    if (!first) throw new Error("fixture");
+    first.baseCount = 7;
+    const done = complete(
+      generate(setCondition(original, first.id, false, "j1"), "return-draft", () => 0),
+      first.id,
+      "return-event",
+      "2026-10-01T00:00:00Z",
+    );
+    const removed = decodeState(applySetup(done, done.students.slice(1), done.jobs, done.label));
+    const text = `1\t${first.name}\n2\t${done.students[1]?.name}`;
+    expect(parseTaskRoster(removed, text)[0]?.id).not.toBe(first.id);
+    const restored = decodeState(applySetup(removed, parseTaskRoster(removed, text, true), done.jobs, done.label));
+    expect(restored.students[0]).toEqual(first);
+    expect(totalCount(restored, first.id)).toBe(8);
+    expect(restored.events).toEqual(done.events);
+    expect(() =>
+      parseTaskRoster({ ...removed, retiredStudents: [first, { ...first, id: "another-class" }] }, text, true),
+    ).toThrow("여러 명");
+  });
+  it("records selected actual performers atomically without recounting completed or excluded students", () => {
+    const draft = generate(fixture(), "bulk-draft", () => 0);
+    let n = 0;
+    const first = completeSelected(draft, ["s1"], "2026-10-01T00:00:00Z", () => `bulk-${++n}`);
+    expect(first.events.map((e) => e.studentId)).toEqual(["s1"]);
+    expect(totalCount(first, "s3")).toBe(0);
+    const second = completeSelected(first, ["s1", "s3"], "2026-10-01T00:00:00Z", () => `bulk-${++n}`);
+    expect(second.events.map((e) => e.studentId)).toEqual(["s1", "s3"]);
+    expect(totalCount(second, "s1")).toBe(1);
+    expect(() => completeSelected(draft, ["s1", "missing"], "2026-10-01T00:00:00Z")).toThrow();
+    expect(draft.events).toEqual([]);
+    expect(() => completeSelected(draft, ["s1", "s3"], "2026-10-01T00:00:00Z", () => "same-id")).toThrow("중복");
+    expect(draft.events).toEqual([]);
+  });
   it("assigns only requested capacity to lowest total counts", () => {
     const state = generate(fixture(), "d1", () => 0);
     expect(state.draft).toHaveLength(2);

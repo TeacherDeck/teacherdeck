@@ -43,11 +43,7 @@ export function switchMonth(state: PlannerState, months: Months, year: number, m
   );
 }
 export function performanceCounts(state: PlannerState): Record<string, number> {
-  const validDays = new Set(
-    calendar({ ...state.input, holidays: HOLIDAYS })
-      .filter((d) => !d.excluded)
-      .map((d) => String(d.day)),
-  );
+  const validDays = new Set(calendar({ ...state.input, holidays: HOLIDAYS }).map((d) => String(d.day)));
   return counts(
     state.input,
     Object.fromEntries(Object.entries(state.actual ?? {}).filter(([day]) => validDays.has(day))),

@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as plannerClient from "./planner-client.ts";
 import * as stateIO from "./state.ts";
 import { App } from "./App.tsx";
-import { applySetup, emptyState, generate, parseRoster } from "./logic.ts";
+import { applySetup, complete, emptyState, generate, parseRoster, totalCount } from "./logic.ts";
 import { STATE_KEY } from "./state.ts";
 vi.stubGlobal("crypto", webcrypto);
 beforeEach(() => {
@@ -59,6 +59,74 @@ function seeded() {
   );
 }
 describe("role classroom flow", () => {
+  it("offers history linking only for returning students and preserves their saved baseline and performances", async () => {
+    const blank = await setup();
+    expect(screen.queryByLabelText("이 작업의 이전 학생과 기록 연결")).toBeNull();
+    blank.view.unmount();
+    blank.deck.dispose();
+    const original = seeded(),
+      student = original.students[0];
+    if (!student) throw new Error("fixture");
+    student.baseCount = 7;
+    original.fixed = { [student.id]: "j1" };
+    const done = complete(
+      generate(original, "return-draft", () => 0),
+      student.id,
+      "return-event",
+      "2026-10-01T00:00:00Z",
+    );
+    const removed = applySetup(done, done.students.slice(1), done.jobs, done.label);
+    const { deck, view } = await setup(removed);
+    fireEvent.click(screen.getByRole("button", { name: "이번 작업 명단과 역할" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "학생 명단" }), {
+      target: { value: "1 학생가\n2 학생나\n3 학생다" },
+    });
+    fireEvent.click(screen.getByLabelText("이 작업의 이전 학생과 기록 연결"));
+    fireEvent.click(screen.getByRole("button", { name: "명단·역할 적용" }));
+    await screen.findByText("명단·역할을 적용했어요. 이전 수행 기록은 보존하고 새 배정을 시작했어요.");
+    const restored = await stateIO.loadState(deck);
+    expect(restored.students[0]).toEqual(student);
+    expect(totalCount(restored, student.id)).toBe(8);
+    expect(restored.events).toEqual(done.events);
+    view.unmount();
+    deck.dispose();
+  });
+  it("confirms a batch of actual completions, permits exclusions, and never recounts completed students", async () => {
+    const initial = seeded();
+    initial.jobs[0] = { id: "j1", title: "자료", capacity: 3 };
+    const { deck, view } = await setup(generate(initial, "bulk-draft", () => 0));
+    const openBatch = async () => {
+      const trigger = await screen.findByRole("button", { name: "수행 완료 한꺼번에 기록" });
+      trigger.focus();
+      fireEvent.click(trigger);
+      const dialog = await screen.findByRole("dialog", { name: "실제 수행 완료를 기록할까요?" });
+      // jsdom has no layout or pointer focus. Let Tabster register the surface, then
+      // focus its real input as a browser click does before checking accessible actions.
+      await waitFor(() => expect(dialog.querySelector("[data-tabster-dummy]")).toBeTruthy());
+      within(dialog).getByLabelText("수행 학생 찾기").focus();
+      await within(dialog).findByRole("button", { name: "취소" });
+      return dialog;
+    };
+    expect((await stateIO.loadState(deck)).events).toHaveLength(0);
+    let dialog = await openBatch();
+    fireEvent.click(within(dialog).getByLabelText("2번 학생나 이번 기록에서 제외"));
+    expect((await stateIO.loadState(deck)).events).toHaveLength(0);
+    fireEvent.click(within(dialog).getByRole("button", { name: "취소" }));
+    await waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+    expect((await stateIO.loadState(deck)).events).toHaveLength(0);
+    dialog = await openBatch();
+    fireEvent.click(within(dialog).getByLabelText("2번 학생나 이번 기록에서 제외"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "2명 수행 완료 기록" }));
+    await screen.findByText("실제 수행 완료 2명을 한 번씩 기록했어요.");
+    expect((await stateIO.loadState(deck)).events.map((e) => e.studentId)).toEqual(["s1", "s3"]);
+    dialog = await openBatch();
+    expect(within(dialog).queryByLabelText("1번 학생가 이번 기록에서 제외")).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "1명 수행 완료 기록" }));
+    await screen.findByText("실제 수행 완료 1명을 한 번씩 기록했어요.");
+    expect((await stateIO.loadState(deck)).events).toHaveLength(3);
+    view.unmount();
+    deck.dispose();
+  });
   it("restores a valid backup from corrupt storage only after confirmation", async () => {
     vi.spyOn(stateIO, "readBackup").mockResolvedValue(seeded());
     const { deck, view, store } = await setup({ version: 0 });
@@ -148,6 +216,8 @@ it("pages large student conditions without changing the roster", async () => {
   const { deck, view } = await setup(
     applySetup(emptyState(), students, [{ id: "j1", title: "자료", capacity: 1 }], "합성 대규모"),
   );
+  expect(screen.queryByLabelText("1번 이번 제외")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "학생 고정·제외 조건" }));
   expect(view.container.querySelectorAll('input[type="checkbox"]')).toHaveLength(50);
   fireEvent.click(screen.getByRole("button", { name: "다음 학생" }));
   expect(screen.getByLabelText("51번 이번 제외")).toBeTruthy();

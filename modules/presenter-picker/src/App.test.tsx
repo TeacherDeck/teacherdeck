@@ -9,7 +9,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as stateIO from "./state.ts";
 import { App } from "./App.tsx";
-import { emptyState, parseRoster, replaceRoster } from "./logic.ts";
+import { complete, emptyState, parseRoster, pick, replaceRoster, totalCount } from "./logic.ts";
 import { STATE_KEY } from "./state.ts";
 vi.stubGlobal("crypto", webcrypto);
 afterEach(() => {
@@ -56,6 +56,30 @@ function seeded() {
   );
 }
 describe("presenter screen flow", () => {
+  it("shows history linking only when needed and restores a returning student's stored identity and counts", async () => {
+    const blank = await setup();
+    expect(screen.queryByLabelText("이 작업의 이전 학생과 기록 연결")).toBeNull();
+    blank.view.unmount();
+    blank.deck.dispose();
+    const original = seeded(),
+      student = original.students[0];
+    if (!student) throw new Error("fixture");
+    student.baseCount = 7;
+    const done = complete(pick(original, student.id), "return-event", "2026-10-01T00:00:00Z");
+    const removed = replaceRoster(done, done.students.slice(1), done.label);
+    const { deck, view } = await setup(removed);
+    fireEvent.click(screen.getByRole("button", { name: "이번 작업 명단" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "학생 명단" }), { target: { value: "1 학생가\n2 학생나" } });
+    fireEvent.click(screen.getByLabelText("이 작업의 이전 학생과 기록 연결"));
+    fireEvent.click(screen.getByRole("button", { name: "명단 적용" }));
+    await screen.findByText("명단을 적용했어요. 이전 발표 기록은 보존하고 새 라운드를 시작했어요.");
+    const restored = await stateIO.loadState(deck);
+    expect(restored.students[0]).toEqual(student);
+    expect(totalCount(restored, student.id)).toBe(8);
+    expect(restored.events).toEqual(done.events);
+    view.unmount();
+    deck.dispose();
+  });
   it("recovers corrupt storage only after backup confirmation", async () => {
     vi.spyOn(stateIO, "readBackup").mockResolvedValue(seeded());
     const { deck, view, store } = await setup({ version: 0 });

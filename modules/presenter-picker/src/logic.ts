@@ -20,6 +20,7 @@ export interface PickerState {
   version: 1;
   label: string;
   students: Student[];
+  retiredStudents?: Student[];
   excluded: string[];
   skipped: string[];
   round: number;
@@ -51,6 +52,40 @@ export function totalCounts(state: PickerState): Map<string, number> {
   return counts;
 }
 /** MOD-015: reuse identity by number+name inside this task, never name alone. */
+/** Reconnect only after the teacher explicitly confirms that these are the same people. */
+export function parseTaskRoster(state: PickerState, text: string, reconnect = false): Student[] {
+  if (!reconnect) return parseRoster(text, state.students);
+  const entered = parseRoster(text, state.students);
+  const history = new Map<string, Student>();
+  for (const event of state.events)
+    history.set(event.studentId, { id: event.studentId, number: event.number, name: event.name, baseCount: 0 });
+  for (const student of state.retiredStudents ?? []) history.set(student.id, student);
+  const currentIds = new Set(state.students.map((student) => student.id));
+  const previous = [...state.students];
+  for (const student of entered) {
+    if (currentIds.has(student.id)) continue;
+    const matches = [...history.values()].filter(
+      (old) => !currentIds.has(old.id) && old.number === student.number && old.name === student.name,
+    );
+    if (matches.length > 1)
+      throw new Error(
+        "같은 번호·이름의 이전 학생이 여러 명이에요. 자동 연결하지 않았어요. 이전 기록 파일을 확인하거나 새 학생으로 적용해 주세요.",
+      );
+    if (matches[0]) previous.push(matches[0]);
+  }
+  return parseRoster(text, previous);
+}
+function retainRemoved(state: PickerState, students: Student[]): Pick<PickerState, "retiredStudents"> {
+  const ids = new Set(students.map((student) => student.id));
+  const removed = new Map(
+    [...(state.retiredStudents ?? []), ...state.students]
+      .filter((student) => !ids.has(student.id))
+      .map((student) => [student.id, student]),
+  );
+  if (removed.size > 10000)
+    throw new Error("보관 학생이 10,000명이에요. 기록 파일로 보관한 뒤 새 작업을 시작해 주세요.");
+  return removed.size || state.retiredStudents ? { retiredStudents: [...removed.values()] } : {};
+}
 export function parseRoster(
   text: string,
   previous: Student[] = [],
@@ -105,6 +140,7 @@ export function replaceRoster(state: PickerState, students: Student[], label: st
     ...state,
     label: nextLabel,
     students,
+    ...retainRemoved(state, students),
     excluded: state.excluded.filter((id) => ids.has(id)),
     skipped: [],
     pending: null,
@@ -218,6 +254,16 @@ export function decodeState(value: unknown): PickerState {
   )
     throw new Error("저장 자료의 버전·개수를 확인해 주세요.");
   const students = raw["students"].map(student);
+  const retired = raw["retiredStudents"];
+  if (retired !== undefined && (!Array.isArray(retired) || retired.length > 10000))
+    throw new Error("보관 학생 목록을 확인해 주세요.");
+  const retiredStudents = retired === undefined ? undefined : (retired as unknown[]).map(student);
+  if (
+    retiredStudents &&
+    (new Set(retiredStudents.map((s) => s.id)).size !== retiredStudents.length ||
+      retiredStudents.some((old) => students.some((current) => current.id === old.id)))
+  )
+    throw new Error("보관 학생의 식별자가 중복됐어요.");
   const ids = new Set(students.map((s) => s["id"]));
   if (ids.size !== students.length || new Set(students.map((s) => s["number"])).size !== students.length)
     throw new Error("저장 명단의 번호·식별자가 중복됐어요.");
@@ -250,6 +296,7 @@ export function decodeState(value: unknown): PickerState {
     label: boundedString(raw["label"], 80),
     students,
     excluded: idList(raw["excluded"]),
+    ...(retiredStudents === undefined ? {} : { retiredStudents }),
     skipped: idList(raw["skipped"]),
     round,
     pending,

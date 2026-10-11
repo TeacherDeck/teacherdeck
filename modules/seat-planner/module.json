@@ -4,7 +4,7 @@
   "id": "seat-planner",
   "name": "자리 배치",
   "description": "명단과 고정·제외 조건을 지켜 자리를 배치하고 직접 교환해요.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "category": "classroom",
   "icon": "icon.svg",
   "entry": "index.html",

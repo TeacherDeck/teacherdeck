@@ -9,6 +9,7 @@ import {
   emptyState,
   nextRound,
   parseRoster,
+  parseTaskRoster,
   pick,
   replaceRoster,
   setExcluded,
@@ -26,6 +27,23 @@ function fixture() {
   );
 }
 describe("presentation completion and teacher priority", () => {
+  it("reconnects a returning temporary student only with explicit identity confirmation", () => {
+    const original = fixture();
+    const first = original.students[0];
+    if (!first) throw new Error("fixture");
+    first.baseCount = 7;
+    const done = complete(pick(original, first.id), "return-event", "2026-10-01T00:00:00Z");
+    const removed = decodeState(replaceRoster(done, done.students.slice(1), done.label));
+    const text = `1\t${first.name}\n2\t${done.students[1]?.name}`;
+    expect(parseTaskRoster(removed, text)[0]?.id).not.toBe(first.id);
+    const restored = decodeState(replaceRoster(removed, parseTaskRoster(removed, text, true), done.label));
+    expect(restored.students[0]).toEqual(first);
+    expect(totalCount(restored, first.id)).toBe(8);
+    expect(restored.events).toEqual(done.events);
+    expect(() =>
+      parseTaskRoster({ ...removed, retiredStudents: [first, { ...first, id: "another-class" }] }, text, true),
+    ).toThrow("여러 명");
+  });
   it("draws from smallest total, teacher choice overrides balance and exclusions override choice", () => {
     const state = fixture();
     expect(pick(state, "", () => 0).pending?.id).toBe("s1");

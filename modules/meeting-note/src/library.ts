@@ -21,9 +21,13 @@ export interface Library {
 export const LIBRARY_KEY = "library.v1";
 export const EMPTY_LIBRARY: Library = { rosters: [], archive: [] };
 export async function loadLibrary(deck: Pick<Deck, "storage">): Promise<Library> {
-  const value = await deck.storage.get<Library>(LIBRARY_KEY);
+  return readLibrary(await deck.storage.get(LIBRARY_KEY));
+}
+export function readLibrary(input: unknown): Library {
+  const value = input as Library | null;
   if (value === null) return { rosters: [], archive: [] };
   if (
+    typeof value !== "object" ||
     !Array.isArray(value.rosters) ||
     value.rosters.length > 40 ||
     !value.rosters.every(

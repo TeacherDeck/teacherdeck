@@ -9,10 +9,12 @@ export function StudentPage<T extends { number: number; name: string }>({
   students,
   children,
   label = "학생",
+  searchable = false,
 }: {
   students: T[];
   children: (visible: T[]) => ReactNode;
   label?: string;
+  searchable?: boolean;
 }) {
   const styles = useStyles(),
     [query, setQuery] = useState(""),
@@ -26,7 +28,7 @@ export function StudentPage<T extends { number: number; name: string }>({
     current = Math.min(page, pages - 1);
   return (
     <>
-      {students.length > 100 && (
+      {(searchable || students.length > 100) && (
         <TextBox
           header={`${label} 찾기`}
           description="번호·이름으로 찾거나 50명씩 확인해요."

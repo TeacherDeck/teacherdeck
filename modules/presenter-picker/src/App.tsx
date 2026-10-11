@@ -28,7 +28,7 @@ import {
   complete,
   emptyState,
   nextRound,
-  parseRoster,
+  parseTaskRoster,
   pick,
   replaceRoster,
   setExcluded,
@@ -91,6 +91,12 @@ export function App({ deck }: { deck: Deck }) {
   const [state, setState] = useState<PickerState>(emptyState);
   const [roster, setRoster] = useState("");
   const [label, setLabel] = useState("이번 수업");
+  const [reconnect, setReconnect] = useState(false);
+  const canReconnect = useMemo(() => {
+    const currentIds = new Set(state.students.map((student) => student.id));
+    return !!state.retiredStudents?.length || state.events.some((event) => !currentIds.has(event.studentId));
+  }, [state.students, state.retiredStudents, state.events]);
+  useEffect(() => setReconnect(false), [state.students]);
   const [loaded, setLoaded] = useState(false);
   const [blocked, setBlocked] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -232,12 +238,26 @@ export function App({ deck }: { deck: Deck }) {
         rows={5}
         disabled={disabled}
       />
+      {canReconnect && (
+        <>
+          <CheckBox
+            content="이 작업의 이전 학생과 기록 연결"
+            checked={reconnect}
+            disabled={disabled}
+            onChange={setReconnect}
+          />
+          <Caption secondary>
+            잠시 명단에서 빠졌던 동일 학생이 돌아올 때만 선택해요. 번호·이름이 같아도 다른 반 학생이면 선택하지 않고 새
+            작업을 시작해요. 연결하면 이전 ID·수행 기록과 보관한 기존횟수를 이어 써요.
+          </Caption>
+        </>
+      )}
       <div className={s.row}>
         <Button
           disabled={disabled || !roster.trim()}
           onClick={() => {
             void change(
-              () => replaceRoster(state, parseRoster(roster, state.students), label),
+              () => replaceRoster(state, parseTaskRoster(state, roster, reconnect), label),
               state.students.length
                 ? "명단을 적용했어요. 이전 발표 기록은 보존하고 새 라운드를 시작했어요."
                 : "명단을 적용했어요. 바로 발표자를 뽑아 주세요.",
@@ -280,12 +300,20 @@ export function App({ deck }: { deck: Deck }) {
         title="발표자 뽑기"
         description="지정·제외 조건을 먼저 지키고, 실제 발표 완료 횟수로 균등하게 뽑아요."
       />
-      <SchoolRoster deck={deck} disabled={disabled} hasRoster={state.students.length > 0} previous={state.students} onApply={async (snapshot, students) => {
-        const next = replaceRoster(state, students, snapshot.context.label);
-        const saved = await change(() => next, "공통 명부를 불러왔어요. 기존 확정 기록은 유지해요.");
-        if (saved) { showRoster(next); }
-        return saved;
-      }} />
+      <SchoolRoster
+        deck={deck}
+        disabled={disabled}
+        hasRoster={state.students.length > 0}
+        previous={state.students}
+        onApply={async (snapshot, students) => {
+          const next = replaceRoster(state, students, snapshot.context.label);
+          const saved = await change(() => next, "공통 명부를 불러왔어요. 기존 확정 기록은 유지해요.");
+          if (saved) {
+            showRoster(next);
+          }
+          return saved;
+        }}
+      />
       {!loaded && <ProgressRing label="저장한 기록을 불러오는 중" />}
       {error && <InfoBar severity="error" message={error} />}
       {message && <InfoBar severity="success" message={message} />}
