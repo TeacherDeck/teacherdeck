@@ -38,6 +38,7 @@ import {
   type PickerState,
 } from "./logic.ts";
 import { loadState, readBackup, saveState, writeBackup } from "./state.ts";
+import { SchoolRoster } from "./SchoolRoster.tsx";
 import { StudentPage } from "./StudentPage.tsx";
 
 const useStyles = makeStyles({
@@ -279,6 +280,12 @@ export function App({ deck }: { deck: Deck }) {
         title="발표자 뽑기"
         description="지정·제외 조건을 먼저 지키고, 실제 발표 완료 횟수로 균등하게 뽑아요."
       />
+      <SchoolRoster deck={deck} disabled={disabled} hasRoster={state.students.length > 0} previous={state.students} onApply={async (snapshot, students) => {
+        const next = replaceRoster(state, students, snapshot.context.label);
+        const saved = await change(() => next, "공통 명부를 불러왔어요. 기존 확정 기록은 유지해요.");
+        if (saved) { showRoster(next); }
+        return saved;
+      }} />
       {!loaded && <ProgressRing label="저장한 기록을 불러오는 중" />}
       {error && <InfoBar severity="error" message={error} />}
       {message && <InfoBar severity="success" message={message} />}

@@ -4,11 +4,11 @@
   "id": "presenter-picker",
   "name": "발표자 뽑기",
   "description": "교사의 지정·제외 조건을 지키며 발표자를 뽑고 실제 발표 완료 횟수를 기록해요.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "category": "classroom",
   "icon": "icon.svg",
   "entry": "index.html",
   "authors": [{ "name": "rochelobeJYJ" }],
   "requires": { "storage": "^1.0", "window": "^1.0", "fs": "^1.1" },
-  "optional": {}
+  "optional": { "school-data": "^1.0.0" }
 }

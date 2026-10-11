@@ -41,6 +41,7 @@ import {
   type GroupState,
 } from "./logic.ts";
 import { loadState, readBackup, saveState, writeBackup } from "./state.ts";
+import { SchoolRoster } from "./SchoolRoster.tsx";
 import { StudentPage } from "./StudentPage.tsx";
 const useStyles = makeStyles({
   page: {
@@ -325,6 +326,27 @@ export function App({ deck }: { deck: Deck }) {
         title="모둠 만들기"
         description="학생·모둠 고정과 제외·분리를 먼저 지키고, 남은 인원을 고르게 나눠요."
       />
+      <SchoolRoster
+        deck={deck}
+        disabled={disabled}
+        hasRoster={state.students.length > 0}
+        previous={state.students}
+        onApply={async (snapshot, students) => {
+          const next = applySetup(
+            state,
+            students,
+            snapshot.context.label,
+            state.pairs.filter(([a, b]) => students.some((s) => s.id === a) && students.some((s) => s.id === b)),
+            state.mode,
+            state.value,
+          );
+          const saved = await change(() => next, "공통 명부를 불러왔어요. 기존 확정 기록은 유지해요.");
+          if (saved) {
+            refreshForm(next);
+          }
+          return saved;
+        }}
+      />
       {!loaded && <ProgressRing label="저장한 기록을 불러오는 중" />}
       {error && <InfoBar severity="error" message={error} />}{" "}
       {message && <InfoBar severity="success" message={message} />} {!state.students.length && setup}
@@ -590,41 +612,45 @@ export function App({ deck }: { deck: Deck }) {
           )}
         />
       </SettingsExpander>
-      <ContentDialog
-        open={newTask}
-        title="새 작업을 시작할까요?"
-        primaryButtonText="새 작업"
-        closeButtonText="취소"
-        defaultButton="close"
-        onClose={(result) => {
-          setNewTask(false);
-          if (result === "primary") {
-            const next = emptyState();
-            void change(() => next, "새 작업을 시작했어요.", true).then((saved) => {
-              if (saved) refreshForm(next);
-            });
-          }
-        }}
-      >
-        <Body>현재 명단·조건·확정 이력을 새 작업으로 바꿔요. 필요한 기록은 먼저 파일로 저장해 주세요.</Body>
-      </ContentDialog>
-      <ContentDialog
-        open={replacement !== null}
-        title="가져온 기록으로 바꿀까요?"
-        primaryButtonText="가져오기"
-        closeButtonText="취소"
-        defaultButton="close"
-        onClose={(result) => {
-          const next = replacement;
-          setReplacement(null);
-          if (result === "primary" && next)
-            void change(() => next, "기록 파일을 가져왔어요.", true).then((saved) => {
-              if (saved) refreshForm(next);
-            });
-        }}
-      >
-        <Body>현재 작업을 가져온 명단·조건·확정 이력으로 바꿔요. 필요한 현재 기록은 먼저 파일로 저장해 주세요.</Body>
-      </ContentDialog>
+      {newTask && (
+        <ContentDialog
+          open
+          title="새 작업을 시작할까요?"
+          primaryButtonText="새 작업"
+          closeButtonText="취소"
+          defaultButton="close"
+          onClose={(result) => {
+            setNewTask(false);
+            if (result === "primary") {
+              const next = emptyState();
+              void change(() => next, "새 작업을 시작했어요.", true).then((saved) => {
+                if (saved) refreshForm(next);
+              });
+            }
+          }}
+        >
+          <Body>현재 명단·조건·확정 이력을 새 작업으로 바꿔요. 필요한 기록은 먼저 파일로 저장해 주세요.</Body>
+        </ContentDialog>
+      )}
+      {replacement !== null && (
+        <ContentDialog
+          open
+          title="가져온 기록으로 바꿀까요?"
+          primaryButtonText="가져오기"
+          closeButtonText="취소"
+          defaultButton="close"
+          onClose={(result) => {
+            const next = replacement;
+            setReplacement(null);
+            if (result === "primary" && next)
+              void change(() => next, "기록 파일을 가져왔어요.", true).then((saved) => {
+                if (saved) refreshForm(next);
+              });
+          }}
+        >
+          <Body>현재 작업을 가져온 명단·조건·확정 이력으로 바꿔요. 필요한 현재 기록은 먼저 파일로 저장해 주세요.</Body>
+        </ContentDialog>
+      )}
     </div>
   );
 }

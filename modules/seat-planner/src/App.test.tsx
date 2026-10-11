@@ -4,6 +4,7 @@
 import { connect } from "@deck/sdk";
 import { createMockHost } from "@deck/sdk/testing";
 import { DeckProvider } from "@deck/ui";
+import { isInaccessible } from "@testing-library/dom";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "./App.tsx";
@@ -205,8 +206,16 @@ describe("complete seat planning screen", () => {
     );
     initial.layout = { rows: 40, columns: 25, frontRows: 1, aisles: [5, 10], blocked: [999] };
     const f = await setup(initial);
-    expect(screen.getAllByRole("button", { name: /^\d+행 \d+열 / })).toHaveLength(1000);
-    fireEvent.click(screen.getByRole("button", { name: /학생별 고정·제외·앞줄 조건/ }));
+    // Native buttons already define their role; check all exact labels and the same
+    // accessibility predicate without computing 1,000 unrelated accessible names.
+    const seats = Array.from(f.view.container.querySelectorAll("button[aria-label]")).filter((button) =>
+      /^\d+행 \d+열 /.test(button.getAttribute("aria-label") ?? ""),
+    );
+    expect(seats).toHaveLength(1000);
+    expect(seats.every((button) => !button.hasAttribute("role") && !isInaccessible(button))).toBe(true);
+    const conditions = screen.getByLabelText("학생별 고정·제외·앞줄 조건");
+    expect(conditions.tagName).toBe("BUTTON");
+    fireEvent.click(conditions);
     expect(await screen.findByRole("checkbox", { name: "1번 배치 제외" })).toBeTruthy();
     expect(screen.queryByRole("checkbox", { name: "1000번 배치 제외" })).toBeNull();
     fireEvent.change(screen.getByRole("textbox", { name: "학생 조건 찾기" }), { target: { value: "합성학생1000" } });

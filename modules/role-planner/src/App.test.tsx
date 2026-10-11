@@ -63,9 +63,9 @@ describe("role classroom flow", () => {
     vi.spyOn(stateIO, "readBackup").mockResolvedValue(seeded());
     const { deck, view, store } = await setup({ version: 0 });
     fireEvent.click(screen.getByRole("button", { name: "기록 파일 가져오기" }));
-    await screen.findByRole("dialog");
+    const dialog = await screen.findByRole("dialog", { name: "가져온 기록으로 바꿀까요?" });
     expect(store.get(STATE_KEY)).toEqual({ version: 0 });
-    fireEvent.click(await screen.findByRole("button", { name: "가져오기" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "가져오기" }));
     await screen.findByText("기록 파일을 가져왔어요.");
     expect(await stateIO.loadState(deck)).toEqual(seeded());
     expect((screen.getByRole("button", { name: "역할 배정" }) as HTMLButtonElement).disabled).toBe(false);

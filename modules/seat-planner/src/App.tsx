@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import type { Deck } from "@deck/sdk";
+import { SchoolRoster } from "./SchoolRoster.tsx";
 import {
   Body,
   BodyStrong,
@@ -21,7 +22,7 @@ import {
   mergeClasses,
   tokens,
 } from "@deck/ui";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   arrange,
   comparison,
@@ -269,6 +270,7 @@ export function App({ deck }: { deck: Deck }) {
     void change(() => swapSeats(state, selected, index), "자리를 교환했어요. 검토한 뒤 확정해 주세요.");
   }
   function renderBoard(layout: Layout, seats: (string | null)[] | null, snapshot: Snapshot | null = null) {
+    const studentsById = new Map(state.students.map((student) => [student.id, student]));
     const indexes = Array.from({ length: layout.rows * layout.columns }, (_, i) => i);
     if (teacher && !snapshot) indexes.reverse();
     const columns = Array.from({ length: layout.columns }, (_, i) =>
@@ -296,9 +298,12 @@ export function App({ deck }: { deck: Deck }) {
           style={{ gridTemplateColumns: tracks, minWidth: layout.columns <= 6 ? 0 : "max-content" }}
         >
           {indexes.map((index) => {
+            const studentId = seats?.[index];
             const student = snapshot
                 ? (snapshot.seats[index] ?? null)
-                : (state.students.find((student) => student.id === seats?.[index]) ?? null),
+                : studentId
+                  ? (studentsById.get(studentId) ?? null)
+                  : null,
               unavailable = layout.blocked.includes(index);
             const name = student
               ? `${student.number}번 ${student.name}`
@@ -363,6 +368,11 @@ export function App({ deck }: { deck: Deck }) {
       </div>
     );
   }
+  const classroomBoard = useMemo(
+    () =>
+      state.students.length && !editingRoster && !publicSnapshot ? renderBoard(state.layout, state.preview) : null,
+    [state, teacher, disabled, selected, blockMode, editingRoster, publicSnapshot],
+  );
   if (publicSnapshot)
     return (
       <div className={s.page}>
@@ -385,6 +395,22 @@ export function App({ deck }: { deck: Deck }) {
   return (
     <div className={s.page}>
       <PageHeader title="자리 배치" description="명단과 조건을 정하고, 미리보기를 살펴본 뒤 확정해요." />
+      <SchoolRoster
+        deck={deck}
+        disabled={disabled}
+        hasRoster={state.students.length > 0}
+        previous={state.students}
+        onApply={async (snapshot, students) => {
+          const next = replaceRoster(state, students, snapshot.context.label);
+          const saved = await change(() => next, "공통 명부를 불러왔어요. 기존 확정 기록은 유지해요.");
+          if (saved) {
+            show(next);
+            setEditingRoster(false);
+            setUndo(null);
+          }
+          return saved;
+        }}
+      />
       {!loaded && <ProgressRing label="저장한 배치를 불러오는 중" />}
       {error && <InfoBar severity="error" message={error} />}{" "}
       {message && <InfoBar severity="success" message={message} />}
@@ -549,7 +575,7 @@ export function App({ deck }: { deck: Deck }) {
                   ? "자리를 눌러 사용 여부를 바꿔요. 고정 조건은 자동으로 해제하지 않아요."
                   : "학생이 있는 자리와 바꿀 자리를 차례로 누르거나 끌어 옮겨요. 빈 자리로도 이동할 수 있어요."}
               </Caption>
-              {renderBoard(state.layout, state.preview)}
+              {classroomBoard}
               {state.preview && stats.hasReference && (
                 <Caption>
                   지난 확정본과 비교 ·{" "}
