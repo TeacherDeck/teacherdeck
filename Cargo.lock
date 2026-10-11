@@ -840,7 +840,7 @@ dependencies = [
 
 [[package]]
 name = "deck-codegen"
-version = "0.2.2"
+version = "0.3.2"
 dependencies = [
  "deck-core",
  "schemars 1.2.2",
@@ -851,8 +851,9 @@ dependencies = [
 
 [[package]]
 name = "deck-core"
-version = "0.2.2"
+version = "0.3.2"
 dependencies = [
+ "quick-xml 0.42.0",
  "schemars 1.2.2",
  "semver",
  "serde",
@@ -4828,7 +4829,7 @@ dependencies = [
 
 [[package]]
 name = "teacherdeck"
-version = "0.2.2"
+version = "0.3.2"
 dependencies = [
  "arboard",
  "chrono",
@@ -4839,6 +4840,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "sys-locale",
  "tauri",
  "tauri-build",
@@ -4851,8 +4853,10 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "window-vibrancy",
+ "windows",
  "windows-version 0.100.0",
  "xcap",
+ "zip 8.6.0",
 ]
 
 [[package]]

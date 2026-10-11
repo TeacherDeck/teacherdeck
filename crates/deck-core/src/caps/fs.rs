@@ -238,3 +238,33 @@ pub struct DestinationStatusArgs {
     #[ts(optional)]
     pub grant_handle: Option<String>,
 }
+
+/// Enumerates a selected folder without disclosing relative paths (fs1.3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ListFilesArgs {
+    /// Owned selected folder handle.
+    pub folder_handle: String,
+    /// Explicitly include ordinary descendants; false is top level only.
+    pub recursive: bool,
+    /// Owner/folder/session-bound cursor from the preceding page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub cursor: Option<String>,
+    /// Default128 and maximum128.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub limit: Option<u32>,
+}
+
+/// A bounded page of opaque input handles.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FilesPage {
+    /// Files, never directory paths.
+    pub files: Vec<FileHandleInfo>,
+    /// Omitted when exhausted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub next_cursor: Option<String>,
+}

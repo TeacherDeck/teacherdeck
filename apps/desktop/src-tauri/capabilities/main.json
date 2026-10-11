@@ -22,6 +22,21 @@
     "allow-check-update",
     "allow-install-update",
     "allow-restart-app",
-    "allow-sec-probe-report"
+    "allow-sec-probe-report",
+    "allow-school-data-load",
+    "allow-school-data-save",
+    "allow-school-data-pending",
+    "allow-school-data-resolve-access",
+    "allow-school-data-grants",
+    "allow-school-data-revoke-grant",
+    "allow-school-data-import-photo",
+    "allow-school-data-read-backup",
+    "allow-school-data-recover",
+    "allow-school-data-read-workbook",
+    "allow-school-data-write-workbook",
+    "allow-school-data-export-backup",
+    "allow-school-data-export-timetable-image",
+    "allow-messaging-pending-confirmations",
+    "allow-messaging-resolve-confirmation"
   ]
 }

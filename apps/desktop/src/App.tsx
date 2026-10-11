@@ -21,13 +21,16 @@ import { KeepAliveSet } from "./bridge/keepAlive.ts";
 import type { Category } from "./generated/Category.ts";
 import type { ModuleEntry } from "./generated/ModuleEntry.ts";
 import type { ShellInfo } from "./generated/ShellInfo.ts";
-import { host, windowControls } from "./host.ts";
+import { host, schoolDataHost, messagingConfirmationHost, windowControls } from "./host.ts";
+import { MessagingConfirmation } from "./messaging-confirmation/MessagingConfirmation.tsx";
 import { CATEGORY_LABELS } from "./labels.ts";
 import { About } from "./pages/About.tsx";
 import { Gallery } from "./pages/Gallery.tsx";
 import { Home } from "./pages/Home.tsx";
 import { ModuleHost } from "./pages/ModuleHost.tsx";
 import { Settings } from "./pages/Settings.tsx";
+import { SchoolData } from "./pages/SchoolData.tsx";
+import { SchoolDataAccess } from "./pages/SchoolDataAccess.tsx";
 import { type ThemePreference, loadPreference, savePreference, useColorMode } from "./theme.ts";
 import { TitleBar } from "./TitleBar.tsx";
 
@@ -36,6 +39,7 @@ type Page =
   | { kind: "category"; category: Category }
   | { kind: "module"; id: string }
   | { kind: "settings" }
+  | { kind: "schoolData" }
   | { kind: "about" }
   | { kind: "gallery" };
 
@@ -331,7 +335,12 @@ export function App() {
             )}
             <div className={s.spacer} />
             {info.dev && railItem("UI 갤러리", <PaintBrushRegular />, { kind: "gallery" }, page.kind === "gallery")}
-            {railItem("설정", <SettingsRegular />, { kind: "settings" }, page.kind === "settings")}
+            {railItem(
+              "설정",
+              <SettingsRegular />,
+              { kind: "settings" },
+              page.kind === "settings" || page.kind === "schoolData",
+            )}
             {railItem("정보", <InfoRegular />, { kind: "about" }, page.kind === "about")}
           </nav>
           <main className={s.content}>
@@ -368,14 +377,18 @@ export function App() {
                 checkUpdate={host.checkUpdate}
                 installUpdate={host.installUpdate}
                 restart={host.restartApp}
+                onSchoolData={() => navigate({ kind: "schoolData" })}
               />
             )}
+            {page.kind === "schoolData" && <SchoolData host={schoolDataHost} />}
             {page.kind === "about" && <About appVersion={info.appVersion} modules={modules} />}
             {page.kind === "gallery" && info.dev && <Gallery />}
           </main>
         </div>
       </div>
       {info.secProbe && <SecProbe origin={info.moduleOrigin} modules={modules} />}
+      <SchoolDataAccess host={schoolDataHost} />
+      <MessagingConfirmation host={messagingConfirmationHost} />
     </DeckProvider>
   );
 }

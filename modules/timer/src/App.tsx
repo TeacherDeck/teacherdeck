@@ -33,6 +33,7 @@ import {
 import {
   Fragment,
   type KeyboardEvent as ReactKeyboardEvent,
+  type RefObject,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -223,12 +224,14 @@ function TimeEditor({
   large,
   onApply,
   onCancel,
+  readValue,
 }: {
   initialMs: number;
   /** Presentation mode size. */
   large: boolean;
   onApply: (ms: number) => void;
   onCancel: () => void;
+  readValue: RefObject<(() => number) | null>;
 }) {
   const s = useStyles();
   const [values, setValues] = useState(() => {
@@ -331,14 +334,18 @@ function TimeEditor({
     };
   }, []);
 
-  const apply = () => {
+  const read = () => {
     const t = tween.current;
     const final = { ...valuesRef.current };
     if (t !== null) {
       const v = valueAt(t.part, Math.round(t.to));
       if (v !== null) final[t.part] = pad(v);
     }
-    const ms = fromParts({ h: Number(final.h), m: Number(final.m), s: Number(final.s) });
+    return fromParts({ h: Number(final.h), m: Number(final.m), s: Number(final.s) });
+  };
+  readValue.current = read;
+  const apply = () => {
+    const ms = read();
     if (ms === 0) onCancel();
     else onApply(ms);
   };
@@ -391,6 +398,9 @@ function TimeEditor({
         if (e.target instanceof HTMLInputElement) e.target.select();
       }}
       onBlur={(e) => {
+        // Keep the picker geometry until pointer-up/click activates a timer control.
+        // Collapsing on pointer-down blur moves that control and loses the first click.
+        if (e.relatedTarget instanceof Element && e.relatedTarget.closest("[data-timer-controls]")) return;
         if (!e.currentTarget.contains(e.relatedTarget)) apply();
       }}
     >
@@ -498,6 +508,7 @@ export function App({ deck }: { deck: Deck }) {
   const [onTop, setOnTop] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const editedValue = useRef<(() => number) | null>(null);
   const [sound, setSound] = useState(true);
   const soundRef = useRef(sound);
   soundRef.current = sound;
@@ -622,6 +633,7 @@ export function App({ deck }: { deck: Deck }) {
     >
       {editing ? (
         <TimeEditor
+          readValue={editedValue}
           initialMs={left}
           large={presenting}
           onApply={(ms) => {
@@ -644,22 +656,39 @@ export function App({ deck }: { deck: Deck }) {
         </Button>
       )}
       {finished && <Subtitle>시간이 끝났어요</Subtitle>}
-      <div className={s.row}>
+      <div className={s.row} data-timer-controls>
         <Button
           appearance="primary"
           icon={timer.status === "running" ? <PauseRegular /> : <PlayRegular />}
           onClick={() => {
             const t = performance.now();
+            const editedMs = editing ? editedValue.current?.() : undefined;
+            setEditing(false);
             setNow(t);
-            setTimer((prev) => toggle(prev, t));
+            setTimer((prev) => toggle(editedMs ? create(editedMs) : prev, t));
           }}
         >
           {timer.status === "running" ? "일시정지" : "시작"}
         </Button>
-        <Button icon={<ArrowResetRegular />} onClick={() => setTimer((prev) => reset(prev))}>
+        <Button
+          icon={<ArrowResetRegular />}
+          onClick={() => {
+            const editedMs = editing ? editedValue.current?.() : undefined;
+            setEditing(false);
+            setTimer((prev) => reset(editedMs ? create(editedMs) : prev));
+          }}
+        >
           리셋
         </Button>
-        <Button icon={<FullScreenMaximizeRegular />} onClick={() => void setPresentation(!presenting)}>
+        <Button
+          icon={<FullScreenMaximizeRegular />}
+          onClick={() => {
+            const editedMs = editing ? editedValue.current?.() : undefined;
+            if (editedMs) setTimer(create(editedMs));
+            setEditing(false);
+            void setPresentation(!presenting);
+          }}
+        >
           {presenting ? "발표 모드 끄기" : "발표 모드"}
         </Button>
       </div>

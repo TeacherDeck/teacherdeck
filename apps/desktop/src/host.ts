@@ -16,6 +16,37 @@ function listenCurrent<T>(event: string, handler: EventCallback<T>) {
 }
 export const FS_DROPPED_EVENT = "deck://fs-dropped";
 
+/** Trusted shell review of immutable recipient, schedule, body and attachment previews. */
+export const messagingConfirmationHost = {
+  pending: () => invoke<import("@deck/sdk").MessagingApprovalRequest[]>("messaging_pending_confirmations"),
+  resolve: (args: import("@deck/sdk").MessagingApprovalResolution) =>
+    invoke("messaging_resolve_confirmation", { args }).then(() => undefined),
+};
+
+/** Trusted main-shell settings only; modules receive narrow school-data projections. */
+export const schoolDataHost = {
+  load: () => invoke<import("@deck/sdk").SchoolDataDocument>("school_data_load"),
+  save: (args: import("@deck/sdk").SaveSchoolDataArgs) =>
+    invoke<import("@deck/sdk").SchoolDataDocument>("school_data_save", { args }),
+  pending: () => invoke<import("@deck/sdk").SchoolAccessRequest[]>("school_data_pending"),
+  resolveAccess: (args: import("@deck/sdk").SchoolAccessResolution) =>
+    invoke("school_data_resolve_access", { args }).then(() => undefined),
+  grants: () => invoke<import("@deck/sdk").SchoolGrantRecord[]>("school_data_grants"),
+  revokeGrant: (moduleId: string, grantHandle: string) =>
+    invoke("school_data_revoke_grant", { moduleId, grantHandle }).then(() => undefined),
+  importPhoto: (args: import("@deck/sdk").SchoolImportPhotoArgs) =>
+    invoke<import("@deck/sdk").SchoolDataDocument>("school_data_import_photo", { args }),
+  exportBackup: () => invoke<boolean>("school_data_export_backup"),
+  exportTimetableImage: (args: import("./generated/SchoolTimetableImageArgs.ts").SchoolTimetableImageArgs) =>
+    invoke<boolean>("school_data_export_timetable_image", { args }),
+  readBackup: () => invoke<import("@deck/sdk").SchoolDataDocument | null>("school_data_read_backup"),
+  recover: (args: import("@deck/sdk").SaveSchoolDataArgs) =>
+    invoke<import("@deck/sdk").SchoolDataDocument>("school_data_recover", { args }),
+  readWorkbook: () => invoke<import("@deck/sdk").SchoolWorkbookInput | null>("school_data_read_workbook"),
+  writeWorkbook: (args: import("@deck/sdk").SchoolWorkbookOutputArgs) =>
+    invoke<boolean>("school_data_write_workbook", { args }),
+};
+
 export const host = {
   shellInfo: () => invoke<ShellInfo>("shell_info"),
   listModules: () => invoke<ModuleEntry[]>("list_modules"),

@@ -70,6 +70,33 @@ describe("@deck/ui", () => {
     expect(onClick).toHaveBeenCalledOnce();
   });
 
+  it("lets a saved setup collapse without losing its independent header action", () => {
+    const changed = vi.fn();
+    const action = vi.fn();
+    const content = (expanded: boolean) => (
+      <ui.DeckProvider>
+        <ui.SettingsExpander
+          header="자료 설정"
+          expanded={expanded}
+          onExpandedChange={changed}
+          action={<ui.Button onClick={action}>적용</ui.Button>}
+        >
+          <span>설정 내용</span>
+        </ui.SettingsExpander>
+      </ui.DeckProvider>
+    );
+    const view = render(content(true));
+    fireEvent.click(screen.getByRole("button", { name: "자료 설정" }));
+    expect(changed).toHaveBeenCalledWith(false);
+    expect(screen.getByRole("group", { name: "자료 설정" })).toBeDefined();
+    view.rerender(content(false));
+    expect(screen.queryByRole("group", { name: "자료 설정" })).toBeNull();
+    expect(screen.getByRole("button", { name: "자료 설정" }).getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(screen.getByRole("button", { name: "적용" }));
+    expect(action).toHaveBeenCalledOnce();
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
+
   it("SettingsExpander has one native header button and an independent action", () => {
     const action = vi.fn();
     wrap(
@@ -222,5 +249,77 @@ describe("@deck/ui", () => {
     expect(root.colorScheme).toBe("");
     cleanup();
     expect(thumb()).toBe("");
+  });
+
+  it.each([false, true])("keeps the dark document scrollbar after gallery siblings unmount (mica=%s)", (mica) => {
+    const dark = ui.createDeckTheme("dark");
+    const page = (gallery: boolean) => (
+      <ui.DeckProvider theme={dark} mica={mica}>
+        {gallery ? (
+          <>
+            <ui.DeckProvider theme={ui.createDeckTheme("light")} mica={false}>
+              <span>밝은 미리보기</span>
+            </ui.DeckProvider>
+            <ui.DeckProvider theme={dark} mica={false}>
+              <span>어두운 미리보기</span>
+            </ui.DeckProvider>
+          </>
+        ) : (
+          <span>설정</span>
+        )}
+      </ui.DeckProvider>
+    );
+    const root = document.documentElement.style;
+    const view = render(page(false));
+    view.rerender(page(true));
+    const lightPreview = screen.getByText("밝은 미리보기").parentElement;
+    const darkPreview = screen.getByText("어두운 미리보기").parentElement;
+    expect(lightPreview?.style.getPropertyValue("--deck-scrollbar-thumb")).toBe(
+      ui.createDeckTheme("light").colorNeutralStroke1,
+    );
+    expect(lightPreview?.style.getPropertyValue("--deck-scrollbar-thumb-hover")).toBe(
+      ui.createDeckTheme("light").colorNeutralStroke1Hover,
+    );
+    expect(darkPreview?.style.getPropertyValue("--deck-scrollbar-thumb")).toBe(dark.colorNeutralStroke1);
+    expect(darkPreview?.style.getPropertyValue("--deck-scrollbar-thumb-hover")).toBe(dark.colorNeutralStroke1Hover);
+    expect(root.getPropertyValue("--deck-scrollbar-thumb")).toBe(dark.colorNeutralStroke1);
+    view.rerender(page(false));
+    expect(root.getPropertyValue("--deck-scrollbar-thumb")).toBe(dark.colorNeutralStroke1);
+    expect(root.getPropertyValue("--deck-scrollbar-thumb-hover")).toBe(dark.colorNeutralStroke1Hover);
+    expect(root.colorScheme).toBe("");
+  });
+
+  it("updates the document theme independently of a nested preview and restores prior root colors", () => {
+    const root = document.documentElement.style;
+    const priorThumb = ui.createDeckTheme("light").colorNeutralStroke1;
+    const priorHover = ui.createDeckTheme("light").colorNeutralStroke1Hover;
+    root.setProperty("--deck-scrollbar-thumb", priorThumb);
+    root.setProperty("--deck-scrollbar-thumb-hover", priorHover);
+    const page = (mode: "light" | "dark") => (
+      <ui.DeckProvider theme={ui.createDeckTheme(mode)}>
+        <ui.DeckProvider theme={ui.createDeckTheme("light")}>
+          <span>미리보기</span>
+        </ui.DeckProvider>
+      </ui.DeckProvider>
+    );
+    try {
+      const view = render(page("light"));
+      view.rerender(page("dark"));
+      expect(root.getPropertyValue("--deck-scrollbar-thumb")).toBe(ui.createDeckTheme("dark").colorNeutralStroke1);
+      expect(root.getPropertyValue("--deck-scrollbar-thumb-hover")).toBe(
+        ui.createDeckTheme("dark").colorNeutralStroke1Hover,
+      );
+      expect(screen.getByText("미리보기").parentElement?.style.getPropertyValue("--deck-scrollbar-thumb")).toBe(
+        priorThumb,
+      );
+      view.unmount();
+      expect(root.getPropertyValue("--deck-scrollbar-thumb")).toBe(priorThumb);
+      expect(root.getPropertyValue("--deck-scrollbar-thumb-hover")).toBe(priorHover);
+      expect(root.colorScheme).toBe("");
+    } finally {
+      cleanup();
+      root.removeProperty("--deck-scrollbar-thumb");
+      root.removeProperty("--deck-scrollbar-thumb-hover");
+    }
   });
 });

@@ -15,7 +15,12 @@ use tauri::AppHandle;
 use crate::state::AppState;
 
 pub mod clipboard;
-mod fs;
+mod file_ops;
+pub(crate) mod fs;
+pub mod messaging;
+pub mod network;
+pub mod office;
+pub mod school_data;
 mod storage;
 mod system;
 pub mod window;
@@ -26,6 +31,16 @@ pub use fs::serve_file_resource;
 /// Handler selected for a `(cap, method)` pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Route {
+    /// Fixed CoolReserve worker with trusted final confirmation.
+    Messaging(messaging::Op),
+    /// Shared school projections through a teacher-selected grant.
+    SchoolData(school_data::Op),
+    /// Host-confirmed protected rename transactions.
+    FileOps(file_ops::Op),
+    /// Installed Office conversion through bounded fixed workers.
+    Office(office::Op),
+    /// Approved network profiles and fixed background routines.
+    Network(network::Op),
     /// `clipboard.*`
     Clipboard(clipboard::Op),
     /// Native capture sessions.
@@ -48,6 +63,11 @@ pub enum Route {
 pub fn route(cap: &str, method: &str) -> Option<Route> {
     deck_core::caps::method(cap, method)?;
     Some(match (cap, method) {
+        ("messaging", m) => Route::Messaging(messaging::Op::parse(m)?),
+        ("school-data", m) => Route::SchoolData(school_data::Op::parse(m)?),
+        ("file-ops", m) => Route::FileOps(file_ops::Op::parse(m)?),
+        ("office", m) => Route::Office(office::Op::parse(m)?),
+        ("network", m) => Route::Network(network::Op::parse(m)?),
         ("capture", _) => Route::Capture,
         ("overlay", _) => Route::Overlay,
         ("global-shortcut", _) => Route::Shortcut,
@@ -91,6 +111,11 @@ pub async fn dispatch(
     args: Value,
 ) -> Result<Value, DeckError> {
     match route(cap, method) {
+        Some(Route::Messaging(op)) => messaging::route(app, module_id, op, args).await,
+        Some(Route::SchoolData(op)) => school_data::call(app, state, module_id, op, args).await,
+        Some(Route::FileOps(op)) => file_ops::call(app, state, module_id, op, args).await,
+        Some(Route::Office(op)) => office::call(app, state, module_id, op, args).await,
+        Some(Route::Network(op)) => network::call(app, state, module_id, op, args).await,
         Some(Route::Capture) => {
             crate::capture_host::capture_call(app, module_id, method, args).await
         }

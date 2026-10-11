@@ -6,7 +6,7 @@ resolver = "3"
 members = ["crates/*", "apps/desktop/src-tauri"]
 
 [workspace.package]
-version = "0.2.2"
+version = "0.3.2"
 edition = "2024"
 rust-version = "1.98"
 license = "GPL-3.0-only"
@@ -23,6 +23,7 @@ ts-rs = { version = "12.0.1", features = ["semver-impl", "serde-json-impl"] }
 sha2 = "0.11.0"
 thiserror = "2.0.21"
 zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+quick-xml = "=0.42.0"
 # Host (apps/desktop/src-tauri). Tauri stays on 2.x (ADR-0001).
 tauri = { version = "2.12.1", features = ["tray-icon"] }
 tauri-build = { version = "2.7.1", features = [] }
@@ -36,6 +37,7 @@ image = { version = "=0.25.10", default-features = false, features = ["png", "jp
 tauri-plugin-global-shortcut = "=2.4.0"
 chrono = { version = "=0.4.44", default-features = false, features = ["clock"] }
 windows-version = "0.100.0"
+windows = { version = "=0.62.2", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Ole", "Win32_System_Variant", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging", "Win32_UI_Accessibility", "Win32_UI_Shell", "Win32_NetworkManagement_WiFi", "Win32_System_TaskScheduler", "Win32_Security", "Win32_System_Memory", "Win32_System_Registry", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_System_Diagnostics_ToolHelp", "Win32_Security_Authorization"] }
 sys-locale = "0.3.2"
 getrandom = "0.4.3"
 percent-encoding = "2.3.2"

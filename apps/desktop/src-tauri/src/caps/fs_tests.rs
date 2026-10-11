@@ -18,7 +18,7 @@ fn store_with(fs_declared: bool) -> ModuleStore {
     let mut entries = serde_json::Map::new();
     for id in ["sample-tool", "other-tool"] {
         let requires = if fs_declared || id == "other-tool" {
-            json!({"fs":"^1.1"})
+            json!({"fs":"^1.1","file-ops":"^1.0"})
         } else {
             json!({})
         };
@@ -65,6 +65,11 @@ impl Fixture {
             modules: RwLock::new(store_with(fs_declared)),
             handles: Mutex::new(HandleTable::new(OsRng)),
             transfers: Mutex::new(FileTransfers::default()),
+            folder_listings: Mutex::new(Default::default()),
+            file_ops: Mutex::new(
+                crate::file_ops::FileOpsService::open(guard.path().join("file-operations"))
+                    .unwrap(),
+            ),
             destinations: Mutex::new(
                 crate::destination::DestinationService::open(guard.path().join("grants")).unwrap(),
             ),
@@ -146,6 +151,127 @@ impl Drop for Fixture {
     }
 }
 
+#[test]
+fn file_ops_requires_declared_cap_and_exact_source_owner_kind_and_generation() {
+    use crate::caps::file_ops::{Op as RenameOp, invoke as rename_invoke};
+    let denied = Fixture::new(false);
+    let input = denied.input();
+    assert_eq!(
+        rename_invoke(
+            denied.state(),
+            "sample-tool",
+            0,
+            RenameOp::PlanRename,
+            json!({"items":[{"sourceHandle":input,"targetName":"new.bin"}]})
+        )
+        .unwrap_err()
+        .code,
+        ErrorCode::PermissionDenied
+    );
+    let f = Fixture::new(true);
+    let input = f.input();
+    let parent = f.parent();
+    for (owner, generation, source) in [
+        ("other-tool", 0, input.clone()),
+        ("sample-tool", 1, input.clone()),
+        ("sample-tool", 0, parent),
+    ] {
+        assert!(
+            rename_invoke(
+                f.state(),
+                owner,
+                generation,
+                RenameOp::PlanRename,
+                json!({"items":[{"sourceHandle":source,"targetName":"new.bin"}]})
+            )
+            .is_err()
+        );
+    }
+    let result = rename_invoke(
+        f.state(),
+        "sample-tool",
+        0,
+        RenameOp::PlanRename,
+        json!({"items":[{"sourceHandle":input,"targetName":"new.bin"}]}),
+    )
+    .unwrap();
+    assert!(result.get("planHandle").and_then(Value::as_str).is_some());
+    assert!(
+        !result
+            .to_string()
+            .contains(&f.path().to_string_lossy().to_string())
+    );
+    assert!(
+        rename_invoke(
+            f.state(),
+            "sample-tool",
+            0,
+            RenameOp::PlanRename,
+            json!({"items":[],"path":"invalid"})
+        )
+        .is_err()
+    );
+}
+#[test]
+fn folder_listing_cursor_is_bound_to_owner_root_recursive_option_and_session() {
+    let f = Fixture::new(true);
+    for i in 0..3 {
+        std::fs::write(f.path().join(format!("synthetic-{i}.bin")), b"x").unwrap();
+    }
+    let parent = f.parent();
+    let page = f
+        .invoke(
+            Op::ListFiles,
+            json!({"folderHandle":parent,"recursive":false,"limit":1}),
+        )
+        .unwrap();
+    let cursor = page.get("nextCursor").and_then(Value::as_str).unwrap();
+    assert_eq!(page["files"].as_array().unwrap().len(), 1);
+    assert!(page["files"][0].get("path").is_none());
+    assert!(
+        f.invoke(
+            Op::ListFiles,
+            json!({"folderHandle":parent,"recursive":true,"cursor":cursor})
+        )
+        .is_err()
+    );
+    assert!(
+        transfer_call(
+            f.state(),
+            "other-tool",
+            0,
+            Op::ListFiles,
+            json!({"folderHandle":parent,"recursive":false,"cursor":cursor})
+        )
+        .is_err()
+    );
+    let next = f
+        .invoke(
+            Op::ListFiles,
+            json!({"folderHandle":parent,"recursive":false,"cursor":cursor,"limit":1}),
+        )
+        .unwrap();
+    assert_ne!(page["files"][0]["handle"], next["files"][0]["handle"]);
+    f.state()
+        .folder_listings
+        .lock()
+        .unwrap()
+        .unload("sample-tool");
+    assert!(
+        f.invoke(
+            Op::ListFiles,
+            json!({"folderHandle":parent,"recursive":false,"cursor":cursor})
+        )
+        .is_err()
+    );
+    assert!(
+        f.invoke(
+            Op::ListFiles,
+            json!({"folderHandle":parent,"recursive":false,"limit":129})
+        )
+        .is_err()
+    );
+}
 #[test]
 fn file_folder_handles_reject_wrong_kind_owner_and_stale_generation() {
     let fixture = Fixture::new(true);

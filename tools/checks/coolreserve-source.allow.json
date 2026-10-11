@@ -1,0 +1,200 @@
+{
+  "$comment": "SPDX-License-Identifier: GPL-3.0-only; reviewed MIT upstream artifact; ADR-0023",
+  "repository": "https://github.com/rochelobeJYJ/CoolReserve",
+  "revision": "3169909330fcf8197a3d1f591e08e0df02113f57",
+  "version": "0.1.0",
+  "archive": {
+    "sha256": "b9e07be139920e87d5ed88e15c7ae82a363b087e993bb5c00c2fbab2a28a3120",
+    "path": "vendor/coolreserve/3169909330fcf8197a3d1f591e08e0df02113f57.zip"
+  },
+  "files": [
+    {
+      "size": 1081,
+      "path": "LICENSE",
+      "sha256": "7fb8e566b1b2e36f850c94c3463772e4e914dc241f6127647ecedede65745c88"
+    },
+    {
+      "size": 481,
+      "path": "teacherdeck_worker.py",
+      "sha256": "4aea0e13f61bf2bc7e240f925d719836c5b4e6bf161e231b3713a5ec8a751553"
+    },
+    {
+      "size": 75,
+      "path": "app/__init__.py",
+      "sha256": "892c81204323db87fd1265446e13d133de1afecc25f1a675725115457ff92483"
+    },
+    {
+      "size": 21865,
+      "path": "app/core.py",
+      "sha256": "5b25c105c3afb50f7fa4afb387b1afaacc38b979b3a2b0cd3f3e190ba3a0e54a"
+    },
+    {
+      "size": 19316,
+      "path": "app/engine.py",
+      "sha256": "4ea01c28c6b34c1a8156ec5033d0db0fa30b08b752896ce2c9c61be85b1eeeff"
+    },
+    {
+      "size": 85757,
+      "path": "app/windows.py",
+      "sha256": "eb7fe50c5bb7da025daf997771ae6dc0e9da65dcca0b36255d0cf0fa537d0968"
+    },
+    {
+      "size": 31409,
+      "path": "app/gentoo.py",
+      "sha256": "69161c757e23effe281145a21469cbbd550ad974a15b68a4746d79dbe87e1dba"
+    },
+    {
+      "size": 13528,
+      "path": "app/gentoo_tree.py",
+      "sha256": "46e6ed991fd5ea3681e8c3c11050d6c5d888b056c12a57655fbbff8d921a7f55"
+    },
+    {
+      "size": 5509,
+      "path": "app/recipients.py",
+      "sha256": "93d6f6d7fb6c5d3058f6b959b95c24816071b0995a2271028ee96199ce7b32d0"
+    },
+    {
+      "size": 3298,
+      "path": "app/verification.py",
+      "sha256": "c4564ac0c7b37536302fb9e39c5231f5f23d4dae86abe51bba5c69d88b8df6b0"
+    },
+    {
+      "size": 3488,
+      "path": "app/draft_recovery.py",
+      "sha256": "4b46d5d6b1722bb9a35a5b5fe541f3c16e4c977858687776194df8ed20e5c65b"
+    },
+    {
+      "size": 822,
+      "path": "app/waiting.py",
+      "sha256": "c6e90703e09e0b5972e130e210913eac0e30d0b1965a67bbcdf2527437a1b6ec"
+    },
+    {
+      "size": 4297,
+      "path": "app/privacy.py",
+      "sha256": "d4a826cd81aaf6ac598f155b263814c00f419858790e8e23bad811c18606f26f"
+    },
+    {
+      "size": 20560,
+      "path": "app/teacherdeck_worker.py",
+      "sha256": "01a6aca0d20289561afdab0e553225fcb17371e9439c9d81112c744cddcc201f"
+    }
+  ],
+  "moduleFiles": [
+    {
+      "size": 1267,
+      "path": "CHANGELOG.md",
+      "sha256": "01bb8ea4f58e40ac2400668adb65af25c534a555055e200f2d606f48dadd09d5"
+    },
+    {
+      "size": 7623,
+      "path": "README.md",
+      "sha256": "d43e29723d37fd124599f03e33e46156c91fe67f45227987073fb74336e5d483"
+    },
+    {
+      "size": 308,
+      "path": "icon.svg",
+      "sha256": "eabd02b065b9a59798cf02ac59808511fbea34ab4fd4cbfe39e538db7ca49f7a"
+    },
+    {
+      "size": 404,
+      "path": "index.html",
+      "sha256": "625e5f320e09d15370fa05d008f5702bf673aae1b584b53a787ccea3c1447d51"
+    },
+    {
+      "size": 577,
+      "path": "module.json",
+      "sha256": "989f61e2b227fdc576a5c6d5cac3dc30f6b83a2a8059be09597e5daeabbc3df8"
+    },
+    {
+      "size": 398,
+      "path": "package.json",
+      "sha256": "865921ad8fb3922370af1a2832f08331699f319339c6601c0db64e97f8bb7a6b"
+    },
+    {
+      "size": 6642,
+      "path": "src/App.test.tsx",
+      "sha256": "c22f882e2a28423868cd061d7ace723be2ec29f985f2730da65ce21c0bc34dc7"
+    },
+    {
+      "size": 62403,
+      "path": "src/App.tsx",
+      "sha256": "819e9724a4701ee491fffb52d03122c20b3bbaf168cb94a14c1ad8447fc1323b"
+    },
+    {
+      "size": 9292,
+      "path": "src/Editor.tsx",
+      "sha256": "e2cd4658a3881d7addef8902910dc236cffed641c6966506abd64774c3a762a4"
+    },
+    {
+      "size": 2828,
+      "path": "src/archive.worker.ts",
+      "sha256": "ba120755675fcbca71fda87160a6a3ac3df724adf6f42fcd4cc567bad809dccd"
+    },
+    {
+      "size": 6770,
+      "path": "src/chunked-storage.ts",
+      "sha256": "187bdfafb42436d4ecbb4f3cc83232c410220fbb3eeb32d03f05a3ff68155467"
+    },
+    {
+      "size": 5958,
+      "path": "src/io.ts",
+      "sha256": "0394fe3245f5c4902054d26d5bcaa530c256767cabeff5dc3c9518845ce72858"
+    },
+    {
+      "size": 4406,
+      "path": "src/logic.test.ts",
+      "sha256": "f47c5fa3ba6516a9b9cdd68f511e1d235d590c589be08bebdf2ecc681ca1bbec"
+    },
+    {
+      "size": 13717,
+      "path": "src/logic.ts",
+      "sha256": "07cabb03bc67878099a86600bee07fa8a58614f02052374efa44c06c99b90a21"
+    },
+    {
+      "size": 920,
+      "path": "src/main.tsx",
+      "sha256": "b183e7d8f69dd33fd27ec454ad20f007d879df17f3d390f771f4a058e133b139"
+    },
+    {
+      "size": 3838,
+      "path": "src/state.test.ts",
+      "sha256": "922de9c0c934e53407a7e0c8212fa8afe7592275046b2bddba359d9f9e2a42aa"
+    },
+    {
+      "size": 5464,
+      "path": "src/state.ts",
+      "sha256": "5a69370fb301a06df7f142f6ccc1d86d40849eb1df40efc748287097e4bc80f2"
+    },
+    {
+      "size": 3000,
+      "path": "src/workbook.test.ts",
+      "sha256": "a34e673fd5fb1df650006b6c10c3991a0f5c18f76b3946661eac27998011ff92"
+    },
+    {
+      "size": 7875,
+      "path": "src/workbook.ts",
+      "sha256": "4017b20ea88ed1b08f93c293a94015c6a0114834a4e80aaa88c94e996a45c5f7"
+    },
+    {
+      "size": 5329,
+      "path": "src/workflows.test.ts",
+      "sha256": "f51ee1c2dd3a9714e1ba6f275d28fdbed5518d6931e1c662e3b07d488b0e2524"
+    },
+    {
+      "size": 13139,
+      "path": "src/workflows.ts",
+      "sha256": "b9c17565e488e3ad2bee674f2ed8c15642d87dde644c249a71d4715387c4903f"
+    },
+    {
+      "size": 113,
+      "path": "tsconfig.json",
+      "sha256": "cdaff6dad17944d1173733acc730090277c66c3dabab9ce10ab6b95fd620b980"
+    },
+    {
+      "size": 543,
+      "path": "vite.config.ts",
+      "sha256": "60b010d93401452ab82ae3f515baa251064b24a9651335b1bd0ae454c365c076"
+    }
+  ],
+  "licenseText": "MIT License\n\nCopyright (c) 2026 CoolReserve contributors\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n"
+}

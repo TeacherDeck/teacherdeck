@@ -74,3 +74,11 @@ pub enum UpdateStatus {
         reason: String,
     },
 }
+
+/// Bounded PNG from the trusted main shell; never part of the module bridge.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SchoolTimetableImageArgs {
+    /// Canonical base64 PNG, at most 16MiB decoded and 4096px per side.
+    pub png_base64: String,
+}

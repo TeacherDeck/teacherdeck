@@ -7,3 +7,5 @@ packages:
   - "!modules/_template"
 allowBuilds:
   lefthook: true
+overrides:
+  "@fluentui/react-tabster>keyborg": "3.498.0"

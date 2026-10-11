@@ -11,11 +11,13 @@ import { type Meeting, emptyMeeting } from "./meeting.ts";
 import { MEETING_KEY } from "./storage.ts";
 afterEach(cleanup);
 async function setup(
-  state: Meeting = emptyMeeting(),
+  state: unknown = emptyMeeting(),
   intercept?: (key: string, value: unknown) => Promise<void>,
   clipboard = false,
+  library?: unknown,
 ) {
   const store = new Map<string, unknown>([[MEETING_KEY, state]]);
+  if (library !== undefined) store.set("library.v1", library);
   const host = createMockHost({
     module: { id: "meeting-note", version: "0.4.0" },
     granted: ["storage", "fs", ...(clipboard ? ["clipboard"] : [])],
@@ -46,7 +48,99 @@ async function setup(
   return { deck, host, view, store };
 }
 const seeded = () => ({ ...emptyMeeting(), speakers: ["가상 화자 A", "가상 화자 B"], selected: "가상 화자 A" });
+describe("meeting recovery", () => {
+  it("keeps a valid meeting usable after preserving a damaged library", async () => {
+    const state = { ...seeded(), draft: "보존할 합성 초안" };
+    const broken = { archive: "invalid" };
+    const { deck, view, store } = await setup(state, undefined, false, broken);
+    fireEvent.click(await screen.findByRole("button", { name: "현재 회의 계속하기" }));
+    expect(((await screen.findByRole("textbox", { name: "발언 입력" })) as HTMLTextAreaElement).value).toBe(
+      state.draft,
+    );
+    expect(store.get(MEETING_KEY)).toEqual(state);
+    expect([...store.entries()].some(([key, value]) => key.startsWith("recovery.") && value === broken)).toBe(true);
+    expect(store.get("library.v1")).toEqual({ rosters: [], archive: [] });
+    view.unmount();
+    deck.dispose();
+  });
+  it("never replaces damaged data when preservation fails", async () => {
+    const broken = { entries: "invalid" };
+    const { deck, view, store } = await setup(broken, async (key) => {
+      if (key.startsWith("recovery.")) throw new Error("QUOTA");
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "자료를 보관하고 새 회의 시작" }));
+    await screen.findByText(/복구하지 못했어요/);
+    expect(store.get(MEETING_KEY)).toBe(broken);
+    expect(screen.queryByRole("button", { name: "회의 시작 (Ctrl+Enter)" })).toBeNull();
+    view.unmount();
+    deck.dispose();
+  });
+});
 describe("original meeting interaction flow", () => {
+  it("edits action text literally and changes owner and due only through their own fields", async () => {
+    const state: Meeting = {
+      ...seeded(),
+      entries: [
+        {
+          id: "action",
+          kind: "조치",
+          text: "2 상자 @표시와 ~기호를 보존",
+          owner: "합성 담당",
+          due: "이번 금요일",
+          speaker: "가상 화자 A",
+          private: true,
+          raw: "* 2 과거 입력",
+        },
+      ],
+    };
+    const { deck, view, store } = await setup(state);
+    const input = await screen.findByRole("textbox", { name: "발언 입력" });
+    fireEvent.click(screen.getByRole("button", { name: "2 상자 @표시와 ~기호를 보존 수정" }));
+    expect((input as HTMLTextAreaElement).value).toBe(state.entries[0]?.text);
+    fireEvent.change(input, { target: { value: "2 상자 @표시와 ~기호를 보존하며 수정" } });
+    fireEvent.click(screen.getByRole("button", { name: "수정 저장" }));
+    await waitFor(() =>
+      expect((store.get(MEETING_KEY) as Meeting).entries[0]).toMatchObject({
+        text: "2 상자 @표시와 ~기호를 보존하며 수정",
+        owner: "합성 담당",
+        due: "이번 금요일",
+        kind: "조치",
+        private: true,
+        speaker: "가상 화자 A",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "2 상자 @표시와 ~기호를 보존하며 수정 수정" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "조치 담당자" }), { target: { value: "새 합성 담당" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "조치 기한" }), { target: { value: "다음 월요일" } });
+    fireEvent.click(screen.getByRole("button", { name: "수정 저장" }));
+    await waitFor(() =>
+      expect((store.get(MEETING_KEY) as Meeting).entries[0]).toMatchObject({
+        owner: "새 합성 담당",
+        due: "다음 월요일",
+        text: "2 상자 @표시와 ~기호를 보존하며 수정",
+      }),
+    );
+    view.unmount();
+    deck.dispose();
+  });
+  it("keeps a retagged speaker when editing a statement originally entered with a number shortcut", async () => {
+    const { deck, view, store } = await setup(seeded());
+    const input = await screen.findByRole("textbox", { name: "발언 입력" });
+    fireEvent.change(input, { target: { value: "2 합성 발언" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: "합성 발언 화자 변경" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "이 기록의 화자" }));
+    fireEvent.click(screen.getByRole("option", { name: "1. 가상 화자 A" }));
+    fireEvent.click(screen.getByRole("button", { name: "합성 발언 수정" }));
+    fireEvent.click(screen.getByRole("button", { name: "수정 저장" }));
+    await waitFor(() => {
+      const saved = store.get(MEETING_KEY) as Meeting;
+      expect(saved.entries[0]?.speakerId).toBe(saved.speakerIds?.[0]);
+      expect(saved.entries[0]?.speaker).toBe("가상 화자 A");
+    });
+    view.unmount();
+    deck.dispose();
+  });
   it("copies public rich content only after a click and keeps file export on older hosts", async () => {
     const { deck, view, store } = await setup(seeded(), undefined, true);
     const input = await screen.findByRole("textbox", { name: "발언 입력" });
@@ -254,7 +348,10 @@ describe("original meeting interaction flow", () => {
         <App deck={deck} />
       </DeckProvider>,
     );
-    await screen.findByText("회의록을 불러오지 못했어요. 도구를 다시 열어 주세요.");
+    await screen.findByRole("heading", { name: "회의록 복구" });
+    expect(host.requests.filter((r) => r.method === "set")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "자료를 보관하고 새 회의 시작" }));
+    await screen.findByText(/복구하지 못했어요/);
     expect(host.requests.filter((r) => r.method === "set")).toHaveLength(0);
     deck.dispose();
   });

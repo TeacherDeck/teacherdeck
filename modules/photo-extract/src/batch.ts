@@ -5,6 +5,7 @@ import { MAX_INPUT, type Parts } from "./archive.ts";
 import { parseParts, type Parsed, type Photo, type Sheet } from "./ooxml.ts";
 import { OutputSession } from "./output-session.ts";
 import type { Student } from "./roster.ts";
+import { DEFAULT_INSETS, type Insets } from "./pdf-boxes.ts";
 export interface Extraction {
   file: FileHandleInfo;
   students: Student[];
@@ -29,7 +30,21 @@ export function safeBase(value: string): string {
     .slice(0, 100);
   return !clean || /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(clean) ? `_${clean || "사진"}` : clean;
 }
-export function planPhotos(extractions: Extraction[], renamed: Record<string, string> = {}): PlannedPhoto[] {
+export const DEFAULT_NAME_PATTERN = "{학번}_{이름}";
+export function validNamePattern(pattern: string): boolean {
+  const matches = [...pattern.matchAll(/\{([^{}]+)\}/g)];
+  return (
+    pattern.length <= 100 &&
+    matches.length > 0 &&
+    matches.every((match) => ["학번", "학년", "반", "번호", "이름"].includes(match[1] ?? "")) &&
+    !/[{}]/.test(pattern.replace(/\{[^{}]+\}/g, ""))
+  );
+}
+export function planPhotos(
+  extractions: Extraction[],
+  renamed: Record<string, string> = {},
+  pattern = DEFAULT_NAME_PATTERN,
+): PlannedPhoto[] {
   const occupied = new Set<string>();
   const result: PlannedPhoto[] = [];
   for (const extraction of extractions)
@@ -39,10 +54,22 @@ export function planPhotos(extractions: Extraction[], renamed: Record<string, st
       const candidate = matchedStudents.length === 1 ? matchedStudents[0] : undefined;
       const student = candidate?.identityConfirmed !== false ? candidate : undefined;
       const suggested = extraction.students.find((s) => s.suggestionKey === photo.key);
+      const fields: Record<string, string> = student
+        ? {
+            학번: `${student.grade}${String(student.classNumber).padStart(2, "0")}${String(student.number).padStart(2, "0")}`,
+            학년: String(student.grade),
+            반: String(student.classNumber),
+            번호: String(student.number),
+            이름: student.name,
+          }
+        : {};
       const base = safeBase(
         renamed[id] ??
           (student
-            ? `${student.grade}${String(student.classNumber).padStart(2, "0")}${String(student.number).padStart(2, "0")}_${student.name}`
+            ? (validNamePattern(pattern) ? pattern : DEFAULT_NAME_PATTERN).replace(
+                /\{([^{}]+)\}/g,
+                (_, key: string) => fields[key] ?? "",
+              )
             : `미확인_${String(index + 1).padStart(3, "0")}`),
       );
       let name = `${base}.${photo.extension}`;
@@ -57,7 +84,7 @@ export function planPhotos(extractions: Extraction[], renamed: Record<string, st
         label: student
           ? `${student.grade}학년 ${student.classNumber}반 ${student.number}번 ${student.name}`
           : candidate
-            ? `학생 신원 미확인: ${candidate.grade}학년 ${candidate.classNumber}반 ${candidate.number}번 ${candidate.name} · 학년·반을 확인해 주세요`
+            ? `학생 신원 미확인: ${candidate.grade}학년 ${candidate.classNumber}반 ${candidate.number}번 ${candidate.name} · ${candidate.identityWarning ?? "학년·반을 확인해 주세요"}`
             : suggested
               ? `추측: ${suggested.grade}학년 ${suggested.classNumber}반 ${suggested.number}번 ${suggested.name} · 이름을 확인해 주세요`
               : matchedStudents.length > 1
@@ -109,6 +136,7 @@ export async function readExtraction(
   signal: AbortSignal,
   decode: Decoder = decodeArchive,
   match: Matcher = matchInWorker,
+  insets: Insets = DEFAULT_INSETS,
 ): Promise<Extraction> {
   if (file.size > MAX_INPUT) throw new Error("INPUT_LIMIT");
   const chunks: Uint8Array[] = [];
@@ -125,6 +153,10 @@ export async function readExtraction(
   for (const chunk of chunks) {
     bytes.set(chunk, at);
     at += chunk.length;
+  }
+  if (/\.pdf$/i.test(file.name)) {
+    const { extractPdf } = await import("./pdf.ts");
+    return { file, ...(await extractPdf(bytes, signal, insets)) };
   }
   const parts = await decode(bytes, signal);
   const parsed: Parsed = await parseParts(parts, signal, true);
