@@ -12,14 +12,109 @@ import { encodeBackup } from "./history.ts";
 import { App } from "./App.tsx";
 import { plan, type PlanInput, type PlanResult } from "./planner.ts";
 import { STATE_KEY, initialState } from "./state.ts";
+import { emptyDetailed, planDetailed, type DetailedState } from "./detailed.ts";
 class TestWorker {
   onmessage: ((event: { data: PlanResult }) => void) | null = null;
   onerror: (() => void) | null = null;
   terminate() {}
-  postMessage(input: PlanInput) {
-    queueMicrotask(() => this.onmessage?.({ data: plan(input) }));
+  postMessage(input: PlanInput | { input: PlanInput; detailed: DetailedState }) {
+    queueMicrotask(() =>
+      this.onmessage?.({ data: "detailed" in input ? planDetailed(input.input, input.detailed) : plan(input) }),
+    );
   }
 }
+it("keeps the basic workflow, adds two exam rooms, assigns and atomically saves detailed constraints", async () => {
+  const state = initialState(new Date(2026, 9, 1));
+  state.input.teachers = ["A", "B", "C"].map((id) => ({
+    id,
+    name: `합성교사${id}`,
+    past: 0,
+    fixed: [],
+    excluded: [],
+    weekdays: [],
+  }));
+  state.input.excluded = [1, 2];
+  state.assignments = { "7": ["A"] };
+  state.actual = { "7": ["A"] };
+  const { deck } = await open(state);
+  expect(screen.queryByRole("button", { name: "세부 배정" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "세부 편성 · 시험감독·야자·다른 업무" }));
+  fireEvent.click(screen.getByRole("button", { name: "시간대 추가" }));
+  fireEvent.change(screen.getByRole("spinbutton", { name: "세부 업무 날짜" }), { target: { value: "6" } });
+  fireEvent.blur(screen.getByRole("spinbutton", { name: "세부 업무 날짜" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "시험실·장소" }), { target: { value: "합성실1\n합성실2" } });
+  fireEvent.click(screen.getByRole("button", { name: "업무 추가" }));
+  fireEvent.click(screen.getByRole("combobox", { name: "세부 조건을 바꿀 교사" }));
+  fireEvent.click(await screen.findByRole("option", { name: "합성교사B" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "이 업무에 고정" }));
+  fireEvent.click(screen.getByRole("button", { name: "세부 배정" }));
+  await screen.findByText("조건을 지켜 세부 업무를 배정했어요. 실제 수행 기록은 바뀌지 않아요.");
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  await screen.findByText("이 PC에 명단·조건·배정표를 저장했어요.");
+  const saved = required(await loadLedger(deck)).current;
+  expect(saved.assignments).toEqual(state.assignments);
+  expect(saved.actual).toEqual(state.actual);
+  const detailed = required(saved.detailed);
+  expect(detailed.jobs.map((j) => j.room)).toEqual(["합성실1", "합성실2"]);
+  expect(detailed.assignments[required(detailed.jobs[0]).id]).toEqual(["B"]);
+  expect(new Set(Object.values(detailed.assignments).flat()).size).toBe(2);
+  expect(detailed.actual).toEqual({});
+  deck.dispose();
+});
+it("retains the last detailed results on an impossible allocation and protects referenced teachers", async () => {
+  const state = initialState(new Date(2026, 9, 1));
+  state.input.teachers = [{ id: "A", name: "합성교사A", past: 0, fixed: [], excluded: [], weekdays: [] }];
+  state.detailed = {
+    ...emptyDetailed(),
+    blocks: [{ id: "am", label: "1교시", start: 540, end: 590 }],
+    jobs: [
+      { id: "j1", day: 6, block: "am", task: "시험감독", room: "합성실1", required: 1, fixed: ["A"], excluded: [] },
+      { id: "j2", day: 6, block: "am", task: "시험감독", room: "합성실2", required: 1, fixed: [], excluded: [] },
+    ],
+    assignments: { j1: ["A"] },
+    actual: { j1: ["A"] },
+  };
+  const { deck } = await open(state);
+  fireEvent.click(screen.getByRole("button", { name: "세부 편성 · 시험감독·야자·다른 업무" }));
+  fireEvent.click(screen.getByRole("button", { name: "세부 배정" }));
+  await screen.findByText(/교사 조건을 지키면서 세부 인원을 채울 수 없어요/);
+  fireEvent.click(screen.getByRole("button", { name: "여러 명 붙여넣기" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "교사 명단" }), { target: { value: "합성교사B" } });
+  fireEvent.click(screen.getByRole("button", { name: "명단 적용" }));
+  await screen.findByText(/세부 편성의 고정·직접 배정·실제 기록이 있는 교사를 빼려면/);
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  await screen.findByText("이 PC에 명단·조건·배정표를 저장했어요.");
+  expect(required(await loadLedger(deck)).current.detailed).toEqual(state.detailed);
+  deck.dispose();
+});
+it("cancels detailed computation and discards a late worker result without replacing the old plan", async () => {
+  const state = initialState(new Date(2026, 9, 1));
+  state.input.teachers = ["A", "B"].map((id) => ({
+    id,
+    name: `합성교사${id}`,
+    past: 0,
+    fixed: [],
+    excluded: [],
+    weekdays: [],
+  }));
+  state.detailed = {
+    ...emptyDetailed(),
+    blocks: [{ id: "am", label: "1교시", start: 540, end: 590 }],
+    jobs: [
+      { id: "j1", day: 6, block: "am", task: "시험감독", room: "합성실", required: 1, fixed: ["B"], excluded: [] },
+    ],
+    assignments: { j1: ["A"] },
+  };
+  const { deck } = await open(state);
+  fireEvent.click(screen.getByRole("button", { name: "세부 편성 · 시험감독·야자·다른 업무" }));
+  fireEvent.click(screen.getByRole("button", { name: "세부 배정" }));
+  fireEvent.click(screen.getByRole("button", { name: "세부 계산 취소" }));
+  await screen.findByText("세부 계산을 취소했어요. 기존 배정과 실제 수행 기록은 유지해요.");
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  await screen.findByText("이 PC에 명단·조건·배정표를 저장했어요.");
+  expect(required(await loadLedger(deck)).current.detailed).toEqual(state.detailed);
+  deck.dispose();
+});
 beforeEach(() => vi.stubGlobal("Worker", TestWorker));
 afterEach(() => {
   cleanup();

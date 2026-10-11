@@ -54,6 +54,8 @@ import { parseTimetable } from "./timetable.ts";
 import { changeConditions, isValidAssignment, validSelectedDay } from "./condition-changes.ts";
 import { loadLedger, replaceLedger, saveLedgerMonths } from "./ledger.ts";
 import { decodeLegacy } from "./legacy.ts";
+import { DetailedEditor } from "./DetailedEditor.tsx";
+import { detailedCounts } from "./detailed.ts";
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: deckTokens.itemGap, padding: deckTokens.pagePadding },
@@ -144,6 +146,7 @@ export function App({ deck }: { deck: Deck }) {
     Object.entries(input.manual).filter(([day, assigned]) => isValidAssignment(input, day, assigned)),
   );
   const projected = counts(input, { ...validManual, ...state.assignments });
+  const detailedProjected = state.detailed ? detailedCounts(state.detailed) : {};
   useEffect(() => {
     let active = true;
     const read = async () => {
@@ -252,7 +255,7 @@ export function App({ deck }: { deck: Deck }) {
       void exportFile("legacy.json", exportLegacy({ ...months, [monthKey(state)]: state }));
     } catch {
       setMessage(
-        "기존 형식은 같은 연도와 하루 두 명까지만 보존해요. 전체 자료는 JSON 백업 또는 현재 달 CSV로 저장해 주세요.",
+        "기존 형식은 같은 연도·하루 두 명의 기본 지도일만 보존해요. 세부 업무·시간대·시험실은 자체 JSON 백업 또는 현재 달 CSV로 저장해 주세요.",
       );
     }
   }
@@ -265,6 +268,20 @@ export function App({ deck }: { deck: Deck }) {
   }
   function updateInput(patch: Partial<PlanInput>) {
     const next = changeConditions(state, patch, HOLIDAYS);
+    if (next.state.detailed && patch.teachers) {
+      const ids = new Set(patch.teachers.map((t) => t.id));
+      const detailed = next.state.detailed;
+      next.state = {
+        ...next.state,
+        detailed: {
+          ...detailed,
+          jobs: detailed.jobs.map((j) => ({ ...j, excluded: j.excluded.filter((id) => ids.has(id)) })),
+          assignments: Object.fromEntries(
+            Object.entries(detailed.assignments).map(([key, row]) => [key, row.every((id) => ids.has(id)) ? row : []]),
+          ),
+        },
+      };
+    }
     setState(next.state);
     setIssues(next.issues);
     setMessage("조건을 바꿨어요. 조건에 맞는 기존 배정은 유지해요. 전체 균형을 다시 맞추려면 배정을 눌러 주세요.");
@@ -273,6 +290,19 @@ export function App({ deck }: { deck: Deck }) {
     const next = parseRoster(roster, input.teachers);
     if (!next) {
       setMessage("명단은 이름과 과거 횟수를 한 줄씩 입력해 주세요. 중복 이름 없이 최대 500명이에요.");
+      return;
+    }
+    if (
+      state.detailed &&
+      [
+        ...Object.values(state.detailed.actual).flat(),
+        ...Object.values(state.detailed.manual).flat(),
+        ...state.detailed.jobs.flatMap((j) => j.fixed),
+      ].some((id) => !next.some((t) => t.id === id))
+    ) {
+      setMessage(
+        "세부 편성의 고정·직접 배정·실제 기록이 있는 교사를 빼려면 해당 업무의 조건과 기록을 먼저 수정해 주세요.",
+      );
       return;
     }
     if (
@@ -343,7 +373,13 @@ export function App({ deck }: { deck: Deck }) {
       worker.terminate();
       workerRef.current = null;
     };
-    worker.postMessage({ ...cumulativeInput(state, months), holidays: HOLIDAYS });
+    const next = cumulativeInput(state, months);
+    const detailCounts = state.detailed ? detailedCounts(state.detailed) : {};
+    worker.postMessage({
+      ...next,
+      holidays: HOLIDAYS,
+      teachers: next.teachers.map((t) => ({ ...t, past: t.past + (detailCounts[t.id] ?? 0) })),
+    });
   }
   function applyManual(selection = manualSelection) {
     if (busy || state.closed || !currentDay || currentDay.excluded) {
@@ -871,7 +907,7 @@ export function App({ deck }: { deck: Deck }) {
               onClick={() => setTeacherId(t.id)}
             >
               {t.name} · 과거 {t.past} · 누적 {cumulative.teachers.find((x) => x.id === t.id)?.past ?? t.past} + 이번{" "}
-              {projected[t.id] ?? 0}회
+              {(projected[t.id] ?? 0) + (detailedProjected[t.id] ?? 0)}회
             </Button>
           ))}
         </div>
@@ -917,6 +953,13 @@ export function App({ deck }: { deck: Deck }) {
           </Button>
         </SettingsExpander>
       </section>
+      <DetailedEditor
+        state={state}
+        input={{ ...cumulative, holidays: HOLIDAYS }}
+        busy={busy}
+        onBusy={setBusy}
+        onChange={(detailed) => setState((prev) => ({ ...prev, detailed }))}
+      />
       <SettingsExpander header="월 마감 · 백업 · 내보내기">
         <div className={s.row}>
           <Button

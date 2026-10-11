@@ -5,6 +5,7 @@ import { createMockHost } from "@deck/sdk/testing";
 import { describe, expect, it } from "vitest";
 import { ACTIVE_LEDGER, loadLedger, replaceLedger, saveLedgerMonths } from "./ledger.ts";
 import { initialState, STATE_KEY } from "./state.ts";
+import { emptyDetailed } from "./detailed.ts";
 async function fixture() {
   const values = new Map<string, unknown>([
     [STATE_KEY, { damaged: true }],
@@ -37,6 +38,34 @@ async function fixture() {
   };
 }
 describe("atomic recovery generations", () => {
+  it("commits detailed jobs, pins and real records together and preserves the old generation on failure", async () => {
+    const f = await fixture(),
+      state = initialState(new Date(2026, 9, 1));
+    state.input.teachers = [{ id: "A", name: "합성교사A", past: 0, fixed: [], excluded: [], weekdays: [] }];
+    await replaceLedger(f.deck, { "2026-10": state }, "2026-10");
+    const before = new Map(f.values);
+    const updated = {
+      ...state,
+      detailed: {
+        ...emptyDetailed(),
+        blocks: [{ id: "am", label: "1교시", start: 540, end: 590 }],
+        jobs: [
+          { id: "j1", day: 6, block: "am", task: "시험감독", room: "합성실", required: 1, fixed: ["A"], excluded: [] },
+        ],
+        assignments: { j1: ["A"] },
+        manual: { j1: ["A"] },
+        actual: { j1: ["A"] },
+      },
+    };
+    f.fail(ACTIVE_LEDGER);
+    await expect(saveLedgerMonths(f.deck, { "2026-10": updated }, "2026-10")).rejects.toThrow();
+    expect(f.values).toEqual(before);
+    expect(required(await loadLedger(f.deck)).current).toEqual(state);
+    f.fail("");
+    await saveLedgerMonths(f.deck, { "2026-10": updated }, "2026-10");
+    expect(required(await loadLedger(f.deck)).current).toEqual(updated);
+    f.deck.dispose();
+  });
   it("preserves corrupt legacy records, cleans failed staging and recovers only after pointer commit", async () => {
     const f = await fixture(),
       state = initialState(new Date(2026, 9, 1)),

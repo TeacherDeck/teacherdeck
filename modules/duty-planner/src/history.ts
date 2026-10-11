@@ -5,6 +5,7 @@ import { calendar, counts } from "./planner.ts";
 import { initialState, sanitizeState, saveState, type PlannerState } from "./state.ts";
 import { HOLIDAYS } from "./holidays.ts";
 import { saveLedgerMonth } from "./ledger.ts";
+import { detailedCounts, emptyDetailed, timeLabel } from "./detailed.ts";
 const PREFIX = "planner.month.";
 export function monthKey(state: PlannerState): string {
   return `${state.input.year}-${String(state.input.month).padStart(2, "0")}`;
@@ -35,6 +36,7 @@ export function switchMonth(state: PlannerState, months: Months, year: number, m
   return (
     months[key] ?? {
       ...initialState(new Date(year, month - 1, 1)),
+      ...(state.detailed ? { detailed: { ...emptyDetailed(), blocks: structuredClone(state.detailed.blocks) } } : {}),
       input: {
         ...initialState(new Date(year, month - 1, 1)).input,
         perDay: state.input.perDay,
@@ -46,10 +48,12 @@ export function switchMonth(state: PlannerState, months: Months, year: number, m
 }
 export function performanceCounts(state: PlannerState): Record<string, number> {
   const validDays = new Set(calendar({ ...state.input, holidays: HOLIDAYS }).map((d) => String(d.day)));
-  return counts(
+  const basic = counts(
     state.input,
     Object.fromEntries(Object.entries(state.actual ?? {}).filter(([day]) => validDays.has(day))),
   );
+  const detailed = state.detailed ? detailedCounts(state.detailed, state.detailed.actual) : {};
+  return Object.fromEntries(state.input.teachers.map((t) => [t.id, (basic[t.id] ?? 0) + (detailed[t.id] ?? 0)]));
 }
 export function cumulativeInput(state: PlannerState, months: Months) {
   const totals = new Map<string, number>();
@@ -79,7 +83,11 @@ export function closeMonth(state: PlannerState): PlannerState {
   return { ...state, closed: true };
 }
 export function encodeBackup(months: Months): string {
-  return JSON.stringify({ format: "teacherdeck-duty-v1", months }, null, 2);
+  return JSON.stringify(
+    { format: Object.values(months).some((s) => s.detailed) ? "teacherdeck-duty-v2" : "teacherdeck-duty-v1", months },
+    null,
+    2,
+  );
 }
 export function decodeBackup(text: string): Months | null {
   try {
@@ -89,7 +97,7 @@ export function decodeBackup(text: string): Months | null {
       typeof v !== "object" ||
       !v ||
       !("format" in v) ||
-      v.format !== "teacherdeck-duty-v1" ||
+      (v.format !== "teacherdeck-duty-v1" && v.format !== "teacherdeck-duty-v2") ||
       !("months" in v) ||
       typeof v.months !== "object" ||
       !v.months ||
@@ -109,6 +117,65 @@ export function decodeBackup(text: string): Months | null {
 }
 const escape = (text: string) => `"${text.replaceAll('"', '""')}"`;
 export function exportCsv(state: PlannerState): string {
+  if (state.detailed?.jobs.length) {
+    const names = (ids: string[]) =>
+      ids.map((id) => state.input.teachers.find((t) => t.id === id)?.name ?? "").join(" · ");
+    return (
+      "\uFEFF" +
+      [
+        [
+          "날짜",
+          "업무",
+          "시간대",
+          "시작",
+          "종료",
+          "시험실·장소",
+          "필요 인원",
+          "담당자",
+          "실제 수행자",
+          "구분",
+          "요일",
+          "고사일",
+          "메모",
+        ],
+        ...calendar({ ...state.input, holidays: HOLIDAYS }).map((day) => [
+          day.date,
+          "기본 지도일",
+          "",
+          "",
+          "",
+          "",
+          String(state.input.exam?.includes(day.day) ? 1 : state.input.perDay),
+          names(state.assignments[String(day.day)] ?? []),
+          names(state.actual?.[String(day.day)] ?? []),
+          day.excluded ? "제외" : "기본",
+          "일월화수목금토"[day.weekday] ?? "",
+          state.input.exam?.includes(day.day) ? "고사" : "",
+          state.memo?.[String(day.day)] ?? "",
+        ]),
+        ...state.detailed.jobs.map((job) => {
+          const block = state.detailed?.blocks.find((b) => b.id === job.block);
+          return [
+            `${monthKey(state)}-${String(job.day).padStart(2, "0")}`,
+            job.task,
+            block?.label ?? "",
+            timeLabel(block?.start ?? 0),
+            timeLabel(block?.end ?? 0),
+            job.room,
+            String(job.required),
+            names(state.detailed?.assignments[job.id] ?? []),
+            names(state.detailed?.actual[job.id] ?? []),
+            "세부",
+            "일월화수목금토"[new Date(Date.UTC(state.input.year, state.input.month - 1, job.day)).getUTCDay()] ?? "",
+            state.input.exam?.includes(job.day) ? "고사" : "",
+            state.memo?.[String(job.day)] ?? "",
+          ];
+        }),
+      ]
+        .map((row) => row.map(escape).join(","))
+        .join("\r\n")
+    );
+  }
   return (
     "\uFEFF" +
     [
@@ -134,6 +201,7 @@ export function exportCsv(state: PlannerState): string {
 export function exportLegacy(months: Months): string {
   if (
     new Set(Object.values(months).map((s) => s.input.year)).size > 1 ||
+    Object.values(months).some((s) => !!s.detailed?.jobs.length) ||
     Object.values(months).some((s) =>
       [...Object.values(s.assignments), ...Object.values(s.actual ?? {})].some((row) => row.length > 2),
     )

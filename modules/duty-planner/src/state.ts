@@ -2,6 +2,7 @@
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import type { Deck } from "@deck/sdk";
 import { validPast, type PlanInput, type Teacher } from "./planner.ts";
+import { sanitizeDetailed, type DetailedState } from "./detailed.ts";
 export const STATE_KEY = "planner.v1";
 export interface PlannerState {
   input: PlanInput;
@@ -12,6 +13,7 @@ export interface PlannerState {
   /** Original GAS rows, so a compatibility re-export need not fabricate absent dates. */
   legacyDays?: number[];
   legacyMissing?: Record<string, number[]>;
+  detailed?: DetailedState;
 }
 export function initialState(now = new Date()): PlannerState {
   return {
@@ -100,6 +102,11 @@ export function sanitizeState(value: unknown): PlannerState | null {
     return null;
   const teachers = i["teachers"] as Teacher[];
   const ids = new Set(teachers.map((t) => t.id));
+  const detailed =
+    value["detailed"] === undefined
+      ? undefined
+      : sanitizeDetailed(value["detailed"], ids, new Date(Date.UTC(i["year"], i["month"], 0)).getUTCDate());
+  if (detailed === null) return null;
   if (
     ids.size !== teachers.length ||
     new Set(teachers.map((t) => t.name)).size !== teachers.length ||
@@ -140,6 +147,7 @@ export function sanitizeState(value: unknown): PlannerState | null {
     actual: (value["actual"] as Record<string, string[]> | undefined) ?? {},
     memo: (value["memo"] as Record<string, string> | undefined) ?? {},
     closed: (value["closed"] as boolean | undefined) ?? false,
+    ...(detailed === undefined ? {} : { detailed }),
     ...(value["legacyDays"] === undefined ? {} : { legacyDays: value["legacyDays"] as number[] }),
     ...(value["legacyMissing"] === undefined
       ? {}
