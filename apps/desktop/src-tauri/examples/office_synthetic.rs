@@ -385,7 +385,7 @@ fn generate(kind: OfficeProvider, name: &str, id: &str) -> Result<(), DeckError>
             let _ = child.wait();
             return Err(DeckError::new(
                 ErrorCode::Timeout,
-                "합성 문서 작업 응답 시간이 지났어요. 열린 승인 창은 직접 확인해 주세요.",
+                "응답 시간이 지나 합성 문서 작업을 중지했어요. 다시 시도할 때 한글 창의 문서 접근 승인을 확인해 주세요.",
             ));
         }
         std::thread::sleep(Duration::from_millis(50));

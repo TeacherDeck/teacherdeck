@@ -164,7 +164,7 @@ pub(crate) fn run_office_with_timeout(
                 let _ = child.wait();
                 return Err(DeckError::new(
                     ErrorCode::Timeout,
-                    "변환 시간이 지났어요. 열린 승인 창을 확인해 주세요.",
+                    "응답 시간이 지나 변환을 중지했어요. 다시 시도할 때 문서 접근 승인 창을 확인해 주세요.",
                 ));
             }
             if let Some(status) = child.try_wait().map_err(|_| failure())? {

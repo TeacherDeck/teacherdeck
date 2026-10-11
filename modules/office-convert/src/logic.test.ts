@@ -33,7 +33,6 @@ describe("real Office format planning", () => {
     expect(providerFor(file("a", "무관.pdf"))).toBeNull();
   });
   it("returns private-data-free advice for errors", () => {
-    expect(conversionError("TIMEOUT")).toContain("시간");
     expect(conversionError("INVALID_ARGS")).toContain("매크로");
     expect(conversionError("CANCELLED")).toContain("결과는 유지");
     expect(conversionError("BUSY", "열려 있는 PowerPoint를 닫은 뒤 다시 변환해 주세요.")).toContain(
@@ -41,6 +40,15 @@ describe("real Office format planning", () => {
     );
     expect(conversionError("BUSY")).toContain("다른 문서 변환");
     expect(conversionError("BUSY", "private synthetic exception")).not.toContain("private");
+  });
+  it("explains that a timed-out worker stopped and approval belongs to the next attempt", () => {
+    const advice = conversionError("TIMEOUT", "private synthetic exception");
+    expect(advice).toContain("변환을 중지했어요");
+    expect(advice).toContain("다시 시도할 때");
+    expect(advice).toContain("문서 접근 승인");
+    expect(advice).toContain("앞서 저장한 결과는 유지");
+    expect(advice).not.toContain("열린 승인 창");
+    expect(advice).not.toContain("private");
   });
   it("retains published results while replanning failed macro documents with collision-safe names", () => {
     const input = [file("a", "합성.xls"), file("b", "합성.xlsx"), file("c", "결과.doc")];
