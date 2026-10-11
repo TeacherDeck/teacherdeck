@@ -21,6 +21,16 @@ function prepared() {
   state.layout = { rows: 2, columns: 3, frontRows: 1, blocked: [], aisles: [] };
   return state;
 }
+function largeClassroom() {
+  let id = 0;
+  const initial: SeatState = replaceRoster(
+    emptyState(),
+    parseRoster(Array.from({ length: 1000 }, (_, i) => `${i + 1} 합성학생${i + 1}`).join("\n"), [], () => `s${++id}`),
+    "합성 대규모 수업",
+  );
+  initial.layout = { rows: 40, columns: 25, frontRows: 1, aisles: [5, 10], blocked: [999] };
+  return initial;
+}
 async function setup(initial: unknown = null) {
   const store = new Map<string, unknown>(initial === null ? [] : [[STATE_KEY, initial]]);
   let fail = false;
@@ -197,15 +207,8 @@ describe("complete seat planning screen", () => {
     f.view.unmount();
     f.deck.dispose();
   });
-  it("has a scrollable 1000-seat layout and independent condition controls", async () => {
-    let id = 0;
-    const initial: SeatState = replaceRoster(
-      emptyState(),
-      parseRoster(Array.from({ length: 1000 }, (_, i) => `${i + 1} 합성학생${i + 1}`).join("\n"), [], () => `s${++id}`),
-      "합성 대규모 수업",
-    );
-    initial.layout = { rows: 40, columns: 25, frontRows: 1, aisles: [5, 10], blocked: [999] };
-    const f = await setup(initial);
+  it("has a scrollable 1000-seat layout with every seat accessible", async () => {
+    const f = await setup(largeClassroom());
     // Native buttons already define their role; check all exact labels and the same
     // accessibility predicate without computing 1,000 unrelated accessible names.
     const seats = Array.from(f.view.container.querySelectorAll("button[aria-label]")).filter((button) =>
@@ -213,6 +216,11 @@ describe("complete seat planning screen", () => {
     );
     expect(seats).toHaveLength(1000);
     expect(seats.every((button) => !button.hasAttribute("role") && !isInaccessible(button))).toBe(true);
+    f.view.unmount();
+    f.deck.dispose();
+  }, 5000);
+  it("opens and searches independent condition controls in a 1000-student class", async () => {
+    const f = await setup(largeClassroom());
     const conditions = screen.getByLabelText("학생별 고정·제외·앞줄 조건");
     expect(conditions.tagName).toBe("BUTTON");
     fireEvent.click(conditions);
