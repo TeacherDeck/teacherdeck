@@ -1,7 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import { describe, expect, it } from "vitest";
-import { appendRoster, emptyDocument, parseDaySlots, parseMembership, parseWeekly } from "./school-data-model.ts";
+import {
+  appendRoster,
+  emptyDocument,
+  parseDaySlots,
+  parseMembership,
+  parseWeekly,
+  setWeeklyCell,
+  setWeeklyEntry,
+  formatWeekly,
+} from "./school-data-model.ts";
 function seeded() {
   const d = emptyDocument();
   d.semesters.push({
@@ -16,6 +25,38 @@ function seeded() {
   return d;
 }
 describe("school data authoring", () => {
+  it("keeps distinct IDs for restored classes with the same label while refusing ambiguous pasted labels", () => {
+    let serial = 0;
+    const d = appendRoster(seeded(), "sem", "1,1,1,합성가\n1,2,1,합성나", () => `id${++serial}`);
+    const first = required(d.contexts[0]),
+      second = required(d.contexts[1]);
+    first.label = second.label = "합성공동";
+    const existing = [{ weekday: 1, period: 1, contextId: second.id }];
+    const next = setWeeklyEntry(d, "sem", existing, 2, 2, first.id);
+    expect(next).toEqual([existing[0], { weekday: 2, period: 2, contextId: first.id }]);
+    expect(() => parseWeekly(d, "sem", formatWeekly(d, next))).toThrow("중복");
+    expect(existing).toEqual([{ weekday: 1, period: 1, contextId: second.id }]);
+  });
+  it("replaces and clears grid cells without touching other lessons or losing commas in class names", () => {
+    let serial = 0;
+    const d = appendRoster(seeded(), "sem", "1,1,1,합성가\n1,2,1,합성나", () => `id${++serial}`);
+    const first = required(d.contexts[0]),
+      second = required(d.contexts[1]);
+    second.label = "합성과학, 심화";
+    let text = setWeeklyCell(d, "sem", "", 1, 1, first.id);
+    text = setWeeklyCell(d, "sem", text, 7, 64, second.id);
+    text = setWeeklyCell(d, "sem", text, 1, 1, second.id);
+    expect(parseWeekly(d, "sem", text)).toEqual([
+      { weekday: 1, period: 1, contextId: second.id },
+      { weekday: 7, period: 64, contextId: second.id },
+    ]);
+    const cleared = setWeeklyCell(d, "sem", text, 1, 1, "");
+    expect(parseWeekly(d, "sem", cleared)).toEqual([{ weekday: 7, period: 64, contextId: second.id }]);
+    expect(() => setWeeklyCell(d, "sem", "월,1,없는 수업", 2, 2, first.id)).toThrow("수업 이름");
+    expect(() => setWeeklyCell(d, "sem", text, 1, 1, "missing")).toThrow("이 학기의");
+    required(d.semesters[0]).readOnly = true;
+    expect(() => setWeeklyCell(d, "sem", text, 1, 1, "")).toThrow("수정할 수");
+  });
   it("keeps same names and class numbers distinct, rejects identity conflicts without touching original", () => {
     let serial = 0;
     const d = appendRoster(seeded(), "sem", "학년,반,번호,이름\n1,1,1,합성가\n1,2,1,합성가", () => `id${++serial}`);

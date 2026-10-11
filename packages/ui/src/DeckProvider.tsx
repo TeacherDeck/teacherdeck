@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-import { FluentProvider, type Theme, makeStaticStyles, makeStyles, tokens } from "@fluentui/react-components";
+import {
+  FluentProvider,
+  type Theme,
+  makeStaticStyles,
+  makeStyles,
+  tokens,
+  useFocusFinders,
+} from "@fluentui/react-components";
 import type { Deck, ThemePayload } from "@deck/sdk";
 import { type CSSProperties, type ReactNode, createContext, useContext, useEffect, useState } from "react";
 import { createDeckTheme, deckTokens, payloadToTheme } from "./tokens/index.ts";
@@ -70,6 +77,15 @@ function toTheme(t: Theme | ThemePayload): Theme {
   return "tokens" in t && "mode" in t ? payloadToTheme(t as ThemePayload) : (t as Theme);
 }
 
+function FocusManagementLifetime({ children }: { children: ReactNode }) {
+  // Fluent's public focus hook retains the document's shared Tabster instance. Keep that
+  // ownership inside FluentProvider for the whole screen, not just while a popup exists.
+  // Otherwise removing the last Dialog disposes Modalizer before its deferred background
+  // accessibility restoration, leaving the mounted screen permanently aria-hidden.
+  useFocusFinders();
+  return children;
+}
+
 /** Root provider for the shell and every module (UI-004). */
 export function DeckProvider({ deck, theme, mica, children }: DeckProviderProps) {
   useDocumentStyles();
@@ -103,7 +119,7 @@ export function DeckProvider({ deck, theme, mica, children }: DeckProviderProps)
         className={transparent ? styles.transparent : styles.opaque}
         style={{ [THUMB_VAR]: thumb, [THUMB_HOVER_VAR]: thumbHover } as CSSProperties}
       >
-        {children}
+        <FocusManagementLifetime>{children}</FocusManagementLifetime>
       </FluentProvider>
     </ParentDeckProvider.Provider>
   );

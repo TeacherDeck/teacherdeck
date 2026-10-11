@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-import { useEffect, useMemo, useState } from "react";
-import type { SchoolDataDocument, SchoolDateChangeKind, SchoolGrantRecord } from "@deck/sdk";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { SchoolDataDocument, SchoolDateChangeKind, SchoolGrantRecord, SchoolWeeklySlot } from "@deck/sdk";
 import {
   Body,
   BodyStrong,
@@ -27,6 +27,9 @@ import {
   parseDaySlots,
   parseMembership,
   parseWeekly,
+  setWeeklyEntry,
+  formatWeekly,
+  WEEKDAYS,
   type SchoolDataHost,
 } from "./school-data-model.ts";
 import {
@@ -58,6 +61,18 @@ const useStyles = makeStyles({
     paddingBlock: tokens.spacingVerticalS,
     borderBottom: `${tokens.strokeWidthThin} solid ${deckTokens.cardStroke}`,
   },
+  tableScroll: { overflowX: "auto" },
+  weeklyTable: { width: "100%", borderCollapse: "collapse", tableLayout: "fixed" },
+  weeklyCell: {
+    padding: tokens.spacingVerticalXS,
+    border: `${tokens.strokeWidthThin} solid ${deckTokens.cardStroke}`,
+    verticalAlign: "middle",
+    overflowWrap: "anywhere",
+  },
+  cellButton: { width: "100%", minWidth: 0, whiteSpace: "normal" },
+  today: { backgroundColor: tokens.colorBrandBackground2 },
+  saturday: { color: tokens.colorPaletteBlueForeground2 },
+  sunday: { color: tokens.colorPaletteRedForeground1 },
 });
 const minuteText = (n: number) => `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
 /** Teacher-owned authoring; no module can call the save or native-photo commands. */
@@ -72,6 +87,13 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
     [grants, setGrants] = useState<SchoolGrantRecord[]>([]);
   const [semesterSettings, setSemesterSettings] = useState(false);
   const [recovery, setRecovery] = useState<SchoolDataDocument | null>(null);
+  const [workbookUndo, setWorkbookUndo] = useState<{
+    before: SchoolDataDocument;
+    revision: number;
+    kind: "roster" | "timetable";
+  } | null>(null);
+  const [confirmWorkbookUndo, setConfirmWorkbookUndo] = useState(false);
+  const [workbookPreviewOpen, setWorkbookPreviewOpen] = useState(false);
   const [workbookPreview, setWorkbookPreview] = useState<{
     kind: "roster" | "timetable";
     text: string;
@@ -101,6 +123,11 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
     [weeklyId, setWeeklyId] = useState(""),
     [weeklyLabel, setWeeklyLabel] = useState("기본 시간표"),
     [weeklyText, setWeeklyText] = useState("");
+  const [gridContextId, setGridContextId] = useState("");
+  const [weeklyEntries, setWeeklyEntries] = useState<SchoolWeeklySlot[] | null>([]);
+  const [gridPeriods, setGridPeriods] = useState(8);
+  const weeklyDrafts = useRef(new Map<string, { label: string; text: string; entries: SchoolWeeklySlot[] | null }>());
+  const semesterWeeklySelections = useRef(new Map<string, string>());
   const [overrideDate, setOverrideDate] = useState(""),
     [overrideWeekday, setOverrideWeekday] = useState(""),
     [overrideDay, setOverrideDay] = useState(""),
@@ -111,6 +138,8 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
     [fromPeriod, setFromPeriod] = useState(1),
     [toPeriod, setToPeriod] = useState(2);
   const refresh = async () => {
+    setWorkbookUndo(null);
+    setConfirmWorkbookUndo(false);
     setBusy(true);
     setError("");
     try {
@@ -132,16 +161,22 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
   useEffect(() => {
     void refresh();
   }, [host]);
-  const save = async (change: (d: SchoolDataDocument) => SchoolDataDocument | undefined, text: string) => {
+  const save = async (
+    change: (d: SchoolDataDocument) => SchoolDataDocument | undefined,
+    text: string,
+    importKind?: "roster" | "timetable",
+  ) => {
     if (!document || busy) return false;
     setBusy(true);
     setError("");
     setMessage("");
     try {
+      const before = importKind ? structuredClone(document) : null;
       const copy = structuredClone(document),
         next = change(copy) ?? copy;
       const result = await host.save({ expectedRevision: document.revision, document: next });
       setDocument(result);
+      setWorkbookUndo(importKind && before ? { before, revision: result.revision, kind: importKind } : null);
       setMessage(text);
       return true;
     } catch (e) {
@@ -149,6 +184,45 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
         e instanceof Error ? e.message : "저장하지 못했어요. 다른 화면에서 변경했다면 다시 불러온 후 적용해 주세요.",
       );
       return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const undoWorkbook = async () => {
+    if (!document || busy || !workbookUndo) return;
+    if (document.revision !== workbookUndo.revision) {
+      setWorkbookUndo(null);
+      setError("가져온 뒤 자료가 변경되어 되돌릴 수 없어요. 현재 자료를 다시 확인해 주세요.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const restored = await host.save({
+        expectedRevision: workbookUndo.revision,
+        document: structuredClone(workbookUndo.before),
+      });
+      setDocument(restored);
+      if (
+        (weeklyId && !restored.timetable.weeklyTables.some((table) => table.id === weeklyId)) ||
+        weeklyEntries?.some(
+          (entry) =>
+            !restored.contexts.some((context) => context.id === entry.contextId && context.semesterId === semesterId),
+        )
+      ) {
+        weeklyDrafts.current.delete(JSON.stringify([semesterId, weeklyId]));
+        setWeeklyId("");
+        setWeeklyLabel("새 시간표");
+        setWeeklyText("");
+        setWeeklyEntries([]);
+        setGridContextId("");
+      }
+      setWorkbookUndo(null);
+      setMessage("최근 XLSX 가져오기 전 자료로 되돌렸어요.");
+    } catch {
+      // Keep the snapshot for retry, but never rebase it to a newer revision: the host's
+      // compare-and-swap protects changes made outside this screen.
+      setError("가져오기를 되돌리지 못했어요. 다른 화면에서 변경했다면 다시 불러와 현재 자료를 확인해 주세요.");
     } finally {
       setBusy(false);
     }
@@ -181,6 +255,7 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
           count: result.lessons.length,
         });
       }
+      setWorkbookPreviewOpen(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "XLSX 명부·시간표를 읽지 못했어요. 이전 자료는 유지돼요.");
     } finally {
@@ -232,6 +307,31 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
   const contexts = document?.contexts.filter((c) => c.semesterId === semesterId) ?? [],
     days = document?.timetable.dayTemplates.filter((v) => v.semesterId === semesterId) ?? [],
     weeklies = document?.timetable.weeklyTables.filter((v) => v.semesterId === semesterId) ?? [];
+  const grid = useMemo(() => {
+    try {
+      if (
+        weeklyEntries?.some(
+          (entry) =>
+            !document?.contexts.some((context) => context.id === entry.contextId && context.semesterId === semesterId),
+        )
+      )
+        throw new Error("편집 중인 수업이 현재 학기 자료에 없어요. 시간표를 다시 선택하거나 입력을 확인해 주세요.");
+      return {
+        entries: weeklyEntries ?? (document && weeklyText.trim() ? parseWeekly(document, semesterId, weeklyText) : []),
+        error: "",
+      };
+    } catch (error) {
+      return { entries: [], error: error instanceof Error ? error.message : "주간 수업 입력을 확인해 주세요." };
+    }
+  }, [document, semesterId, weeklyText, weeklyEntries]);
+  const periods = Math.max(gridPeriods, ...grid.entries.map((entry) => entry.period));
+  const currentWeekday = ((new Date().getDay() + 6) % 7) + 1;
+  const gridContextLabel = (context: (typeof contexts)[number]) => {
+    const sameName = contexts.filter((other) => other.label === context.label);
+    return sameName.length > 1
+      ? `${context.label} · 같은 이름 ${sameName.findIndex((other) => other.id === context.id) + 1}${context.subject ? ` · ${context.subject}` : ""}${context.room ? ` · ${context.room}` : ""}`
+      : context.label;
+  };
   const semesterOptions =
     document?.semesters.map((v) => ({
       value: v.id,
@@ -252,6 +352,33 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
         .join("\n") ?? "",
     );
   };
+  const rememberWeeklyDraft = () => {
+    weeklyDrafts.current.set(JSON.stringify([semesterId, weeklyId]), {
+      label: weeklyLabel,
+      text: weeklyText,
+      entries: weeklyEntries,
+    });
+    semesterWeeklySelections.current.set(semesterId, weeklyId);
+  };
+  const selectWeekly = (id: string, targetSemester = semesterId) => {
+    const draft = weeklyDrafts.current.get(JSON.stringify([targetSemester, id]));
+    const saved = document?.timetable.weeklyTables.find(
+      (table) => table.id === id && table.semesterId === targetSemester,
+    );
+    setWeeklyId(id);
+    setWeeklyLabel(draft?.label ?? saved?.label ?? "새 시간표");
+    setWeeklyEntries(draft ? draft.entries : (saved?.entries ?? []));
+    setWeeklyText(draft?.text ?? (document && saved ? formatWeekly(document, saved.entries) : ""));
+  };
+  const selectSemester = (id: string) => {
+    rememberWeeklyDraft();
+    setSemesterId(id);
+    setContextId("");
+    setDayId("");
+    setGridContextId("");
+    selectWeekly(semesterWeeklySelections.current.get(id) ?? "", id);
+    setPage(0);
+  };
   return (
     <div className={s.page}>
       <PageHeader
@@ -260,18 +387,25 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
       />
       {error && <InfoBar severity="error" title="처리 확인" message={error} />}
       {message && <InfoBar severity="success" title="저장 완료" message={message} onClose={() => setMessage("")} />}
+      {workbookUndo && (
+        <InfoBar
+          message="최근 XLSX 가져오기를 되돌릴 수 있어요. 학교 자료를 다시 저장하거나 다시 불러오면 이 기능은 종료돼요."
+          action={
+            <Button disabled={busy} onClick={() => setConfirmWorkbookUndo(true)}>
+              가져오기 되돌리기
+            </Button>
+          }
+        />
+      )}
       <div className={s.row}>
         {document?.semesters.length ? (
           <ComboBox
             header="현재 학기"
             value={semesterId}
+            disabled={busy}
             options={semesterOptions}
             onChange={(value) => {
-              setSemesterId(value);
-              setContextId("");
-              setDayId("");
-              setWeeklyId("");
-              setPage(0);
+              if (!busy) selectSemester(value);
             }}
           />
         ) : null}
@@ -349,7 +483,7 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
                   });
                 }, "새 학기를 추가했어요.").then((saved) => {
                   if (saved) {
-                    setSemesterId(id);
+                    selectSemester(id);
                     setSemesterSettings(false);
                   }
                 });
@@ -479,6 +613,7 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
                       void host
                         .importPhoto({ studentId: e.studentId, expectedRevision: document.revision })
                         .then((d) => {
+                          if (d.revision !== document.revision) setWorkbookUndo(null);
                           setDocument(d);
                           setMessage("선택한 학생의 사진을 저장했어요.");
                         })
@@ -609,7 +744,7 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
               </div>
               <div className={s.card}>
                 <BodyStrong>주간 시간표</BodyStrong>
-                <Body>월~일, 교시, 학급·수업 이름 순서로 넣어 주세요. 수업·분반에서 만든 이름을 그대로 사용해요.</Body>
+                <Body>수업을 고른 뒤 요일·교시 칸을 눌러 배치해요. 여러 칸에 같은 수업을 빠르게 넣을 수 있어요.</Body>
                 <div className={s.row}>
                   <Button
                     disabled={disabled}
@@ -642,49 +777,155 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
                 <ComboBox
                   header="시간표 선택"
                   value={weeklyId}
+                  disabled={busy}
                   options={[
                     { value: "", label: "새 시간표" },
                     ...weeklies.map((v) => ({ value: v.id, label: v.label })),
                   ]}
                   onChange={(id) => {
-                    setWeeklyId(id);
-                    const v = weeklies.find((w) => w.id === id);
-                    setWeeklyLabel(v?.label ?? "새 시간표");
-                    setWeeklyText(
-                      v?.entries
-                        .map(
-                          (e) =>
-                            `${["월", "화", "수", "목", "금", "토", "일"][e.weekday - 1]},${e.period},${contexts.find((c) => c.id === e.contextId)?.label}`,
-                        )
-                        .join("\n") ?? "",
-                    );
+                    if (busy) return;
+                    rememberWeeklyDraft();
+                    selectWeekly(id);
                   }}
                 />
                 <TextBox header="시간표 이름" value={weeklyLabel} onChange={setWeeklyLabel} />
-                <TextBox
-                  header="주간 수업 입력"
-                  multiline
-                  value={weeklyText}
-                  onChange={setWeeklyText}
-                  placeholder={`월,1,${contexts[0]?.label ?? "수업 이름"}\n화,2,${contexts[1]?.label ?? "수업 이름"}`}
-                />
+                <div className={s.row}>
+                  <ComboBox
+                    header="칸에 넣을 수업"
+                    value={contexts.some((context) => context.id === gridContextId) ? gridContextId : ""}
+                    disabled={disabled}
+                    options={[
+                      { value: "", label: "칸 비우기" },
+                      ...contexts.map((context) => ({ value: context.id, label: gridContextLabel(context) })),
+                    ]}
+                    onChange={setGridContextId}
+                  />
+                  <NumberBox
+                    header="표에 보일 교시"
+                    value={gridPeriods}
+                    min={1}
+                    max={64}
+                    disabled={disabled}
+                    onChange={setGridPeriods}
+                  />
+                </div>
+                <Caption>
+                  학기·시간표를 바꾸면 미저장 편집을 이 화면에서 따로 유지해요. 배치를 확인한 뒤 시간표 저장을 눌러
+                  주세요. 등록된 높은 교시는 항상 표시해요.
+                </Caption>
+                {!contexts.length && (
+                  <InfoBar message="수업·분반에서 수업 이름을 먼저 만들어 주세요. XLSX 시간표를 가져와 수업을 추가할 수도 있어요." />
+                )}
+                {grid.error && (
+                  <InfoBar severity="warning" message={`붙여넣은 주간 수업 입력을 먼저 고쳐 주세요. ${grid.error}`} />
+                )}
+                <div className={s.tableScroll}>
+                  <table className={s.weeklyTable} aria-label="주간 시간표 편집">
+                    <thead>
+                      <tr>
+                        <th className={s.weeklyCell} scope="col">
+                          교시
+                        </th>
+                        {WEEKDAYS.map((day, index) => (
+                          <th
+                            className={`${s.weeklyCell} ${index === 5 ? s.saturday : index === 6 ? s.sunday : ""} ${index + 1 === currentWeekday ? s.today : ""}`}
+                            data-day-tone={index === 5 ? "blue" : index === 6 ? "red" : "neutral"}
+                            scope="col"
+                            key={day}
+                          >
+                            {day}
+                            {index + 1 === currentWeekday ? " · 오늘" : ""}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Array.from({ length: periods }, (_, index) => index + 1).map((period) => (
+                        <tr key={period}>
+                          <th className={s.weeklyCell} scope="row">
+                            {period}교시
+                          </th>
+                          {WEEKDAYS.map((day, index) => {
+                            const entry = grid.entries.find(
+                              (entry) => entry.weekday === index + 1 && entry.period === period,
+                            );
+                            const label = contexts.find((context) => context.id === entry?.contextId)?.label;
+                            return (
+                              <td className={s.weeklyCell} key={day}>
+                                <Button
+                                  className={s.cellButton}
+                                  appearance={label ? "secondary" : "subtle"}
+                                  disabled={disabled || Boolean(grid.error)}
+                                  aria-label={`${day}요일 ${period}교시: ${label ?? "빈 칸"}`}
+                                  onClick={() => {
+                                    try {
+                                      if (document) {
+                                        const next = setWeeklyEntry(
+                                          document,
+                                          semesterId,
+                                          grid.entries,
+                                          index + 1,
+                                          period,
+                                          contexts.some((context) => context.id === gridContextId) ? gridContextId : "",
+                                        );
+                                        setWeeklyEntries(next);
+                                        setWeeklyText(formatWeekly(document, next));
+                                      }
+                                    } catch (error) {
+                                      setError(error instanceof Error ? error.message : "수업 배치를 확인해 주세요.");
+                                    }
+                                  }}
+                                >
+                                  {label ?? "+"}
+                                </Button>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <SettingsExpander
+                  header="텍스트로 붙여넣기·수정"
+                  description="요일, 교시, 수업 이름을 CSV나 탭 구분으로 넣어요"
+                >
+                  <TextBox
+                    header="주간 수업 입력"
+                    multiline
+                    value={weeklyText}
+                    onChange={(text) => {
+                      setWeeklyText(text);
+                      setWeeklyEntries(null);
+                    }}
+                    placeholder={`월,1,${contexts[0]?.label ?? "수업 이름"}\n화,2,${contexts[1]?.label ?? "수업 이름"}`}
+                  />
+                </SettingsExpander>
                 <Button
-                  disabled={disabled || !weeklyLabel.trim() || !weeklyText.trim()}
+                  disabled={disabled || !weeklyLabel.trim() || (!weeklyText.trim() && !weeklyId)}
                   onClick={() => {
+                    const nextId = weeklyId || newId();
                     void save((d) => {
-                      const entries = parseWeekly(d, semesterId, weeklyText),
-                        current = d.timetable.weeklyTables.find((v) => v.id === weeklyId);
+                      const entries =
+                          weeklyEntries ?? (weeklyText.trim() ? parseWeekly(d, semesterId, weeklyText) : []),
+                        current = d.timetable.weeklyTables.find((v) => v.id === nextId);
                       if (current) Object.assign(current, { label: weeklyLabel.trim(), entries });
                       else
                         d.timetable.weeklyTables.push({
-                          id: newId(),
+                          id: nextId,
                           semesterId,
                           label: weeklyLabel.trim(),
                           startDate: null,
                           endDate: null,
                           entries,
                         });
-                    }, "주간 시간표를 저장했어요.");
+                    }, "주간 시간표를 저장했어요.").then((saved) => {
+                      if (saved) {
+                        weeklyDrafts.current.delete(JSON.stringify([semesterId, weeklyId]));
+                        weeklyDrafts.current.delete(JSON.stringify([semesterId, nextId]));
+                        setWeeklyId(nextId);
+                      }
+                    });
                   }}
                 >
                   시간표 저장
@@ -958,6 +1199,7 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
             void host
               .recover({ expectedRevision: 0, document: next })
               .then((d) => {
+                setWorkbookUndo(null);
                 setDocument(d);
                 setSemesterId(d.semesters.find((v) => !v.readOnly)?.id ?? d.semesters[0]?.id ?? "");
                 setGrants([]);
@@ -979,46 +1221,65 @@ export function SchoolData({ host }: { host: SchoolDataHost }) {
           </Body>
         </ContentDialog>
       )}
-      {workbookPreview && (
-        <ContentDialog
-          open
-          title={workbookPreview?.kind === "roster" ? "XLSX 학생 명부 확인" : "XLSX 주간 시간표 확인"}
-          primaryButtonText="확인한 자료 적용"
-          closeButtonText="취소"
-          onClose={(result) => {
-            const preview = workbookPreview;
-            setWorkbookPreview(null);
-            if (result !== "primary" || !preview) return;
-            if (preview.kind === "roster") {
-              setRoster(preview.text);
-              void save(
-                (d) => appendRoster(d, semesterId, preview.text),
-                "XLSX 명부를 추가했어요. 학급도 함께 만들었어요.",
-              );
-            } else if (preview.lessons)
-              void save(
-                (d) => applyWorkbookTimetable(d, semesterId, weeklyLabel || "가져온 시간표", required(preview.lessons)),
-                "XLSX 주간 시간표를 추가했어요. 새 수업의 학생 명단은 수업·분반에서 확인해 주세요.",
-              );
-          }}
-        >
-          <Body>
-            {workbookPreview?.count ?? 0}
-            {workbookPreview?.kind === "roster" ? "명의 학생" : "개의 수업"}을 읽었어요. 처음 20줄을 표시해요. 적용 전에
-            원본과 학번·이름·요일·교시를 비교해 주세요.
-          </Body>
-          {workbookPreview?.warnings.map((warning, i) => (
-            <InfoBar key={i} severity="warning" title="가져오기 확인" message={warning} />
-          ))}
-          <TextBox
-            header="가져온 자료 미리보기"
-            multiline
-            readOnly
-            value={workbookPreview?.text.split("\n").slice(0, 20).join("\n") ?? ""}
-            onChange={() => {}}
-          />
-        </ContentDialog>
-      )}
+      <ContentDialog
+        open={workbookPreviewOpen && workbookPreview !== null}
+        title={workbookPreview?.kind === "roster" ? "XLSX 학생 명부 확인" : "XLSX 주간 시간표 확인"}
+        primaryButtonText="확인한 자료 적용"
+        closeButtonText="취소"
+        onClose={(result) => {
+          if (!workbookPreviewOpen) return;
+          const preview = workbookPreview;
+          // Keep the last payload through Fluent's exit motion. Clearing it here changes
+          // a roster preview into the timetable fallback while the surface is still visible.
+          setWorkbookPreviewOpen(false);
+          if (result !== "primary" || !preview) return;
+          if (preview.kind === "roster") {
+            setRoster(preview.text);
+            void save(
+              (d) => appendRoster(d, semesterId, preview.text),
+              "XLSX 명부를 추가했어요. 학급도 함께 만들었어요.",
+              "roster",
+            );
+          } else if (preview.lessons)
+            void save(
+              (d) => applyWorkbookTimetable(d, semesterId, weeklyLabel || "가져온 시간표", required(preview.lessons)),
+              "XLSX 주간 시간표를 추가했어요. 새 수업의 학생 명단은 수업·분반에서 확인해 주세요.",
+              "timetable",
+            );
+        }}
+      >
+        <Body>
+          {workbookPreview?.count ?? 0}
+          {workbookPreview?.kind === "roster" ? "명의 학생" : "개의 수업"}을 읽었어요. 처음 20줄을 표시해요. 적용 전에
+          원본과 학번·이름·요일·교시를 비교해 주세요.
+        </Body>
+        {workbookPreview?.warnings.map((warning, i) => (
+          <InfoBar key={i} severity="warning" title="가져오기 확인" message={warning} />
+        ))}
+        <TextBox
+          header="가져온 자료 미리보기"
+          multiline
+          readOnly
+          value={workbookPreview?.text.split("\n").slice(0, 20).join("\n") ?? ""}
+          onChange={() => {}}
+        />
+      </ContentDialog>
+      <ContentDialog
+        open={confirmWorkbookUndo && workbookUndo !== null}
+        title="최근 XLSX 가져오기를 되돌릴까요?"
+        primaryButtonText="가져오기 되돌리기"
+        closeButtonText="취소"
+        defaultButton="close"
+        onClose={(result) => {
+          setConfirmWorkbookUndo(false);
+          if (result === "primary") void undoWorkbook();
+        }}
+      >
+        <Body>
+          최근 XLSX 가져오기를 취소하고, 가져오기 직전 학교 자료로 되돌려요. 그 뒤 다른 화면에서 저장한 변경이 있으면
+          되돌리지 않아요.
+        </Body>
+      </ContentDialog>
     </div>
   );
 }

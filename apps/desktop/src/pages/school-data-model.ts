@@ -7,6 +7,7 @@ import type {
   SchoolDateChange,
   SchoolDayOverride,
   SchoolDaySlot,
+  SchoolWeeklySlot,
   SchoolGrantRecord,
   SchoolImportPhotoArgs,
   SchoolWorkbookInput,
@@ -154,19 +155,83 @@ export function parseDaySlots(text: string): SchoolDaySlot[] {
     throw new Error("일과표의 교시와 시작·종료 순서를 확인해 주세요.");
   return rows;
 }
+export const WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"] as const;
 export function parseWeekly(document: SchoolDataDocument, semesterId: string, text: string) {
-  const days = ["월", "화", "수", "목", "금", "토", "일"];
-  const rows = lines(text).map((r) => {
-    if (r.length !== 3) throw new Error("요일, 교시, 수업 이름 순서로 넣어 주세요.");
-    const weekday = days.indexOf(required(r[0])) + 1;
-    if (!weekday) throw new Error("요일은 월~일로 넣어 주세요.");
-    const matches = document.contexts.filter((c) => c.semesterId === semesterId && c.label === r[2]);
-    if (matches.length !== 1) throw new Error("수업 이름이 없거나 중복돼요. 수업·분반에서 이름을 확인해 주세요.");
-    return { weekday, period: integer(r[1], 1, 64), contextId: required(matches[0]).id };
-  });
+  if (text.length > 1000000) throw new Error("입력은 1,000,000자 이내로 나누어 주세요.");
+  const rows = text
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/)
+    .map((row) => row.trim())
+    .filter(Boolean)
+    .map((row) => {
+      // Grid edits use tabs so a comma in a legitimate class label remains part of the label.
+      const r = row.split(row.includes("\t") ? "\t" : ",").map((value) => value.trim());
+      if (r.length !== 3) throw new Error("요일, 교시, 수업 이름 순서로 넣어 주세요.");
+      const weekday = WEEKDAYS.findIndex((day) => day === required(r[0])) + 1;
+      if (!weekday) throw new Error("요일은 월~일로 넣어 주세요.");
+      const matches = document.contexts.filter((c) => c.semesterId === semesterId && c.label === r[2]);
+      if (matches.length !== 1) throw new Error("수업 이름이 없거나 중복돼요. 수업·분반에서 이름을 확인해 주세요.");
+      return { weekday, period: integer(r[1], 1, 64), contextId: required(matches[0]).id };
+    });
   if (!rows.length || rows.length > 105 || new Set(rows.map((r) => `${r.weekday}-${r.period}`)).size !== rows.length)
     throw new Error("시간표는 같은 요일·교시를 중복할 수 없어요.");
   return rows;
+}
+export function setWeeklyCell(
+  document: SchoolDataDocument,
+  semesterId: string,
+  text: string,
+  weekday: number,
+  period: number,
+  contextId: string,
+): string {
+  return formatWeekly(
+    document,
+    setWeeklyEntry(
+      document,
+      semesterId,
+      text.trim() ? parseWeekly(document, semesterId, text) : [],
+      weekday,
+      period,
+      contextId,
+    ),
+  );
+}
+export function setWeeklyEntry(
+  document: SchoolDataDocument,
+  semesterId: string,
+  entries: SchoolWeeklySlot[],
+  weekday: number,
+  period: number,
+  contextId: string,
+) {
+  if (!document.semesters.some((semester) => semester.id === semesterId && !semester.readOnly))
+    throw new Error("수정할 수 있는 학기를 선택해 주세요.");
+  if (
+    !Number.isInteger(weekday) ||
+    weekday < 1 ||
+    weekday > 7 ||
+    !Number.isInteger(period) ||
+    period < 1 ||
+    period > 64
+  )
+    throw new Error("요일·교시를 확인해 주세요.");
+  const next = entries.filter((entry) => entry.weekday !== weekday || entry.period !== period);
+  if (contextId) {
+    const context = document.contexts.find((context) => context.id === contextId && context.semesterId === semesterId);
+    if (!context) throw new Error("이 학기의 수업을 선택해 주세요.");
+    next.push({ weekday, period, contextId });
+  }
+  if (next.length > 105) throw new Error("시간표는 105개 수업까지 나누어 주세요.");
+  return next.sort((a, b) => a.weekday - b.weekday || a.period - b.period);
+}
+export function formatWeekly(document: SchoolDataDocument, entries: SchoolWeeklySlot[]): string {
+  return entries
+    .map(
+      (entry) =>
+        `${WEEKDAYS[entry.weekday - 1]}\t${entry.period}\t${required(document.contexts.find((context) => context.id === entry.contextId)).label}`,
+    )
+    .join("\n");
 }
 export function newOverride(
   semesterId: string,
