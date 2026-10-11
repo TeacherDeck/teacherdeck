@@ -121,6 +121,20 @@ describe("TimeAlert roster extraction parity", () => {
   });
 });
 describe("archive and output safety", () => {
+  it("resolves package-root references while rejecting URI authorities and root escapes", async () => {
+    const parts = unzipLimited(fixture([{ row: 2, col: 1, text: "1학년 2반 1번 가상가" }], [{ row: 1, col: 1 }]));
+    parts["xl/workbook.xml"] = strToU8(
+      '<workbook xmlns:r="urn:rel"><sheets><sheet name="합성 시트" r:id="sheetRef"/></sheets></workbook>',
+    );
+    parts["xl/_rels/workbook.xml.rels"] = strToU8(
+      '<Relationships><Relationship Target="/xl/worksheets/sheet1.xml" Id="sheetRef"/></Relationships>',
+    );
+    const parsed = await parseParts(parts);
+    expect(parsed.sheets[0]?.students[0]?.number).toBe(1);
+    expect(resolvePart("xl/drawings/a.xml", "/xl/media/image1.jpeg")).toBe("xl/media/image1.jpeg");
+    for (const target of ["//example.invalid/a", "/../escape.jpg", "/xl/../../escape.jpg", "/", "/xl//a.jpg"])
+      expect(() => resolvePart("xl/drawings/a.xml", target)).toThrow("INVALID_RELATIONSHIP");
+  });
   it("rejects BIFF, malformed paths, external relationships and DTD", async () => {
     expect(() => unzipLimited(new Uint8Array([0xd0, 0xcf, 0x11, 0xe0]))).toThrow("INVALID_ARCHIVE");
     expect(() => unzipLimited(zipSync({ "../xl/media/a.jpg": fakeJpeg(1) }))).toThrow("INVALID_ARCHIVE");
