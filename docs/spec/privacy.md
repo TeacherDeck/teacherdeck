@@ -1,6 +1,6 @@
 # 개인정보 (privacy)
 
-제품 약속: **변환·분석은 PC 안에서 처리합니다. 쿨메신저 예약 등록은 사용자가 확인한 수신자·내용·첨부를 로그인한 쿨메신저로 전달합니다. 영상 다운로드는 사용자가 입력한 공개 YouTube 영상만 받습니다.** messaging과 media-download의 명시적인 승인 범위 외에 임의 HTTP·외부 분석을 허용하지 않는다([기존 승인](../proposals/native-tools-next.md), [영상 다운로드 승인](../proposals/local-tools-next.md)). 교사가 다루는 파일에는 학생 이름, 성적, 연락처가 들어 있다고 가정한다([ADR-0007](../adr/0007-privacy.md)).
+제품 약속: **변환·분석은 PC 안에서 처리합니다. 쿨메신저 예약 등록은 사용자가 확인한 수신자·내용·첨부를 로그인한 쿨메신저로 전달합니다.** 영상 다운로드(media-download)는 아래 승인 범위로 정의하지만 [보류](https://github.com/TeacherDeck/teacherdeck/issues/15) 중이라 기본 모듈에 포함하지 않는다. messaging과 media-download의 명시적인 승인 범위 외에 임의 HTTP·외부 분석을 허용하지 않는다([기존 승인](../proposals/native-tools-next.md), [영상 다운로드 승인](../proposals/local-tools-next.md)). 교사가 다루는 파일에는 학생 이름, 성적, 연락처가 들어 있다고 가정한다([ADR-0007](../adr/0007-privacy.md)).
 
 ## 1. 원칙
 

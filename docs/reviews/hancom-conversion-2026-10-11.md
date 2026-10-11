@@ -21,20 +21,22 @@
 
 ### 릴리스 실행 파일 검증
 
-0.5.1 NSIS 설치본과 동일한 `target/review-040/release/teacherdeck.exe`의 실제 `--deck-native-worker office` 진입점도 합성 문서로 별도 실행했다. 부모가 만든 전용 Job에 작업자를 넣고 고정 요청을 전달했다. `target/hwp-focus/release-proof/ba1285e5f0094399828062e10082756d/report.json`의 `releaseWorkerSucceeded`, `sourcePreserved`, `processCleanup`, `registrationCleanup`이 모두 true다. 독립 Python 검사도 ZIP/XML, 문단, 18pt 굵은 서식을 통과했다. 원본 SHA는 위 첫 입력과 같고 출력은 `200986dca12ca08bbf555b5376d7d1a1d443aa7d0cd3890c005926426a6a807d`다.
+최신 원격 변경을 병합하고 다시 만든 0.5.1 NSIS 설치본과 동일한 `target/review-040/release/teacherdeck.exe`의 실제 `--deck-native-worker office` 진입점도 합성 문서로 별도 실행했다. 부모가 만든 전용 Job에 작업자를 넣고 고정 요청을 전달했다. `target/hwp-focus/release-proof/9b70419892a048af93d598ef408f986c/report.json`의 `releaseWorkerSucceeded`, `sourcePreserved`, `processCleanup`, `registrationCleanup`이 모두 true다. 독립 Python 검사도 ZIP/XML, 문단, 18pt 굵은 서식을 통과했다. 원본 SHA는 위 첫 입력과 같고 출력은 `32d63e56711debcdbcdfd48e6ed7523f450bbe27cfcbc11ac3bbe0270b6af023`다. 병합 전 릴리스 검증 `ba1285e5f0094399828062e10082756d`의 성공 기록도 별도로 보존했다.
 
-- 실행 파일 SHA-256: `214d5762957d63902c2169604f1381eb2568bb33f6f06bdc977e1465f7a49270`
+- 실행 파일 SHA-256: `d81dd7fc21e53e09d92f5d3d684300fc1a6a54878ba5d61753ef282de2ee5c06`
 - 설치본: `target/review-040/release/bundle/nsis/TeacherDeck_0.5.1_x64-setup.exe`
-- 설치본 SHA-256: `6221f2eacb00efc6dbb41a41a77683c6d1cca7109647933b692906e9f18d3dcb`
-- 동봉 문서 변환 모듈: 0.2.1, 카탈로그 SHA와 `.deckmod` 실물 SHA 일치
+- 설치본 SHA-256: `0672cd13386334ef56dab6cc870136cdb5d8be9a2c68eaa4c229b70a587ee271` (39,159,391바이트·37.35MiB)
+- 동봉 모듈: 19개. 영상 다운로드의 기본 배포 보류를 유지했다.
+- 동봉 문서 변환 모듈: 0.2.1, 카탈로그 SHA와 `.deckmod` 실물 SHA `7c15aa58bdd0820a54c8fa54e5e6471b1448377fb4e22a6a5a9d28c8f1227546` 일치
+- 빌드 로그: `target/hwp-focus/build-051-merged.log`, 묶음 대조: `bundle-051-merged.json`
 
 설치·제거 UI를 실행한 검수는 아니다. 실제 실행 파일의 변환 작업자와 결과를 확인했다.
 
 ### 저장소 검사
 
-최종 `pnpm verify` 16단계가 모두 통과했다. JavaScript 146파일·1,330개, Rust core 104개·host 169개·제한 DLL 3개 테스트다. 별도로 `office_synthetic`의 29개 회귀 테스트와 전체 target의 Clippy도 통과했다. 로그는 `target/hwp-focus/verify-051-complete.log`, `example-tests-051.log`, `build-051.log`에 남겼다.
+최신 원격 변경을 통합한 최종 `pnpm verify` 16단계가 모두 통과했다. JavaScript 147파일·1,332개, Rust core 104개·host 169개·제한 DLL 3개 테스트다. 별도로 `office_synthetic`의 29개 회귀 테스트와 전체 target의 Clippy도 통과했다. 최종 검사 로그는 `target/hwp-focus/verify-051-merged-final.log`, 별도 회귀 시험은 `example-tests-051.log`에 남겼다. 저장소가 지정한 pnpm 12.10.1을 사용했으며, 이전 pnpm 11의 라이선스 목록 차이를 생성물 수동 편집으로 처리하지 않았다.
 
-중간 재실행에서는 기존 메모 시험이 확인창 종료 직후 남은 `aria-hidden` 때문에 버튼을 찾지 못한 간헐 실패가 한 번 있었다. 자료 보존 검사는 통과했고 메모 코드는 변경하지 않았다. 같은 시험 파일 5개를 독립 재실행하고, 이후 전체 1,330개를 재실행해 모두 통과했다.
+병합 전 검사에서는 기존 메모 시험이 확인창 종료 직후 남은 `aria-hidden` 때문에 버튼을 찾지 못한 간헐 실패가 한 번 있었다. 자료 보존 검사는 통과했고 같은 시험 파일 5개와 전체 1,330개를 재실행해 통과했다. 이후 원격의 확인창 시험 안정화 수정을 그대로 통합했다. 병합 후 첫 전체 실행에서는 시간표 가져오기 시험도 저장 완료 뒤 같은 접근성 복원 지연으로 한 번 실패했다. 해당 시험은 변경하지 않았고, 독립 15개와 최종 전체 1,332개 재실행이 모두 통과했다. 실패·독립 재실행 로그도 각각 `verify-051-merged.log`, `school-data-recheck.log`에 보존했다.
 
 ## 수정한 원인
 

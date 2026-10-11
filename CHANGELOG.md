@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 변경
+
+- 영상 다운로드 도구를 보류해 기본 모듈에서 빼고 덱에 표시하지 않음([#15](https://github.com/TeacherDeck/teacherdeck/issues/15)). 모듈 소스와 호스트 기능은 남겨 둠
+
 ## [0.5.1] - 2026-10-11
 
 ### 수정

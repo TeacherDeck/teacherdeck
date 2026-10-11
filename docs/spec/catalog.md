@@ -6,6 +6,8 @@
 
 카탈로그와 기본 모듈(설치본에 동봉된 모듈)은 같은 인덱스 형식을 쓴다.
 
+기본 모듈은 `modules/`의 모든 모듈이다. 다만 결정이 남아 보류한 모듈은 `tools/scripts/lib/modules.ts`의 `HELD_MODULES`(추적 이슈 링크 포함)에 두고 기본 인덱스에 넣지 않는다. 보류한 모듈도 레포에 남아 `pnpm verify`가 계속 검사한다.
+
 ```json
 {
   "format": 1,

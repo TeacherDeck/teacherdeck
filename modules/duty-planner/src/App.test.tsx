@@ -186,7 +186,7 @@ it("cancels a replacement preview without changing the current roster or stored 
   await waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
   expect(values.get(STATE_KEY)).toEqual(original);
   expect(values.has(ACTIVE_LEDGER)).toBe(false);
-  expect(screen.getByRole("button", { name: /교사A · 과거/ })).toBeTruthy();
+  await waitFor(() => expect(screen.getByRole("button", { name: /교사A · 과거/ })).toBeTruthy());
   deck.dispose();
 });
 it("keeps recovery locked after a failed commit and restores a healthy backup on explicit retry", async () => {
@@ -198,7 +198,9 @@ it("keeps recovery locked after a failed commit and restores a healthy backup on
   fireEvent.click(within(dialog).getByRole("button", { name: "확인하고 복원" }));
   await screen.findByText("복구 자료를 저장하지 못했어요. 기존 저장값과 잠금을 유지했으니 다시 시도해 주세요.");
   await waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
-  expect((screen.getByRole("button", { name: "저장" }) as HTMLButtonElement).disabled).toBe(true);
+  // Fluent restores the background's accessibility a moment after the dialog leaves the DOM
+  // (Tabster Modalizer); wait for it instead of racing it.
+  await waitFor(() => expect((screen.getByRole("button", { name: "저장" }) as HTMLButtonElement).disabled).toBe(true));
   expect(f.values.get(STATE_KEY)).toEqual({ damaged: true });
   expect(await loadLedger(f.deck)).toBeNull();
   f.fail("");
@@ -206,7 +208,7 @@ it("keeps recovery locked after a failed commit and restores a healthy backup on
   fireEvent.click(within(retry).getByRole("button", { name: "확인하고 복원" }));
   await screen.findByText("정상 자료를 새 복구 세대에 저장했어요. 기존 손상값은 보존하고 저장 잠금을 풀었어요.");
   await waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
-  expect((screen.getByRole("button", { name: "저장" }) as HTMLButtonElement).disabled).toBe(false);
+  await waitFor(() => expect((screen.getByRole("button", { name: "저장" }) as HTMLButtonElement).disabled).toBe(false));
   expect(required(await loadLedger(f.deck)).current).toEqual(state);
   expect(f.values.get(STATE_KEY)).toEqual({ damaged: true });
   f.deck.dispose();
