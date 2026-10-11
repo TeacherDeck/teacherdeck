@@ -1,6 +1,6 @@
 # ADR-0028: 공개 YouTube 단일 영상의 제한된 다운로드
 
-상태: 승인·구현 (2026-10-11 사용자의 영상 다운로드 기능 지시)
+상태: 보류 (2026-10-11, [#15](https://github.com/TeacherDeck/teacherdeck/issues/15)). 승인·구현했으나 제품 약속의 네트워크 예외, YouTube 약관, 망분리 환경 안내를 결정할 때까지 `youtube-download` 모듈을 기본 번들에서 뺀다(`tools/scripts/lib/modules.ts`의 `HELD_MODULES`). 호스트 `media-download` 구현은 남지만 이 캡을 선언한 기본 모듈이 없다.
 
 사용자의 구체적인 기능 지시와 add-capability 반복 승인 생략 지시를 [제안서](../proposals/local-tools-next.md)에 기록했다. 기존 fs 캡은 네트워크 실행을 제공하지 않고 iframe HTTP나 실행 파일 권한 확대는 불필요하므로, 신뢰 호스트의 `media-download` 1.0으로 분리한다. 기존 캡 major·브리지 메시지 형식·CSP·Tauri ACL은 바꾸지 않는다.
 

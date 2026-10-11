@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-// `pnpm bundle:modules`: packs every module and writes the bundled index the host loads at startup
-// (apps/desktop/src-tauri/resources/modules/, catalog.md §1). Output is generated and gitignored.
+// `pnpm bundle:modules`: packs every module except held ones and writes the bundled index the host
+// loads at startup (apps/desktop/src-tauri/resources/modules/, catalog.md §1). Output is generated
+// and gitignored.
 import fs from "node:fs";
 import path from "node:path";
-import { REPO_ROOT, moduleIds } from "./lib/modules.ts";
+import { REPO_ROOT, bundledModuleIds } from "./lib/modules.ts";
 import { packModule } from "./pack-module.ts";
 
 export const RESOURCES = "apps/desktop/src-tauri/resources/modules";
@@ -15,7 +16,7 @@ export function bundleModules(root: string): string[] {
     if (e !== ".gitkeep") fs.rmSync(path.join(out, e), { recursive: true, force: true });
   }
   const modules: Record<string, unknown[]> = {};
-  for (const id of moduleIds(root)) {
+  for (const id of bundledModuleIds(root)) {
     const { file, summary } = packModule(root, id);
     const url = `${id}/${summary.version}/`;
     const target = path.join(out, url, `${id}-${summary.version}.deckmod`);

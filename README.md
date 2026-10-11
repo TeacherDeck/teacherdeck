@@ -8,12 +8,12 @@
 
 - 이미지 크롭, 파일명 일괄 변환, 개인정보 마스킹, 문서 변환, PDF 도구 같은 사무 도구
 - 타이머, 자리 배치, 모둠 편성 같은 수업 도구
-- 로컬 메모·D-day와 공개 영상 다운로드 같은 작은 업무 도구
+- 로컬 메모·D-day 같은 작은 업무 도구
 - 도구는 모듈로 만들어져서, 앱을 다시 설치하지 않아도 새 도구를 받을 수 있어요.
 
 ## 약속
 
-**변환·분석은 PC 안에서 처리해요. 쿨메신저 예약 등록은 사용자가 확인한 수신자·내용·첨부를 로그인한 쿨메신저로 전달해요.** 영상 다운로드를 실행하면 지정한 공개 YouTube 영상과 첫 사용에 필요한 고정 실행 환경을 내려받아요. 문서·명단은 외부로 보내지 않으며 사용 통계를 수집하지 않아요.
+**변환·분석은 PC 안에서 처리해요. 쿨메신저 예약 등록은 사용자가 확인한 수신자·내용·첨부를 로그인한 쿨메신저로 전달해요.** 문서·명단은 외부로 보내지 않으며 사용 통계를 수집하지 않아요.
 
 - 사용 통계나 오류 보고를 자동으로 보내지 않아요.
 - 원본 파일을 마음대로 덮어쓰거나 지우지 않아요.
@@ -74,7 +74,8 @@ Windows 전체 검증·개발 실행·빌드는 쿨 예약실의 승인된 Pytho
 - 파일·문서: [파일명 작업기](modules/file-rename/README.md), [문서 변환](modules/office-convert/README.md), [PDF 압축](modules/pdf-compress/README.md), [PDF 개인정보 지우기](modules/pdf-mask/README.md)
 - 이미지: [이미지 압축](modules/image-compress/README.md), [명렬표 사진 추출](modules/photo-extract/README.md), [이미지 자르기](modules/image-crop/README.md), [퀵캡처](modules/quick-capture/README.md)
 - 수업·업무: [회의록](modules/meeting-note/README.md), [지도일 배정](modules/duty-planner/README.md), [발표자 뽑기](modules/presenter-picker/README.md), [모둠 편성](modules/group-planner/README.md), [자리 배치](modules/seat-planner/README.md), [역할·당번 배정](modules/role-planner/README.md)
-- 작은 도구: [빠른 메모](modules/quick-note/README.md), [D-day](modules/dday/README.md), [영상 다운로드](modules/youtube-download/README.md)
+- 작은 도구: [빠른 메모](modules/quick-note/README.md), [D-day](modules/dday/README.md)
+- 보류: [영상 다운로드](modules/youtube-download/README.md)는 기본 모듈에서 빠져 덱에 나타나지 않아요([#15](https://github.com/TeacherDeck/teacherdeck/issues/15)).
 - Windows 연동: [네트워크 루틴](modules/network-routine/README.md), [쿨 예약실](modules/coolreserve/README.md)
 
 설정의 공통 학급 자료에서 명부·시간표를 관리하고 수업 도구에서 선택해 불러올 수 있어요. 공통 자료에 등록하지 않고 각 도구에 직접 명단을 넣어 작업해도 돼요. TimeAlert DB7 암호화 백업을 열어 공통 자료를 가져오고, 연결된 원작의 비공개 기록·사진을 보존한 백업을 새로 저장할 수 있어요. 원작 백업 연결을 닫거나 앱을 종료하면 원형 보존 세션도 끝나므로 다시 보존하려면 원작 백업을 열어 주세요. 연결 없는 출력에는 현재 공통 자료·사진만 포함돼요. 자세한 호환 범위와 한도는 [TimeAlert 백업 안내](apps/desktop/src-tauri/src/timealert/README.md)에 있어요.
