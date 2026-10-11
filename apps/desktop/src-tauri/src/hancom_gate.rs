@@ -13,7 +13,7 @@ use std::os::windows::io::{AsRawHandle, FromRawHandle};
 use std::path::Path;
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 use std::time::{Duration, Instant};
 use windows::Win32::Foundation::{
@@ -385,6 +385,7 @@ impl Drop for RegistrationCleanup {
 }
 /// Active server lifetime; closing it makes a loaded callback deny all future access.
 pub(crate) struct Gate {
+    requests: Arc<[AtomicUsize; 2]>,
     stop: Arc<AtomicBool>,
     thread: Option<std::thread::JoinHandle<()>>,
     pub(crate) module_name: String,
@@ -556,14 +557,17 @@ impl PreparedRegistration {
         let stop = Arc::new(AtomicBool::new(false));
         let flag = Arc::clone(&stop);
         let policy = self.policy;
+        let requests = Arc::new([AtomicUsize::new(0), AtomicUsize::new(0)]);
+        let observations = Arc::clone(&requests);
         let thread = std::thread::Builder::new()
             .name("hancom-path-gate".into())
             .spawn(move || {
                 let _pinned_process = process;
-                serve(pipe, policy, pid, flag);
+                serve(pipe, policy, pid, flag, observations);
             })
             .map_err(|_| unavailable())?;
         Ok(Gate {
+            requests,
             stop,
             thread: Some(thread),
             module_name: self.module_name,
@@ -577,6 +581,14 @@ impl PreparedRegistration {
     }
 }
 impl Gate {
+    /// Counts only authenticated replies; never includes paths or foreign-peer traffic.
+    pub(crate) fn request_counts(&self) -> (usize, usize) {
+        let [allowed, denied] = self.requests.as_ref();
+        (
+            allowed.load(Ordering::Acquire),
+            denied.load(Ordering::Acquire),
+        )
+    }
     /// Read-only diagnostic for this exact owned Hwp instance; never returns module paths.
     pub(crate) fn module_loaded(&self) -> Result<bool, DeckError> {
         use windows::Win32::System::Diagnostics::ToolHelp::{
@@ -674,7 +686,13 @@ fn make_pipe(endpoint: &Endpoint) -> Result<File, DeckError> {
     // SAFETY: transfers this newly created valid pipe handle to the single owning File.
     Ok(unsafe { File::from_raw_handle(raw.0) })
 }
-fn serve(pipe: File, mut policy: Policy, pid: u32, stop: Arc<AtomicBool>) {
+fn serve(
+    pipe: File,
+    mut policy: Policy,
+    pid: u32,
+    stop: Arc<AtomicBool>,
+    requests: Arc<[AtomicUsize; 2]>,
+) {
     let expires = Instant::now() + Duration::from_secs(120);
     while !stop.load(Ordering::Acquire) && Instant::now() < expires {
         // SAFETY: live owned nonblocking pipe; no pending overlapped buffers.
@@ -741,6 +759,9 @@ fn serve(pipe: File, mut policy: Policy, pid: u32, stop: Arc<AtomicBool>) {
                     .is_ok()
                         && written == 1
                     {
+                        let [allowed, denied] = requests.as_ref();
+                        let counter = if permitted { allowed } else { denied };
+                        counter.fetch_add(1, Ordering::Release);
                         while !stop.load(Ordering::Acquire) && Instant::now() < deadline {
                             let mut ack = [0u8; 2];
                             let mut count = 0u32;
@@ -902,7 +923,15 @@ mod tests {
         let stop = Arc::new(AtomicBool::new(false));
         let flag = Arc::clone(&stop);
         let pid = std::process::id();
-        let server = std::thread::spawn(move || serve(pipe, policy, pid, flag));
+        let server = std::thread::spawn(move || {
+            serve(
+                pipe,
+                policy,
+                pid,
+                flag,
+                Arc::new([AtomicUsize::new(0), AtomicUsize::new(0)]),
+            )
+        });
         for _ in 0..5 {
             assert_eq!(
                 request(&endpoint, &encode_path(output.to_str().unwrap()).unwrap()),
@@ -936,7 +965,15 @@ mod tests {
         let policy = Policy::new(None, &output).unwrap();
         let stop = Arc::new(AtomicBool::new(false));
         let flag = Arc::clone(&stop);
-        let server = std::thread::spawn(move || serve(pipe, policy, u32::MAX, flag));
+        let server = std::thread::spawn(move || {
+            serve(
+                pipe,
+                policy,
+                u32::MAX,
+                flag,
+                Arc::new([AtomicUsize::new(0), AtomicUsize::new(0)]),
+            )
+        });
         assert_eq!(
             request(&endpoint, &encode_path(output.to_str().unwrap()).unwrap()),
             None

@@ -4,7 +4,7 @@
   "id": "office-convert",
   "name": "문서 형식 변환",
   "description": "설치된 한글·Office로 문서를 새 형식으로 변환해요. 원본은 유지해요.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "category": "document",
   "icon": "icon.svg",
   "entry": "index.html",

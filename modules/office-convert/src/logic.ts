@@ -66,6 +66,7 @@ export function conversionError(code: string | undefined, safeMessage?: string):
   if (code === "BUSY") {
     // Only fixed host advice is reflected. Arbitrary exception text stays private.
     if (
+      safeMessage === "열려 있는 한글을 닫은 뒤 다시 변환해 주세요." ||
       safeMessage === "열려 있는 PowerPoint를 닫은 뒤 다시 변환해 주세요." ||
       safeMessage === "사용 중인 PowerPoint를 바꾸지 않았어요. 직접 변환하거나 프로그램을 닫은 뒤 다시 시도해 주세요."
     )

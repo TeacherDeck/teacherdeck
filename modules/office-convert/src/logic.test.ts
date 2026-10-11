@@ -39,6 +39,7 @@ describe("real Office format planning", () => {
       "PowerPoint를 닫은",
     );
     expect(conversionError("BUSY")).toContain("다른 문서 변환");
+    expect(conversionError("BUSY", "열려 있는 한글을 닫은 뒤 다시 변환해 주세요.")).toContain("한글을 닫은");
     expect(conversionError("BUSY", "private synthetic exception")).not.toContain("private");
   });
   it("explains that a timed-out worker stopped and approval belongs to the next attempt", () => {

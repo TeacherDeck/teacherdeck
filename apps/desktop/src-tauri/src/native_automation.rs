@@ -28,6 +28,23 @@ fn failed_hresult(error: windows::core::Error) -> DeckError {
     failure
 }
 
+#[cfg(any(windows, test))]
+fn is_hancom_rot_name(name: &str) -> bool {
+    let Some((version, index)) = name
+        .strip_prefix("!HwpObject.")
+        .and_then(|value| value.split_once('.'))
+    else {
+        return false;
+    };
+    matches!(version, "80" | "90" | "96" | "100" | "110" | "120" | "130")
+        && !index.starts_with('0')
+        && index.len() <= 2
+        && index.bytes().all(|c| c.is_ascii_digit())
+        && index
+            .parse::<u8>()
+            .is_ok_and(|value| (1..=99).contains(&value))
+}
+
 #[cfg(windows)]
 mod win {
     use super::*;
@@ -96,6 +113,132 @@ mod win {
                 object,
                 _thread: PhantomData,
             })
+        }
+        /// Attach through Hancom's documented ROT only; never request another local server.
+        /// See https://forum.developer.hancom.com/t/topic/564/2 and /t/topic/1817/4.
+        pub(crate) fn connect_owned_hancom(owned_pid: u32) -> Result<Self, DeckError> {
+            use windows::Win32::Foundation::HWND;
+            use windows::Win32::System::Com::{
+                CoTaskMemFree, CreateBindCtx, GetRunningObjectTable,
+            };
+            use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+            if owned_pid == 0 {
+                return Err(failed());
+            }
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            loop {
+                // SAFETY: this worker owns its initialized STA. These calls only query the ROT;
+                // a fresh enumerator each pass includes objects registered since the prior pass.
+                let (rot, enumerator, context) = unsafe {
+                    let rot = GetRunningObjectTable(0).map_err(failed_hresult)?;
+                    let enumerator = rot.EnumRunning().map_err(failed_hresult)?;
+                    let context = CreateBindCtx(0).map_err(failed_hresult)?;
+                    (rot, enumerator, context)
+                };
+                for _ in 0..512 {
+                    if std::time::Instant::now() >= deadline {
+                        return Err(failed());
+                    }
+                    let mut monikers = [None];
+                    let mut fetched = 0;
+                    // SAFETY: one initialized interface slot and fetched counter remain live;
+                    // owned COM interface wrappers release every rejected candidate on this STA.
+                    unsafe { enumerator.Next(&mut monikers, Some(&mut fetched)) }
+                        .ok()
+                        .map_err(failed_hresult)?;
+                    if fetched == 0 {
+                        break;
+                    }
+                    let Some(moniker) = monikers.first_mut().and_then(Option::take) else {
+                        return Err(failed());
+                    };
+                    // SAFETY: live ROT moniker and binding context; no BindToObject or activation.
+                    let display = match unsafe { moniker.GetDisplayName(&context, None) } {
+                        Ok(display) => display,
+                        Err(_) => continue,
+                    };
+                    // SAFETY: GetDisplayName returned a null-terminated task allocation. The
+                    // private name is used for exact recognition only and is never logged.
+                    let name = unsafe { display.to_string() };
+                    // SAFETY: release exactly the task allocation returned by GetDisplayName,
+                    // including when decoding fails; no borrowed interface storage is freed.
+                    unsafe { CoTaskMemFree(Some(display.0.cast())) };
+                    if !name.as_deref().is_ok_and(is_hancom_rot_name) {
+                        continue;
+                    }
+                    // SAFETY: ROT.GetObject retrieves an already registered object; it does not
+                    // bind/activate an unavailable server. No CoCreateInstance fallback exists.
+                    let object = match unsafe { rot.GetObject(&moniker) }
+                        .and_then(|value| value.cast::<IDispatch>())
+                    {
+                        Ok(object) => object,
+                        Err(_) => continue,
+                    };
+                    let candidate = Self {
+                        object,
+                        _thread: PhantomData,
+                    };
+                    let hwnd = (|| {
+                        let windows = candidate.get_object("XHwpWindows")?;
+                        let window = windows.method_object("Item", vec![0i32.into()])?;
+                        number(&window.get("WindowHandle")?)
+                    })();
+                    let Ok(hwnd) = hwnd else {
+                        continue;
+                    };
+                    let mut candidate_pid = 0;
+                    // SAFETY: read-only ownership query of the candidate's reported HWND;
+                    // no Quit guard, document access or mutation exists before exact PID proof.
+                    unsafe {
+                        GetWindowThreadProcessId(
+                            HWND(hwnd as isize as *mut std::ffi::c_void),
+                            Some(&mut candidate_pid),
+                        )
+                    };
+                    if candidate_pid == owned_pid {
+                        return Ok(candidate);
+                    }
+                }
+                if std::time::Instant::now() >= deadline {
+                    return Err(failed());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        }
+        /// Wait for our editor, then isolate the separate COM activation helper before any
+        /// file operation. Named ROT objects alone do not implement file-check registration.
+        pub(crate) fn activate_owned_hancom(
+            job_name: &str,
+            image: &std::path::Path,
+            owned_pid: u32,
+        ) -> Result<Self, DeckError> {
+            let ready = Self::connect_owned_hancom(owned_pid)?;
+            drop(ready);
+            let before = crate::native_workers::process_snapshot()?;
+            let started = std::time::SystemTime::now();
+            let app = Self::create("HWPFrame.HwpObject")?;
+            let ended = std::time::SystemTime::now();
+            let hwnd = number(
+                &app.get_object("XHwpWindows")?
+                    .method_object("Item", vec![0i32.into()])?
+                    .get("WindowHandle")?,
+            )?;
+            let mut actual_pid = 0;
+            // SAFETY: read-only HWND ownership query; no Quit guard or file access exists
+            // until this COM object is proved to address our retained live Child process.
+            unsafe {
+                windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId(
+                    windows::Win32::Foundation::HWND(hwnd as isize as *mut std::ffi::c_void),
+                    Some(&mut actual_pid),
+                )
+            };
+            if actual_pid != owned_pid || actual_pid == 0 {
+                return Err(failed());
+            }
+            crate::native_workers::bind_hancom_helper(
+                job_name, &before, started, ended, image, owned_pid,
+            )?;
+            Ok(app)
         }
         pub(crate) fn from_variant(value: &VARIANT) -> Result<Self, DeckError> {
             Ok(Self {
@@ -218,6 +361,12 @@ mod win {
         i32::try_from(value).map_err(|_| failed())
     }
     pub(crate) fn boolean(value: &VARIANT) -> Result<bool, DeckError> {
+        if value.vt() == windows::Win32::System::Variant::VT_BOOL {
+            // SAFETY: VT_BOOL was checked; the live union contains VARIANT_BOOL. Hancom
+            // returns +1 for success, while propsys VariantToBoolean accepts only -1.
+            // Preserve the provider's nonzero Boolean, as COM clients such as .NET do.
+            return Ok(unsafe { value.Anonymous.Anonymous.Anonymous.boolVal }.as_bool());
+        }
         bool::try_from(value).map_err(|_| failed())
     }
     pub(crate) fn missing() -> VARIANT {
@@ -323,7 +472,7 @@ mod win {
         Ok(result)
     }
     pub(crate) use windows::Win32::System::Variant::VARIANT as Value;
-    /// Exact executable registered for the fixed Word COM class, used only for identity proof.
+    /// Exact executable registered for a fixed COM class, used only for owned launch/identity proof.
     pub(crate) fn registered_office_image(
         provider: deck_core::caps::office::OfficeProvider,
     ) -> Result<std::path::PathBuf, DeckError> {
@@ -331,10 +480,12 @@ mod win {
         let expected = match provider {
             OfficeProvider::Word => "WINWORD.EXE",
             OfficeProvider::Powerpoint => "POWERPNT.EXE",
+            OfficeProvider::Hancom => "HWP.EXE",
             _ => return Err(failed()),
         };
         use windows::Win32::System::Registry::{
-            HKEY_CLASSES_ROOT, RRF_RT_REG_EXPAND_SZ, RRF_RT_REG_SZ, RegGetValueW,
+            HKEY_CLASSES_ROOT, RRF_RT_REG_EXPAND_SZ, RRF_RT_REG_SZ, RRF_SUBKEY_WOW6432KEY,
+            RegGetValueW,
         };
         let progid: Vec<u16> = provider_class(provider)
             .encode_utf16()
@@ -348,6 +499,11 @@ mod win {
             .collect();
         let mut data = vec![0u16; 32768];
         let mut bytes = u32::try_from(data.len() * 2).map_err(|_| failed())?;
+        let mut flags = RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ;
+        if provider == OfficeProvider::Hancom {
+            // Hancom registers its installed 32-bit local server in this COM registry view.
+            flags |= RRF_SUBKEY_WOW6432KEY;
+        }
         // SAFETY: fixed-class registration value only; aligned UTF-16 buffer and byte size remain
         // live. RegGetValue expands REG_EXPAND_SZ; no environment or authentication values are read.
         unsafe {
@@ -355,7 +511,7 @@ mod win {
                 HKEY_CLASSES_ROOT,
                 PCWSTR(key.as_ptr()),
                 PCWSTR::null(),
-                RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ,
+                flags,
                 None,
                 Some(data.as_mut_ptr().cast()),
                 Some(&mut bytes),
@@ -441,18 +597,32 @@ pub(crate) struct LaunchedOffice(std::process::Child);
 impl LaunchedOffice {
     /// Only the fixed registered PowerPoint image; no caller-controlled switches or files.
     pub(crate) fn powerpoint(image: &std::path::Path) -> Result<Self, DeckError> {
+        Self::launch(image, "POWERPNT.EXE", &["/AUTOMATION"])
+    }
+    /// Hancom inherits this worker's registry context and kill-on-close Job.
+    pub(crate) fn hancom(image: &std::path::Path, job_name: &str) -> Result<Self, DeckError> {
+        crate::native_workers::require_worker_job(job_name)?;
+        // Installed LocalServer32 uses -Automation; COM appends -Embedding. Both were
+        // proved by the owned synthetic registration probe on installed Hancom.
+        Self::launch(image, "HWP.EXE", &["-Automation", "-Embedding"])
+    }
+    fn launch(
+        image: &std::path::Path,
+        expected: &str,
+        arguments: &[&str],
+    ) -> Result<Self, DeckError> {
         use std::os::windows::process::CommandExt;
         if !image.is_absolute()
             || !image
                 .file_name()
                 .and_then(|s| s.to_str())
-                .is_some_and(|s| s.eq_ignore_ascii_case("POWERPNT.EXE"))
+                .is_some_and(|s| s.eq_ignore_ascii_case(expected))
         {
             return Err(failed());
         }
         let child = std::process::Command::new(image)
-            // Fixed switch used by the registered PowerPoint LocalServer32.
-            .arg("/AUTOMATION")
+            // Callers provide only the fixed provider switches above, never files or module data.
+            .args(arguments)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -553,7 +723,7 @@ pub(crate) fn convert_with_progress(
     let existing = crate::native_workers::process_snapshot()?;
     let office_image = if matches!(
         request.format.provider(),
-        OfficeProvider::Word | OfficeProvider::Powerpoint
+        OfficeProvider::Word | OfficeProvider::Powerpoint | OfficeProvider::Hancom
     ) {
         Some(registered_office_image(request.format.provider())?)
     } else {
@@ -563,14 +733,11 @@ pub(crate) fn convert_with_progress(
         progress("absence-begin");
         crate::native_workers::require_powerpoint_absent()?;
     }
+    if request.format.provider() == OfficeProvider::Hancom {
+        progress("absence-begin");
+        crate::native_workers::require_hancom_absent()?;
+    }
     let activation_started = std::time::SystemTime::now();
-    let mut launched = if request.format.provider() == OfficeProvider::Powerpoint {
-        progress("child-begin");
-        let image = office_image.as_ref().ok_or_else(failed)?;
-        Some(LaunchedOffice::powerpoint(image)?)
-    } else {
-        None
-    };
     let mut hancom_prepared = if request.format.provider() == OfficeProvider::Hancom {
         progress("hancom-registration-begin");
         Some(HancomPreparedRegistration::new(
@@ -581,8 +748,34 @@ pub(crate) fn convert_with_progress(
     } else {
         None
     };
+    // The scoped module value must exist before Hancom takes its inherited registry view.
+    let mut launched = match request.format.provider() {
+        OfficeProvider::Powerpoint => {
+            progress("child-begin");
+            Some(LaunchedOffice::powerpoint(
+                office_image.as_ref().ok_or_else(failed)?,
+            )?)
+        }
+        OfficeProvider::Hancom => {
+            progress("child-begin");
+            Some(LaunchedOffice::hancom(
+                office_image.as_ref().ok_or_else(failed)?,
+                &request.job_name,
+            )?)
+        }
+        _ => None,
+    };
     progress("activation-begin");
-    let app = Dispatch::create(provider_class(request.format.provider())).map_err(|error| {
+    let activation = if request.format.provider() == OfficeProvider::Hancom {
+        Dispatch::activate_owned_hancom(
+            &request.job_name,
+            office_image.as_ref().ok_or_else(failed)?,
+            launched.as_mut().ok_or_else(failed)?.live_pid()?,
+        )
+    } else {
+        Dispatch::create(provider_class(request.format.provider()))
+    };
+    let app = activation.map_err(|error| {
         launched.as_mut().map_or_else(
             || error.clone(),
             |child| child.annotate_failure(error.clone()),
@@ -601,7 +794,11 @@ pub(crate) fn convert_with_progress(
             "사용 중인 PowerPoint를 바꾸지 않았어요. 직접 변환하거나 프로그램을 닫은 뒤 다시 시도해 주세요.",
         ));
     }
-    if let Some(image) = office_image.as_ref() {
+    if matches!(
+        request.format.provider(),
+        OfficeProvider::Word | OfficeProvider::Powerpoint
+    ) {
+        let image = office_image.as_ref().ok_or_else(failed)?;
         progress("image-bind-begin");
         // Word SingleUse activation creates its own server. PowerPoint MultiUse additionally
         // requires the exact live Child handle we launched; a concurrent server fails closed.
@@ -631,7 +828,17 @@ pub(crate) fn convert_with_progress(
             OfficeProvider::Excel => number(&app.get("Hwnd")?)?,
         };
         // A reused pre-existing process is never entered, Quit, or terminated.
-        crate::native_workers::bind_office_process(&request.job_name, hwnd, &existing)?;
+        if request.format.provider() == OfficeProvider::Hancom {
+            let owned_pid = launched.as_mut().ok_or_else(failed)?.live_pid()?;
+            crate::native_workers::bind_owned_office_process(
+                &request.job_name,
+                hwnd,
+                &existing,
+                owned_pid,
+            )?;
+        } else {
+            crate::native_workers::bind_office_process(&request.job_name, hwnd, &existing)?;
+        }
     }
     // Declared first: the gate remains live while this owned application's Quit runs.
     let mut _hancom_gate = None;
@@ -832,7 +1039,7 @@ pub(crate) fn convert_with_progress(
                         Ok(true) => "loaded-registration-rejected",
                         Ok(false) => "module-not-loaded",
                         Err(_) => "module-load-unknown",
-                    }, "processMachines": gate.process_machines().ok(),
+                    }, "processMachines": gate.process_machines().ok(), "hancomGateRequests": gate.request_counts(),
                     "registrationLoadDiagnostics": gate.registration_diagnostics().ok()}),
                 );
                 return Err(error);
@@ -851,7 +1058,7 @@ pub(crate) fn convert_with_progress(
                 "Open",
                 vec![
                     source.into(),
-                    "".into(),
+                    missing(),
                     "forceopen:true;readonly:true".into(),
                 ],
             )?)? {
@@ -870,7 +1077,7 @@ pub(crate) fn convert_with_progress(
             if !boolean(
                 &instance
                     .app
-                    .invoke("SaveAs", vec![output.into(), "HWPX".into(), "".into()])?,
+                    .invoke("SaveAs", vec![output.into(), "HWPX".into(), missing()])?,
             )? {
                 return Err(failed());
             }
@@ -905,4 +1112,48 @@ pub(crate) fn convert_with_progress(
 #[cfg(not(windows))]
 pub(crate) fn convert(_request: &crate::native_workers::OfficeJob) -> Result<(), DeckError> {
     Err(failed())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[cfg(windows)]
+    #[test]
+    fn provider_boolean_preserves_hancom_positive_true_and_standard_values() {
+        use windows::Win32::Foundation::VARIANT_BOOL;
+        use windows::Win32::System::Variant::VARIANT;
+        for (raw, expected) in [(0, false), (1, true), (-1, true)] {
+            let mut value = VARIANT::from(false);
+            // SAFETY: VARIANT::from(false) creates VT_BOOL with no owned resource;
+            // replacing only the same active union member retains its valid discriminator.
+            unsafe {
+                (*value.Anonymous.Anonymous).Anonymous.boolVal = VARIANT_BOOL(raw);
+            }
+            assert_eq!(boolean(&value).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn hancom_rot_name_rejects_unrelated_monikers_and_invalid_indices() {
+        for name in [
+            "!HwpObject.80.1",
+            "!HwpObject.96.9",
+            "!HwpObject.120.12",
+            "!HwpObject.130.99",
+        ] {
+            assert!(is_hancom_rot_name(name));
+        }
+        for name in [
+            "!HwpObject.130.0",
+            "!HwpObject.130.01",
+            "!HwpObject.130.100",
+            "!HwpObject.130.1.file",
+            "prefix!HwpObject.130.1",
+            "!HwpObject.130.1 ",
+            "!HwpObject.999.1",
+            "!HwpObject.130.",
+        ] {
+            assert!(!is_hancom_rot_name(name));
+        }
+    }
 }
