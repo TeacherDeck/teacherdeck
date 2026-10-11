@@ -1,8 +1,8 @@
-# 0.3.1 적대적 리뷰 보완 기록
+# 0.3.1 적대적 리뷰 보완과 0.3.2 승인 후속 기록
 
 기준일: 2026-10-11. 대상은 `codex/parallel-tools-foundation`의 개발 중 변경이다. [원래 감사](adversarial-review-2026-10-11.md)의 A01~A10과 추가 복구·조작 공백을 병렬로 수정하고 교차 검토했다. 이 문서는 이전 진단을 대체하지 않으며, 당시 반례와 현재 수정 근거를 연결한다. 테스트·문서·브라우저 검수에는 합성 자료만 사용했다.
 
-**전체 검증 16단계 통과.** JavaScript 1,150개와 Rust 208개 테스트가 통과했다. 이 결과를 실제 OS 연동 전체 검수나 공개 배포 완료로 확대하지 않는다. Excel OOXML 구조 검사·학교 자료 출력·Keyborg 버전 정렬은 승인 대기 범위가 남아 있다.
+**0.3.1 전체 검증 16단계 통과.** JavaScript 1,150개와 Rust 208개 테스트가 통과했다. 이 결과를 실제 OS 연동 전체 검수나 공개 배포 완료로 확대하지 않는다. 당시 보류했던 Excel OOXML 구조 검사·학교 자료 출력·Keyborg 버전 정렬은 2026-10-11에 승인받아 0.3.2에서 구현했다. **0.3.2 최종 전체 검증도 16단계 통과**했으며 JavaScript 115파일 1,158개·Rust 223개(core 97개·host 126개)다. 0.3.2 릴리스 빌드와 설치본 구성 대조도 통과했으며 아래 0.3.1 산출물과 구분한다. 최신 상세 근거는 [승인 후속 검수](approved-followups-2026-10-11.md)에 기록한다.
 
 ## 감사 항목별 변경과 근거
 
@@ -49,25 +49,29 @@ XLSX 명부·시간표 적용 직후에는 확인을 거쳐 가져오기 전 자
 
 ### 별도 확인한 Keyborg 버전 충돌
 
-설치된 `@fluentui/react-tabster`는 `keyborg ^2.14.1`을, `tabster 8.8.1`은 `keyborg ^3.0.0`을 요구하여 2.14.1과 3.498.0이 함께 있다. 두 `dist/index.js`의 `createKeyborg`는 각각 모듈 내부의 `_lastId`로 `k1`부터 발급하지만 같은 `window.__keyborg.refs`를 공유한다. 같은 ID를 두 번 넣으면 이전 인스턴스의 등록이 덮이고 닫을 때 `disposed incorrectly` 경고가 발생할 수 있다. 경로는 `node_modules/.pnpm/keyborg@2.14.1/node_modules/keyborg/dist/index.js:335`, `keyborg@3.498.0/.../dist/index.js:297`이다.
+정렬 전 설치된 `@fluentui/react-tabster`는 `keyborg ^2.14.1`을, `tabster 8.8.1`은 `keyborg ^3.0.0`을 요구하여 2.14.1과 3.498.0이 함께 있었다. 두 `dist/index.js`의 `createKeyborg`는 각각 모듈 내부의 `_lastId`로 `k1`부터 발급하지만 같은 `window.__keyborg.refs`를 공유한다. 같은 ID를 두 번 넣으면 이전 인스턴스의 등록이 덮이고 닫을 때 `disposed incorrectly` 경고가 발생할 수 있다. 경로는 `node_modules/.pnpm/keyborg@2.14.1/node_modules/keyborg/dist/index.js:335`, `keyborg@3.498.0/.../dist/index.js:297`이다.
 
 `target/adversarial-review/keyborg-version-collision.mjs`와 `.log`의 최소 합성 재현에서는 두 버전을 같은 jsdom window에 생성하면 모두 `k1`이 되어 첫 등록이 사라졌다. 실제 `KeyboardEvent(Tab)`에 대해 첫 구독자는 `[]`, 두 번째는 `[true]`를 받았다. 같은 버전의 두 인스턴스 대조군은 둘 다 `[true]`를 받았다. 혼합 버전에서는 첫 인스턴스만 폐기해도 두 번째가 존재하는 상태에서 공유 registry가 사라졌고 대조군에서는 유지됐다.
 
-이는 **라이브러리 인스턴스의 키보드 모드 구독 유실 재현**이며 TeacherDeck 화면의 초점 표시나 접근성 실패를 모두 이 충돌로 설명한 것은 아니다. 실제 브라우저의 역할·학교 확인창 반복 흐름은 위와 같이 통과했다. PDF 폴더 경합은 별도의 제품 상태 문제로 재현·수정했다. 공통 Provider의 소유권 유지가 기존 충돌을 더 자주 드러냈을 가능성은 있으나 실제 제품 영향을 분리하는 추가 검수가 필요하다. 승인 없는 의존성 override나 라이브러리 patch는 적용하지 않았다.
+이는 **라이브러리 인스턴스의 키보드 모드 구독 유실 재현**이며 TeacherDeck 화면의 초점 표시나 접근성 실패를 모두 이 충돌로 설명한 것은 아니다. 실제 브라우저의 역할·학교 확인창 반복 흐름은 위와 같이 통과했다. PDF 폴더 경합은 별도의 제품 상태 문제로 재현·수정했다. 공통 Provider의 소유권 유지가 기존 충돌을 더 자주 드러냈을 가능성은 있으나 실제 제품 영향을 분리하는 추가 검수가 필요하다. 0.3.1 검증 당시에는 승인 없는 override나 라이브러리 patch를 적용하지 않았다. 이후 승인받은 한 경로 override로 3.498.0에 정렬했으며 라이브러리 원문을 patch하지 않았다. 지정 lifecycle 회귀 1개가 통과했고, 전체 포커스 흐름은 0.3.2 최종 검수 범위로 유지한다.
 
 ## Excel과 한글의 실제 확인 범위
 
 Excel 원본은 Office 활성화 전에 잠금·준비된 입력으로 CFB/BIFF 구조를 검사한다. 암호화 표식·BIFF FILEPASS·XLM 매크로 시트·자동 실행 이름·손상 구조·길이 초과를 거부하며 FAT/miniFAT 순환과 선언한 시트 영역의 겹침을 제한한다. 암호화 컨테이너에 정상 Workbook을 함께 두는 반례도 거부하는 회귀를 추가했다. 정상 BIFF 워크북과 차트의 선언 순서가 실제 저장 순서와 다른 경우는 허용한다.
 
-실제 설치된 Excel로 합성 문서 변환과 재열기 검증이 성공했다. `target/adversarial-review/excel-preflight-native.log`의 결과는 `provider=excel`, `stage=validation`, `success=true`다. 이 성공이 악의적인 모든 OOXML 문서를 안전하게 거부한다는 증거는 아니다. 현재 문자열 기반 OOXML 검사는 패키지 루트의 실제 main workbook 관계를 따르지 않아 다른 경로의 workbook을 놓칠 수 있고, 정상 `AUTO_OPEN` 시트 이름을 잘못 거부할 수 있다. 구조 파서 구현은 아래 승인 대기 항목이며 이 공백을 해결 완료로 표시하지 않는다.
+실제 설치된 Excel로 합성 문서 변환과 재열기 검증이 성공했다. `target/adversarial-review/excel-preflight-native.log`의 결과는 `provider=excel`, `stage=validation`, `success=true`다. 이 0.3.1 성공이 악의적인 모든 OOXML 문서를 안전하게 거부한다는 증거는 아니다. 당시 문자열 기반 OOXML 검사는 패키지 루트의 실제 main workbook 관계를 따르지 않아 다른 경로의 workbook을 놓칠 수 있고 정상 `AUTO_OPEN` 시트 이름을 잘못 거부할 수 있었다. 이후 승인된 구조 파서를 0.3.2에 구현해 실제 main 관계·namespace·속성 문맥을 따라 검사한다. 정상 media 이름의 `macrosheet` 문자열과 Default workbook content type에 worksheet Override가 있는 정상 조합의 거짓 거부도 수정하고 회귀를 추가했다. worksheet 본문 전체의 스키마 검증이나 Office의 모든 취약점 차단까지 보증하지 않는다. 0.3.2에서도 `approved-excel-native.log`의 설치된 Excel 합성 변환·재열기·내용 검증·원본 보존이 성공했다. 승인 코드의 구조 회귀와 전체 검증도 통과했으며 상세 근거는 [승인 후속 검수](approved-followups-2026-10-11.md)에 기록한다.
 
 한글은 소유한 창을 표시하고 합성 fixture 단계의 진단을 보강했다. 불필요한 새 문서 창도 제거한 뒤 재시험했지만 fixture 생성의 `save-begin`에서 **120초 TIMEOUT**이 다시 발생했다. 생산 변환은 시작하지 못했다. 원인은 확정되지 않았으며 숨은 확인창·보안 승인·설치 환경 중 하나라고 단정하지 않는다. `target/adversarial-review/hancom-single-document-native.log`는 `fixtureStage=save-begin`, `success=false`를 기록한다. 예제의 고정 단계 보고·프로세스 소유권 관련 3개 테스트는 통과했다. 설치된 한글의 실제 저장·변환·재열기 성공 검수는 남아 있다.
 
-## 승인 대기 세 건
+## 승인된 세 건의 0.3.2 구현
 
-1. [Excel XML 구조 해석](../proposals/excel-xml-preflight.md): `quick-xml = "=0.42.0"`의 직접 런타임 의존성 추가(GEN-004). 실제 `_rels/.rels` main workbook 관계·namespace·속성 문맥을 검사하고 DTD/외부 엔티티를 거부하는 범위다. 승인 전 신규 의존성 구현은 시작하지 않았다. OOXML 입력 범위를 줄이는 방식을 완료 대안으로 삼지 않는다.
-2. [학교 자료 JSON·시간표 PNG 출력](../proposals/school-data-output-followup.md): main 셸 전용 출력 명령 두 개와 최소 Tauri ACL 추가(GEN-005). 새 이름으로만 저장하고 원본은 덮어쓰지 않는다. 아직 구현하지 않았다. JSON은 명부·시간표 복구용이며 사진 파일은 포함하지 않는다. TimeAlert 전체 `.teacherbackup` 호환이나 별도 학생 표시창의 승인을 대신하지 않는다.
-3. [기존 Keyborg 버전 정렬](../proposals/keyborg-version-alignment.md): react-tabster의 Keyborg 한 경로를 이미 잠긴 3.498.0으로 정렬한다. 같은 3.x+3.x 합성 대조군은 두 키보드 구독과 인스턴스 수명을 보존했다. 새 런타임 추가는 아니지만 실제 override 설치의 자동 승인 검토가 GEN-004 사람 승인 부재로 거부해 명시적 승인을 기다린다. 시도한 설정은 원복됐으며 workspace·lock 변경은 없다.
+2026-10-11 사용자가 앞선 세 제안에 “승인한다. 계속 작업해”라고 답했다. 다음 범위는 구현했고 **최종 전체 검증 16단계가 통과**했다. **0.3.2 릴리스 빌드·설치본 구성 대조도 통과**했다.
+
+1. [Excel XML 구조 해석](../proposals/excel-xml-preflight.md): 승인된 `quick-xml = "=0.42.0"` 직접 의존성으로 `_rels/.rels`의 실제 main workbook·content type·workbook 관계·definedName을 namespace와 속성 문맥에 따라 검사한다. DTD·정의되지 않은 엔티티·중복 속성·손상 구조·외부 main target·패키지 밖 경로는 거부한다. 기존 CFB/BIFF·ZIP·XML 크기 상한을 유지하며 정상 `AUTO_OPEN` 시트 이름·일반 수식·주석을 자동 실행 정의로 취급하지 않는다. 추가 정상파일 오탐 두 건인 media 이름의 `macrosheet` 문자열과 Default/Override content type 조합도 보완했다. 실제 실행 가능한 매크로를 만들거나 실행하지 않았다.
+2. [학교 자료 JSON·시간표 PNG 출력](../proposals/school-data-output-followup.md): main 전용 명령 두 개와 최소 ACL을 구현했다. JSON은 호스트의 저장된 모든 학기·식별자·명부/수업 연결·일과 시각·주간표·날짜 변경·사진 metadata를 보존하지만 **사진 파일과 화면의 미저장 초안은 포함하지 않는다**. 같은 PC의 명부·시간표 복구용이며 TimeAlert 전체 `.teacherbackup` 호환이나 사진을 담은 이동용 전체 백업으로 표시하지 않는다. PNG는 현재 화면의 표시 교시·수업 배치와 미저장 편집을 포함하고 학교 자료를 저장하지 않는다. Fluent 계산 토큰·시스템 한글 글꼴을 사용하며 긴 이름은 줄바꿈하고 상한 초과는 잘라내지 않는다. 호스트는 16MiB·PNG 전체 디코드·4096px·16메가픽셀을 폴더 선택 전에 검사한다. 두 출력은 기존 append-new 게시로 원본을 보존하고 취소는 false다. 학교 지정 4파일 30개 테스트와 최종 Rust 출력·권한·큰 자료 회귀가 통과했다. 실제 Canvas 출력기를 밝은/어두운 테마·800×600 창에서 확인했으며 파일 선택·저장 명령은 모의했다. 네이티브 폴더 선택·저장 성공을 이 결과로 주장하지 않는다.
+3. [기존 Keyborg 버전 정렬](../proposals/keyborg-version-alignment.md): 승인받은 `@fluentui/react-tabster>keyborg` 한 경로 override로 기존 3.498.0에 정렬했고 lock·설치·타사 고지를 갱신했다. 2.14.1과 3.498.0의 ID 충돌을 없애며 지정 lifecycle 회귀 1개가 통과했다. 전역 override·새 라이브러리·원문 patch는 추가하지 않았다. 앞선 설치 거부와 혼합 버전 진단은 역사로 보존하며 현재 미해결 승인 건으로 표시하지 않는다. 학교·역할 확인창의 반복 브라우저 검수에서 경고·오류 수집 결과는 빈 배열이었다.
+
+학교 JSON 출력의 첫 구현은 들여쓰기 직렬화였다. 저장 가능한 큰 정상 자료가 출력에서만 32MiB를 넘는 반례를 확인해 저장과 같은 compact 인코딩으로 바꿨다. 버퍼 성장과 예약은 상한 안으로 제한하고 초과 쓰기는 append 전에 거부한다. 들여쓰기 크기는 상한을 넘지만 기존 저장 크기는 허용되는 합성 명부·수업 연결의 복구 왕복과 제한 경계 회귀를 추가했다. 이 보완을 큰 자료의 모든 처리 비용이나 Windows 실기 전체 검수 완료로 확대하지 않는다.
 
 ## 검증 기록과 최종 게이트
 
@@ -88,7 +92,7 @@ Excel 원본은 Office 활성화 전에 잠금·준비된 입력으로 CFB/BIFF 
 
 두 번째 통합 로그 `remediation-verify-final.log`에서는 SchoolData 취소·재개 확인창의 접근성 조회와 PDF 압축의 폴더 선택 횟수 두 JS 실패를 확인했다. 학교 확인창은 실제 포커스·DOM 등록 순서를 보강했고, PDF는 위의 제품 경합을 수정했다. 이 로그의 일부 단계 통과를 최종 성공으로 표시하지 않는다.
 
-**최종 전체 검증: 통과.** `target/adversarial-review/remediation-verify-complete.log`에서 16단계가 모두 통과했다. JavaScript 113파일 1,150개, Rust core 88개·host 120개 테스트이며, Office 개발 예제의 별도 3개 검사도 통과했다. 첫 두 전체 실행에서 발견된 역할·학교 대화상자 동기화, 실제 PDF 폴더 경합, Rust Clippy·포맷 문제를 수정한 뒤 재실행한 결과다. gitleaks 실행 파일이 없어 별도 비밀값 스캐너는 실행하지 못했다. 저장소의 보안 설정 검사 통과가 이 스캐너의 실행을 대신하지는 않는다.
+**0.3.1 최종 전체 검증: 통과.** `target/adversarial-review/remediation-verify-complete.log`에서 16단계가 모두 통과했다. JavaScript 113파일 1,150개, Rust core 88개·host 120개 테스트이며, Office 개발 예제의 별도 3개 검사도 통과했다. 첫 두 전체 실행에서 발견된 역할·학교 대화상자 동기화, 실제 PDF 폴더 경합, Rust Clippy·포맷 문제를 수정한 뒤 재실행한 결과다. gitleaks 실행 파일이 없어 별도 비밀값 스캐너는 실행하지 못했다. 저장소의 보안 설정 검사 통과가 이 스캐너의 실행을 대신하지는 않는다.
 
 **0.3.1 릴리스 빌드·NSIS 생성: 통과.** 실행 중인 기존 앱이 `target/release/teacherdeck.exe`를 사용하고 있어 첫 빌드는 파일 접근 거부로 중단됐다. 사용자 앱을 종료하지 않고 `CARGO_TARGET_DIR=target/review-031`로 분리해 다시 빌드했다. 완료 로그는 `target/adversarial-review/remediation-build-isolated.log`다. 두 산출물의 FileVersion·ProductVersion은 모두 0.3.1이다.
 
@@ -99,10 +103,23 @@ Excel 원본은 Office 활성화 전에 잠금·준비된 입력으로 CFB/BIFF 
 
 독립 검수에서 실제 release 카탈로그의 모듈 17개가 최신 원천 버전·크기·해시와 일치했다. 네이티브 원천 14개·실행 환경 585개도 승인 목록과 정확히 일치했다. NSIS 생성 스크립트의 파일 목록에는 현재 모듈 17개와 네이티브 599개가 포함되며 이전 캐시 버전은 포함되지 않는다. 스크립트가 참조하는 원천 파일과 release 복사본도 동일하다. NSIS 내부 압축 데이터의 독립 추출, 수정본 앱 실행·설치·제거는 수행하지 않았으므로 설치 성공이나 실제 창 검수 완료로 표시하지 않는다.
 
+## 0.3.2 최종 게이트 — 전체 검증·설치본 구성 대조 통과
+
+승인된 세 구현과 추가 반례 수정 후 `target/adversarial-review/approved-verify-complete.log`에서 최종 `pnpm verify` **16단계가 모두 통과**했다. JavaScript **115파일 1,158개**, Rust **223개(core 97개·host 126개)** 테스트다. 첫 승인 후속 실행의 Clippy 중복 closure를 수정했으며 자리 1,000석 회귀는 독립 책임으로 나눠 기존 모든 단언과 각 5초 한도를 유지했다. 이는 테스트 구조 개선이며 제품 성능 향상이나 두 절차 합계 5초 이내를 보장하는 결과가 아니다.
+
+| 근거                              | 확인한 범위                                                                                                                     |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `approved-verify-complete.log`    | 생성물·린트·타입·JS/Rust 테스트·포맷·Clippy·라이선스·보안 설정 등을 포함한 전체 16단계 통과                                     |
+| 학교 출력 브라우저·Rust 회귀      | 실제 SchoolData와 Canvas 출력기를 밝은/어두운 테마·800×600 창에서 확인. 파일 선택·저장은 모의. Rust 출력·권한·큰 자료 회귀 통과 |
+| `approved-excel-native.log`       | 설치된 Excel에서 합성 변환·재열기·내용 검증·원본 보존 성공. 실제 매크로 생성·실행 없음                                          |
+| Keyborg lifecycle·확인창 브라우저 | 지정 lifecycle 회귀 1개와 학교·역할 반복 확인창 통과. 경고·오류 수집 결과 빈 배열                                               |
+
+세부 조작과 증거는 [승인 후속 검수](approved-followups-2026-10-11.md)에 기록한다. **0.3.2 릴리스 빌드·NSIS 생성·모듈 17개와 네이티브 599개·NSIS 포함 목록 대조도 통과**했다. 새 산출물의 크기·해시와 실제 검수 범위는 위 승인 후속 검수에 기록했다. 설치·제거·새 앱 실행은 별도 검수다. 위 0.3.1 설치본 해시는 이전 버전의 역사이며 0.3.2 빌드 성공 증거로 사용하지 않는다.
+
 ## 남는 실기와 원작 기능
 
 실제 메시지 연결·예약 등록·발송, 실제 IP/DNS 전환, 설치·제거·업데이트, 비관리자·오프라인·저사양 PC 검수는 하지 않았다. 브라우저 검수의 OS 파일 선택·저장·메시징 SDK 응답은 모의했다. PDF 출력 픽셀 검사와 설치된 Excel 합성 변환은 실제 결과이며 이 두 범위와 구분한다.
 
 퀵캡처의 Windows 투명 창·전역 단축키·자동 저장·트레이·혼합 DPI·절전 복귀, 회의록의 한국어 IME 고속 입력·긴 회의·한글/Word 붙여넣기, 다른 Office 설치 환경의 변환·중단 복구는 실기 확인이 남아 있다. 초기 하니스의 내부 div CSS zoom은 제품의 WebView 전체 확대와 좌표 기준이 달랐다. 내부 CSS 확대를 제거한 제품과 같은 DOM에서는 시간표 마우스 선택·두 칸 복원이 성공했으므로 그 초기 선택 실패를 제품 결함으로 세지 않는다. 실제 네이티브 120% 확대·Windows DPI는 미검증이다.
 
-주간 격자·XLSX 가져오기 되돌리기·역할 일괄 완료를 추가했으나 원작의 모든 기능을 이식한 것은 아니다. 학교 자료의 자체 JSON·PNG 출력은 승인 대기, 사진 자동 등록·TimeAlert 전체 DB/사진/미편집 기록의 무손실 왕복·확장 모니터 학생 표시창·출결/수업/학생 기록은 후속 범위다. 사용자가 제외하거나 보류한 매크로·파일 검색·문항집·교과 시뮬레이터·서버 기반 알림/동기화/공간 예약은 이번 미완성 결함으로 세지 않는다.
+주간 격자·XLSX 가져오기 되돌리기·역할 일괄 완료를 추가했으나 원작의 모든 기능을 이식한 것은 아니다. 학교 자료의 자체 JSON·PNG 출력은 승인받아 0.3.2에 구현했다. 사진 자동 등록·TimeAlert 전체 DB/사진/미편집 기록의 무손실 왕복·확장 모니터 학생 표시창·출결/수업/학생 기록은 후속 범위다. 사용자가 제외하거나 보류한 매크로·파일 검색·문항집·교과 시뮬레이터·서버 기반 알림/동기화/공간 예약은 이번 미완성 결함으로 세지 않는다.
