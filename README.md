@@ -2,7 +2,7 @@
 
 선생님들이 자주 쓰는 작은 Windows 도구를 하나의 앱("덱")에 모아 두는 무료 오픈소스 프로젝트예요. 한 번 설치하면 업데이트로 새 도구가 계속 추가돼요.
 
-> **개발 초기 단계예요.** 타이머·회의록·지도일 배정·이미지 압축·명렬표 사진 추출·이미지 자르기·퀵캡처의 개발 버전이 있어요. 아직 정식 릴리스는 없어요.
+> **개발 초기 단계예요.** 파일·이미지·PDF·수업·Windows 연동 도구를 개발하고 있어요. 아직 정식 릴리스는 없어요. 확인된 동작과 남은 검수는 [개발 현황](docs/DEVELOPMENT_STATUS.md)을 보세요.
 
 ## 무엇을 하나요
 
@@ -12,7 +12,7 @@
 
 ## 약속
 
-**모든 처리는 PC 안에서 하고, 파일과 개인정보는 외부로 나가지 않아요.**
+**변환·분석은 PC 안에서 처리해요. 쿨메신저 예약 등록은 사용자가 확인한 수신자·내용·첨부를 로그인한 쿨메신저로 전달해요.** 다른 외부 전송이나 사용 통계 수집은 하지 않아요.
 
 - 사용 통계나 오류 보고를 자동으로 보내지 않아요.
 - 원본 파일을 마음대로 덮어쓰거나 지우지 않아요.
@@ -56,6 +56,8 @@ pnpm tauri dev       # 개발 실행 (기본 모듈을 번들한 뒤 실행해�
 pnpm tauri build     # NSIS 설치본: target/release/bundle/nsis/
 ```
 
+Windows 개발 실행과 빌드는 쿨 예약실의 승인된 Python 실행 환경을 앱 내부에 준비해요. 처음에는 공식 배포 파일을 내려받아 해시를 검사하고, 이후에는 캐시와 준비된 파일을 확인해 재사용해요. 전역 Python 설치는 필요 없어요. 완성된 설치본은 실행 환경을 함께 포함해요. 원작 코어·모듈 갱신 절차는 [쿨 예약실 안내](modules/coolreserve/README.md)에 있어요.
+
 새 도구를 만들 때는 `pnpm new:module <id>`로 시작해요. 자세한 절차는 [modules/AGENTS.md](modules/AGENTS.md)에 있어요.
 
 로컬 명령 실행과 준비물은 [로컬 개발 준비](docs/LOCAL_SETUP.md), 기존 프로그램을 모듈로 옮기는 절차는 [모듈 이식 안내](docs/MODULE_MIGRATION.md)를 보세요.
@@ -64,7 +66,14 @@ pnpm tauri build     # NSIS 설치본: target/release/bundle/nsis/
 
 개발 현황과 실제 검증 범위는 [개발 현황](docs/DEVELOPMENT_STATUS.md)에 정리했어요.
 
-현재 도구의 사용법과 지원 범위는 타이머, [회의록](modules/meeting-note/README.md), [지도일 배정](modules/duty-planner/README.md), [이미지 압축](modules/image-compress/README.md), [명렬표 사진 추출](modules/photo-extract/README.md), [이미지 자르기](modules/image-crop/README.md), [퀵캡처](modules/quick-capture/README.md)를 보세요. 파일 처리·공통 명부 연결의 다음 구현 범위는 [공통 기반 제안서](docs/proposals/module-foundations.md)에서 검토해요.
+도구별 사용법과 지원 범위예요.
+
+- 파일·문서: [파일명 작업기](modules/file-rename/README.md), [문서 변환](modules/office-convert/README.md), [PDF 압축](modules/pdf-compress/README.md), [PDF 개인정보 지우기](modules/pdf-mask/README.md)
+- 이미지: [이미지 압축](modules/image-compress/README.md), [명렬표 사진 추출](modules/photo-extract/README.md), [이미지 자르기](modules/image-crop/README.md), [퀵캡처](modules/quick-capture/README.md)
+- 수업·업무: [회의록](modules/meeting-note/README.md), [지도일 배정](modules/duty-planner/README.md), [발표자 뽑기](modules/presenter-picker/README.md), [모둠 편성](modules/group-planner/README.md), [자리 배치](modules/seat-planner/README.md), [역할·당번 배정](modules/role-planner/README.md)
+- Windows 연동: [네트워크 루틴](modules/network-routine/README.md), [쿨 예약실](modules/coolreserve/README.md)
+
+설정의 공통 학급 자료에서 명부·시간표를 관리하고 수업 도구에서 선택해 불러올 수 있어요. 공통 자료에 등록하지 않고 각 도구에 직접 명단을 넣어 작업해도 돼요. TimeAlert 전체 암호화 백업 가져오기는 아직 지원하지 않아요.
 
 최근 구현과 검증 결과, 남은 작업은 [개발 현황](docs/DEVELOPMENT_STATUS.md)에 정리했어요.
 
