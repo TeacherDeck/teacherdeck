@@ -2413,12 +2413,6 @@
   },
   {
     "name": "keyborg",
-    "version": "2.14.1",
-    "license": "MIT",
-    "source": "npm"
-  },
-  {
-    "name": "keyborg",
     "version": "3.498.0",
     "license": "MIT",
     "source": "npm"
