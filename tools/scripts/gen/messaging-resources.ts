@@ -5,15 +5,23 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { exists } from "../../checks/lib/files.ts";
 import { loadRuntimeApproval, loadSourceApproval, MESSAGING_SOURCE_LOCK } from "../../checks/lib/messaging-assets.ts";
-import type { GenOutput } from "./index.ts";
 
-/** Original notice bytes are committed so generation needs neither network nor Python. */
-export function generateMessagingResources(root: string): GenOutput[] {
-  const input = "tools/checks/coolreserve-notices.json";
-  if (!exists(root, input)) return [];
+export const MESSAGING_NOTICES_INPUT = "tools/checks/coolreserve-notices.json";
+
+export interface MessagingNotices {
+  components: { name: string; version: string; license: string }[];
+  files: { path: string; text: string }[];
+}
+
+/**
+ * Original notices of the managed CoolReserve runtime (ADR-0023). The bytes are committed so
+ * generation needs neither network nor Python, and each one must match the approved hash.
+ */
+export function collectMessagingNotices(root: string): MessagingNotices | null {
+  if (!exists(root, MESSAGING_NOTICES_INPUT)) return null;
   const approval = loadRuntimeApproval(root);
   const source = exists(root, MESSAGING_SOURCE_LOCK) ? loadSourceApproval(root) : null;
-  const notices = JSON.parse(fs.readFileSync(path.join(root, input), "utf8")) as {
+  const notices = JSON.parse(fs.readFileSync(path.join(root, MESSAGING_NOTICES_INPUT), "utf8")) as {
     files: { path: string; base64: string }[];
   };
   const expected = approval.files.filter((f) => /license|\/isapi\/README\.txt$/i.test(f.path));
@@ -30,27 +38,27 @@ export function generateMessagingResources(root: string): GenOutput[] {
       throw new Error("원래 라이선스 고지의 바이트가 달라요.");
     return { path: notice.path, text: bytes.toString("utf8") };
   });
-  return [
-    {
-      path: "apps/desktop/src/generated/messaging-notices.json",
-      content: `${JSON.stringify(
-        {
-          $comment: "SPDX-License-Identifier: GPL-3.0-only; 생성물: pnpm gen. 원래 고지의 라이선스는 각 전문을 따름.",
-          components: [
-            { name: "CPython", version: "3.14.8", license: "PSF-2.0 and original notices" },
-            { name: "pywinauto", version: "0.6.9", license: "BSD-3-Clause" },
-            { name: "comtypes", version: "1.4.17", license: "MIT" },
-            { name: "pywin32", version: "312", license: "PSF-2.0 and original notices" },
-            { name: "six", version: "1.17.0", license: "MIT" },
-            ...(source === null
-              ? []
-              : [{ name: "CoolReserve", version: source.revision.slice(0, 12), license: "MIT" }]),
-          ],
-          files: [...files, ...(source === null ? [] : [{ path: "CoolReserve/LICENSE", text: source.licenseText }])],
-        },
-        null,
-        2,
-      )}\n`,
-    },
-  ];
+  return {
+    components: [
+      { name: "CPython", version: "3.14.8", license: "PSF-2.0 and original notices" },
+      { name: "pywinauto", version: "0.6.9", license: "BSD-3-Clause" },
+      { name: "comtypes", version: "1.4.17", license: "MIT" },
+      { name: "pywin32", version: "312", license: "PSF-2.0 and original notices" },
+      { name: "six", version: "1.17.0", license: "MIT" },
+      ...(source === null ? [] : [{ name: "CoolReserve", version: source.revision.slice(0, 12), license: "MIT" }]),
+    ],
+    files: [...files, ...(source === null ? [] : [{ path: "CoolReserve/LICENSE", text: source.licenseText }])],
+  };
+}
+
+/** Which runtime component an original notice file belongs to. */
+export function messagingNoticeOwner(file: string): string {
+  if (file === "LICENSE.txt") return "CPython";
+  if (file.startsWith("CoolReserve/")) return "CoolReserve";
+  const site = /^Lib\/site-packages\/([^/]+)/.exec(file)?.[1] ?? "";
+  if (site.startsWith("comtypes")) return "comtypes";
+  if (site.startsWith("pywinauto")) return "pywinauto";
+  if (site.startsWith("six")) return "six";
+  if (/^(pywin32|pythonwin|win32|win32com)/.test(site)) return "pywin32";
+  throw new Error("실행 환경 고지의 구성 요소를 알 수 없어요.");
 }

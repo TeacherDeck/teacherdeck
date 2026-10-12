@@ -16,12 +16,13 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
+import { useEffect, useState } from "react";
 import { SettingsExpander, Subtitle, deckTokens } from "@deck/ui";
 import licenseText from "../../../../LICENSE?raw";
 import additionalTerms from "../../../../LICENSE-ADDITIONAL-TERMS?raw";
 import type { ModuleEntry } from "../generated/ModuleEntry.ts";
 import thirdParty from "../generated/third-party.json" with { type: "json" };
-import messagingNotices from "../generated/messaging-notices.json" with { type: "json" };
+import type { ModuleNotices, NoticeComponent, NoticeGroup } from "./moduleNotices.ts";
 
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: deckTokens.itemGap, padding: deckTokens.pagePadding },
@@ -33,6 +34,7 @@ const useStyles = makeStyles({
     borderRadius: deckTokens.cardRadius,
     backgroundColor: deckTokens.layer,
   },
+  notices: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalS },
   pre: {
     whiteSpace: "pre-wrap",
     fontFamily: tokens.fontFamilyMonospace,
@@ -68,6 +70,124 @@ export function moduleCredits(modules: ModuleEntry[]): ModuleCredit[] {
             authors: m.manifest.authors.map((a) => a.name),
           },
         ],
+  );
+}
+
+/** "427개 · MIT 210 · Apache-2.0 120 · 외 5종": component count and the most common licenses. */
+export function licenseSummary(components: readonly { license: string }[], top = 3): string {
+  const counts = new Map<string, number>();
+  for (const c of components) counts.set(c.license, (counts.get(c.license) ?? 0) + 1);
+  const ranked = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "en"));
+  const parts = ranked.slice(0, top).map(([license, n]) => `${license} ${n}`);
+  if (ranked.length > top) parts.push(`외 ${ranked.length - top}종`);
+  return [`${components.length}개`, ...parts].join(" · ");
+}
+
+function ComponentTable({
+  label,
+  components,
+}: {
+  label: string;
+  components: readonly { name: string; version: string; license: string; note?: string; source?: string }[];
+}) {
+  return (
+    <Table size="small" aria-label={label}>
+      <TableHeader>
+        <TableRow>
+          <TableHeaderCell>이름</TableHeaderCell>
+          <TableHeaderCell>버전</TableHeaderCell>
+          <TableHeaderCell>라이선스</TableHeaderCell>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {components.map((c) => (
+          <TableRow key={`${c.source ?? ""}:${c.name}@${c.version}`}>
+            <TableCell>
+              {c.name}
+              {c.note !== undefined && <Caption1> · {c.note}</Caption1>}
+            </TableCell>
+            <TableCell>{c.version}</TableCell>
+            <TableCell>{c.license}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+function OriginalNotices({ component, texts }: { component: NoticeComponent; texts: ModuleNotices["texts"] }) {
+  const s = useStyles();
+  return (
+    <SettingsExpander
+      header={`${component.name} ${component.version} 원문 고지`}
+      description={`${component.license} · 원문 ${component.texts.length}개`}
+    >
+      {component.texts.map((key) => {
+        const text = texts[key];
+        return text === undefined ? null : (
+          <div key={key} className={s.notices}>
+            <Caption1>{text.title}</Caption1>
+            <pre className={s.pre}>{text.text}</pre>
+          </div>
+        );
+      })}
+    </SettingsExpander>
+  );
+}
+
+function groupDescription(group: NoticeGroup, installed: string | undefined): string {
+  const basis =
+    group.version === null
+      ? ""
+      : installed !== undefined && installed !== group.version
+        ? ` · ${group.version} 기준 고지`
+        : "";
+  return `${licenseSummary(group.components)}${basis}`;
+}
+
+/** Per-tool notices (ADR-0030). Loaded only when the About screen opens. */
+function ToolNotices({ modules }: { modules: ModuleEntry[] }) {
+  const [notices, setNotices] = useState<ModuleNotices | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let live = true;
+    import("../generated/module-notices.json").then(
+      (m) => live && setNotices(m.default as ModuleNotices),
+      () => live && setFailed(true),
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (failed) return <Body1>도구별 라이선스를 불러오지 못했어요. 앱을 다시 열어 주세요.</Body1>;
+  if (notices === null) return <Caption1>도구별 라이선스를 불러오는 중이에요.</Caption1>;
+  const installed = new Map(
+    modules.flatMap((m) => (m.manifest === null ? [] : [[m.resolution.id, m.manifest.version]])),
+  );
+  const own = notices.groups.filter((g) => g.components.length > 0);
+  const commonOnly = notices.groups.filter((g) => g.components.length === 0);
+  return (
+    <>
+      {own.map((group) => (
+        <SettingsExpander
+          key={group.id}
+          header={group.name}
+          description={groupDescription(group, installed.get(group.id))}
+        >
+          {group.note !== undefined && <Caption1>{group.note}</Caption1>}
+          <ComponentTable label={`${group.name} 오픈소스 라이선스`} components={group.components} />
+          {group.shared > 0 && <Caption1>앱 공통의 화면 구성 요소 {group.shared}개도 함께 써요.</Caption1>}
+          {group.components
+            .filter((c) => c.texts.length > 0)
+            .map((c) => (
+              <OriginalNotices key={`${c.name}@${c.version}`} component={c} texts={notices.texts} />
+            ))}
+        </SettingsExpander>
+      ))}
+      {commonOnly.length > 0 && (
+        <Caption1>{commonOnly.map((g) => g.name).join(", ")}은 앱 공통 구성 요소만 써요.</Caption1>
+      )}
+    </>
   );
 }
 
@@ -114,38 +234,13 @@ export function About({ appVersion, modules }: AboutProps) {
       <SettingsExpander header="추가조항(제7조(b))" description="저자 표기 유지 조건">
         <pre className={s.pre}>{additionalTerms}</pre>
       </SettingsExpander>
-      <SettingsExpander header="오픈소스 라이선스" description={`이 앱에 포함된 구성 요소 ${thirdParty.length}개`}>
-        <Table size="small" aria-label="오픈소스 라이선스">
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>이름</TableHeaderCell>
-              <TableHeaderCell>버전</TableHeaderCell>
-              <TableHeaderCell>라이선스</TableHeaderCell>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {thirdParty.map((t) => (
-              <TableRow key={`${t.source}:${t.name}@${t.version}`}>
-                <TableCell>{t.name}</TableCell>
-                <TableCell>{t.version}</TableCell>
-                <TableCell>{t.license}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </SettingsExpander>
-      <SettingsExpander header="쿨 예약실 실행 환경 라이선스" description="Python과 동봉 라이브러리의 원래 고지 전문">
-        {messagingNotices.components.map((component) => (
-          <Body1 key={component.name}>
-            {component.name} {component.version} — {component.license}
-          </Body1>
-        ))}
-        {messagingNotices.files.map((notice) => (
-          <SettingsExpander key={notice.path} header={notice.path}>
-            <pre className={s.pre}>{notice.text}</pre>
-          </SettingsExpander>
-        ))}
-      </SettingsExpander>
+      <section className={s.notices} aria-label="오픈소스 라이선스">
+        <Subtitle2>오픈소스 라이선스</Subtitle2>
+        <SettingsExpander header="앱 공통" description={`셸·호스트 구성 요소 ${licenseSummary(thirdParty)}`}>
+          <ComponentTable label="앱 공통 오픈소스 라이선스" components={thirdParty} />
+        </SettingsExpander>
+        <ToolNotices modules={modules} />
+      </section>
     </div>
   );
 }
