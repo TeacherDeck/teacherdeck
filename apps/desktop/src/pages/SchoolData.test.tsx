@@ -2,7 +2,7 @@
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 // @vitest-environment jsdom
 import { webcrypto } from "node:crypto";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { DeckProvider } from "@deck/ui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SchoolData } from "./SchoolData.tsx";
@@ -50,6 +50,28 @@ async function focusRegisteredDialog(title: string, inputLabel?: string) {
   expect(document.activeElement).toBe(target);
   await within(dialog).findByRole("button", { name: "취소" });
   return dialog;
+}
+function timetableCell(name: string) {
+  // Locate one cell first, then retain the original role/name/visibility check.
+  // A document-wide role query computes names for every Fluent grid button.
+  const cell = screen.getByLabelText(name, { selector: "button" }).closest("td");
+  if (!cell) throw new Error("synthetic timetable cell missing");
+  return within(cell).getByRole("button", { name });
+}
+function timetableControl(role: "button" | "combobox", name: string) {
+  // Labels only locate the candidate; the role query still checks its accessible
+  // name and visibility through the original DOM, including hidden ancestors.
+  // A Dropdown portal shares the Field label via aria-labelledby. Follow the
+  // label's explicit control association so a lingering listbox is not a candidate.
+  const candidate =
+    role === "combobox"
+      ? (screen.getByText(name, { selector: "label" }) as HTMLLabelElement).control
+      : screen.getByText(name).closest("button");
+  const parent = candidate?.parentElement;
+  if (!parent) throw new Error("synthetic timetable control missing");
+  const control = within(parent).getByRole(role, { name });
+  expect(control).toBe(candidate);
+  return control;
 }
 async function importedWorkbook(kind: "roster" | "timetable" = "roster") {
   const api = host(),
@@ -221,10 +243,10 @@ describe("trusted school data screens", () => {
     expect(screen.getByRole("columnheader", { name: /^월/ }).getAttribute("data-day-tone")).toBe("neutral");
     fireEvent.click(screen.getByRole("combobox", { name: "시간표 선택" }));
     fireEvent.click(await screen.findByRole("option", { name: "복구된 합성 표" }));
-    expect((screen.getByRole("button", { name: "월요일 1교시: 합성공동" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((timetableCell("월요일 1교시: 합성공동") as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(screen.getByRole("combobox", { name: "칸에 넣을 수업" }));
     fireEvent.click(await screen.findByRole("option", { name: "합성공동 · 같은 이름 1" }));
-    fireEvent.click(screen.getByRole("button", { name: "화요일 2교시: 빈 칸" }));
+    fireEvent.click(timetableCell("화요일 2교시: 빈 칸"));
     fireEvent.click(screen.getByRole("button", { name: "시간표 저장" }));
     await waitFor(() => expect(api.save).toHaveBeenCalledOnce());
     expect(vi.mocked(api.save).mock.calls[0]?.[0].document.timetable.weeklyTables[0]?.entries).toEqual([
@@ -272,20 +294,20 @@ describe("trusted school data screens", () => {
     fireEvent.click(await screen.findByRole("button", { name: "일과표·시간표" }));
     fireEvent.click(screen.getByRole("combobox", { name: "칸에 넣을 수업" }));
     fireEvent.click(await screen.findByRole("option", { name: "1학년 1반" }));
-    fireEvent.click(screen.getByRole("button", { name: "월요일 1교시: 빈 칸" }));
+    fireEvent.click(timetableCell("월요일 1교시: 빈 칸"));
     fireEvent.click(screen.getByRole("combobox", { name: "시간표 선택" }));
     fireEvent.click(await screen.findByRole("option", { name: "다른 합성 표" }));
-    expect(screen.getByRole("button", { name: "금요일 3교시: 1학년 1반" })).toBeTruthy();
+    expect(timetableCell("금요일 3교시: 1학년 1반")).toBeTruthy();
     fireEvent.click(screen.getByRole("combobox", { name: "시간표 선택" }));
     fireEvent.click(await screen.findByRole("option", { name: "새 시간표" }));
-    expect(screen.getByRole("button", { name: "월요일 1교시: 1학년 1반" })).toBeTruthy();
+    expect(timetableCell("월요일 1교시: 1학년 1반")).toBeTruthy();
     fireEvent.click(screen.getByRole("combobox", { name: "현재 학기" }));
     fireEvent.click(await screen.findByRole("option", { name: "2026학년도 2학기" }));
-    expect(screen.getByRole("button", { name: "월요일 1교시: 빈 칸" })).toBeTruthy();
+    expect(timetableCell("월요일 1교시: 빈 칸")).toBeTruthy();
     expect((screen.getByRole("button", { name: "시간표 저장" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("combobox", { name: "현재 학기" }));
     fireEvent.click(await screen.findByRole("option", { name: "2026학년도 1학기" }));
-    expect(screen.getByRole("button", { name: "월요일 1교시: 1학년 1반" })).toBeTruthy();
+    expect(timetableCell("월요일 1교시: 1학년 1반")).toBeTruthy();
     let finish: (() => void) | undefined;
     vi.mocked(api.save).mockImplementationOnce(
       (args) =>
@@ -338,10 +360,10 @@ describe("trusted school data screens", () => {
     fireEvent.click(await screen.findByRole("button", { name: "일과표·시간표" }));
     fireEvent.click(screen.getByRole("combobox", { name: "시간표 선택" }));
     fireEvent.click(await screen.findByRole("option", { name: "합성 시간표" }));
-    expect(screen.getByRole("button", { name: "월요일 1교시: 합성과학, 심화" })).toBeTruthy();
+    expect(timetableCell("월요일 1교시: 합성과학, 심화")).toBeTruthy();
     fireEvent.click(screen.getByRole("combobox", { name: "칸에 넣을 수업" }));
     fireEvent.click(await screen.findByRole("option", { name: context.label }));
-    fireEvent.click(screen.getByRole("button", { name: "화요일 2교시: 빈 칸" }));
+    fireEvent.click(timetableCell("화요일 2교시: 빈 칸"));
     fireEvent.click(screen.getByRole("button", { name: "시간표 저장" }));
     await waitFor(() => expect(api.save).toHaveBeenCalledOnce());
     expect(vi.mocked(api.save).mock.calls[0]?.[0].document.timetable.weeklyTables[0]?.entries).toEqual([
@@ -364,32 +386,38 @@ describe("trusted school data screens", () => {
     let serial = 0;
     const d = appendRoster(seed, "sem", "1,1,1,합성가", () => `id${++serial}`);
     vi.mocked(api.load).mockResolvedValue(d);
-    render(
-      <DeckProvider>
-        <SchoolData host={api} />
-      </DeckProvider>,
-    );
+    await act(async () => {
+      render(
+        <DeckProvider>
+          <SchoolData host={api} />
+        </DeckProvider>,
+      );
+    });
     fireEvent.click(await screen.findByRole("button", { name: "일과표·시간표" }));
-    fireEvent.click(screen.getByRole("combobox", { name: "칸에 넣을 수업" }));
+    fireEvent.click(timetableControl("combobox", "칸에 넣을 수업"));
     fireEvent.click(await screen.findByRole("option", { name: "1학년 1반" }));
-    fireEvent.click(screen.getByRole("button", { name: "월요일 1교시: 빈 칸" }));
-    fireEvent.click(screen.getByRole("button", { name: "화요일 2교시: 빈 칸" }));
+    fireEvent.click(timetableCell("월요일 1교시: 빈 칸"));
+    fireEvent.click(timetableCell("화요일 2교시: 빈 칸"));
     expect(api.save).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "월요일 1교시: 1학년 1반" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "텍스트로 붙여넣기·수정" }));
+    expect(timetableCell("월요일 1교시: 1학년 1반")).toBeTruthy();
+    fireEvent.click(timetableControl("button", "텍스트로 붙여넣기·수정"));
     const input = screen.getByLabelText("주간 수업 입력");
     fireEvent.change(input, { target: { value: "금,3,1학년 1반" } });
-    expect(screen.getByRole("button", { name: "금요일 3교시: 1학년 1반" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "월요일 1교시: 빈 칸" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "시간표 저장" }));
+    expect(timetableCell("금요일 3교시: 1학년 1반")).toBeTruthy();
+    expect(timetableCell("월요일 1교시: 빈 칸")).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(timetableControl("button", "시간표 저장"));
+    });
     await screen.findByText("주간 시간표를 저장했어요.");
     expect(vi.mocked(api.save).mock.calls[0]?.[0].document.timetable.weeklyTables[0]?.entries).toEqual([
       { weekday: 5, period: 3, contextId: d.contexts[0]?.id },
     ]);
-    fireEvent.click(screen.getByRole("combobox", { name: "칸에 넣을 수업" }));
+    fireEvent.click(timetableControl("combobox", "칸에 넣을 수업"));
     fireEvent.click(await screen.findByRole("option", { name: "칸 비우기" }));
-    fireEvent.click(screen.getByRole("button", { name: "금요일 3교시: 1학년 1반" }));
-    fireEvent.click(screen.getByRole("button", { name: "시간표 저장" }));
+    fireEvent.click(timetableCell("금요일 3교시: 1학년 1반"));
+    await act(async () => {
+      fireEvent.click(timetableControl("button", "시간표 저장"));
+    });
     await waitFor(() => expect(api.save).toHaveBeenCalledTimes(2));
     expect(vi.mocked(api.save).mock.calls[1]?.[0].document.timetable.weeklyTables).toHaveLength(1);
     expect(vi.mocked(api.save).mock.calls[1]?.[0].document.timetable.weeklyTables[0]?.entries).toEqual([]);
@@ -592,7 +620,7 @@ describe("trusted school JSON and PNG outputs", () => {
     fireEvent.click(await screen.findByRole("button", { name: "일과표·시간표" }));
     fireEvent.click(screen.getByRole("combobox", { name: "칸에 넣을 수업" }));
     fireEvent.click(await screen.findByRole("option", { name: "1학년 1반" }));
-    fireEvent.click(screen.getByRole("button", { name: "일요일 2교시: 빈 칸" }));
+    fireEvent.click(timetableCell("일요일 2교시: 빈 칸"));
     fireEvent.change(screen.getByLabelText("시간표 이름"), { target: { value: "미저장 합성표" } });
     fireEvent.click(screen.getByRole("button", { name: "현재 화면 시간표 PNG 저장" }));
     await waitFor(() => expect(api.exportTimetableImage).toHaveBeenCalledWith({ pngBase64: "synthetic-base64" }));
