@@ -63,6 +63,8 @@ pnpm tauri build     # NSIS 설치본: target/release/bundle/nsis/
 
 Windows 전체 검증·개발 실행·빌드는 쿨 예약실의 승인된 Python 실행 환경을 앱 내부에 준비해요. 처음에는 공식 배포 파일을 내려받아 해시를 검사하고, 이후에는 캐시와 준비된 파일을 확인해 재사용해요. `pnpm verify`도 Rust 빌드 전에 이 단계를 실행하므로 새 체크아웃에 앱 실행 이력이 없어도 검증할 수 있어요. 전역 Python 설치는 필요 없어요. 완성된 설치본은 실행 환경을 함께 포함해요. 원작 코어·모듈 갱신 절차는 [쿨 예약실 안내](modules/coolreserve/README.md)에 있어요.
 
+CoolReserve 원작의 커밋된 소스를 가져오는 명령과 파일 잠금 후 재시도 방법은 [원작 동기화·복구 안내](docs/development-coolreserve-sync.md)를 보세요.
+
 한글 변환용 제한 보안 모듈도 저장소 소스로 빌드해 동봉해요. 이때 고정 Rust 도구체인의 `i686-pc-windows-msvc` 대상이 필요하며 준비 스크립트가 설치 여부를 확인해요. 한글에 작업용 보안 모듈을 등록하지 못하면 변환을 중단하고 직접 변환을 안내해요. 0.5.1에서 이 PC의 한글 2024로 실제 HWP→HWPX 저장·재열기·원본 보존을 확인했어요. 확인한 문서 범위와 남은 제한은 [변환 검수](docs/reviews/hancom-conversion-2026-10-11.md)에 있어요.
 
 새 도구를 만들 때는 `pnpm new:module <id>`로 시작해요. 자세한 절차는 [modules/AGENTS.md](modules/AGENTS.md)에 있어요.
