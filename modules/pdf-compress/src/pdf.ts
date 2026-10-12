@@ -10,12 +10,13 @@ import {
 } from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { MAX_BYTES, MAX_PAGES, MAX_PIXELS, type PageInfo, type Rect, type TextBox } from "./pdf-geometry.ts";
-import { checkSourceImages } from "./source-check.ts";
+import { checkSourceImagesInWorker } from "./source-check-client.ts";
 GlobalWorkerOptions.workerSrc = workerUrl;
 export async function openPdf(bytes: Uint8Array, signal: AbortSignal, maxBytes = MAX_BYTES): Promise<PDFDocumentProxy> {
+  if (signal.aborted) throw new Error("CANCELLED");
   if (bytes.length > maxBytes || !new TextDecoder().decode(bytes.subarray(0, 1024)).includes("%PDF-"))
     throw new Error("INVALID_PDF");
-  await checkSourceImages(bytes, MAX_PIXELS);
+  await checkSourceImagesInWorker(bytes, MAX_PIXELS, signal);
   if (signal.aborted) throw new Error("CANCELLED");
   const base = new URL("./pdf-assets/", document.baseURI).href;
   const loading = getDocument({

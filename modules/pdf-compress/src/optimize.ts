@@ -27,6 +27,21 @@ export async function optimize(
   const doc = await PDFDocument.load(bytes, { updateMetadata: false, throwOnInvalidObject: true });
   if (doc.getPageCount() > MAX_PAGES) throw new Error("TOO_MANY_PAGES");
   const objects = doc.context.enumerateIndirectObjects();
+  // pdf-lib's fallback stream parser can stop at an embedded "endstream" when
+  // /Length is indirect. Check the original declarations immediately after load:
+  // serializing a stream (including toString/sizeInBytes) replaces /Length and
+  // would hide that truncation. Unresolved or inconsistent streams stay original.
+  for (const [, object] of objects) {
+    if (!(object instanceof PDFRawStream)) continue;
+    const length = object.dict.lookup(PDFName.of("Length"));
+    if (
+      !(length instanceof PDFNumber) ||
+      !Number.isSafeInteger(length.asNumber()) ||
+      length.asNumber() < 0 ||
+      length.asNumber() !== object.getContents().length
+    )
+      return bytes;
+  }
   // Rewriting a signed PDF invalidates the signature. Keep it byte-for-byte instead.
   if (objects.some(([, object]) => containsSignature(object))) return bytes;
   const images = objects.filter(
