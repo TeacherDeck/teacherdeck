@@ -8,7 +8,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadLedger } from "./ledger.ts";
 import { ACTIVE_LEDGER } from "./ledger.ts";
-import { encodeBackup } from "./history.ts";
+import { encodeBackup, performanceCounts } from "./history.ts";
 import { App } from "./App.tsx";
 import { plan, type PlanInput, type PlanResult } from "./planner.ts";
 import { STATE_KEY, initialState } from "./state.ts";
@@ -36,22 +36,24 @@ it("keeps the basic workflow, adds two exam rooms, assigns and atomically saves 
   state.input.excluded = [1, 2];
   state.assignments = { "7": ["A"] };
   state.actual = { "7": ["A"] };
-  const { deck } = await open(state);
+  const { deck } = await open(state, false);
   expect(screen.queryByRole("button", { name: "세부 배정" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "세부 편성 · 시험감독·야자·다른 업무" }));
+  fireEvent.click(screen.getByLabelText("세부 편성 · 시험감독·야자·다른 업무", { selector: "button" }));
   const editor = within(screen.getByRole("group", { name: "세부 편성 · 시험감독·야자·다른 업무" }));
   fireEvent.click(editor.getByRole("button", { name: "시간대 추가" }));
-  const dayInput = editor.getByRole("spinbutton", { name: "세부 업무 날짜" });
+  const dayInput = editor.getByLabelText("세부 업무 날짜", { selector: "input" });
   fireEvent.change(dayInput, { target: { value: "6" } });
   fireEvent.blur(dayInput);
-  fireEvent.change(editor.getByRole("textbox", { name: "시험실·장소" }), { target: { value: "합성실1\n합성실2" } });
+  fireEvent.change(editor.getByLabelText("시험실·장소", { selector: "textarea" }), {
+    target: { value: "합성실1\n합성실2" },
+  });
   fireEvent.click(editor.getByRole("button", { name: "업무 추가" }));
-  fireEvent.click(editor.getByRole("combobox", { name: "세부 조건을 바꿀 교사" }));
-  fireEvent.click(await screen.findByRole("option", { name: "합성교사B" }));
-  fireEvent.click(editor.getByRole("checkbox", { name: "이 업무에 고정" }));
+  fireEvent.click(editor.getByLabelText("세부 조건을 바꿀 교사", { selector: "[role=combobox]" }));
+  fireEvent.click(within(await screen.findByRole("listbox")).getByRole("option", { name: "합성교사B" }));
+  fireEvent.click(editor.getByLabelText("이 업무에 고정", { selector: "input" }));
   fireEvent.click(editor.getByRole("button", { name: "세부 배정" }));
   await editor.findByText("조건을 지켜 세부 업무를 배정했어요. 실제 수행 기록은 바뀌지 않아요.");
-  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  fireEvent.click(within(screen.getByRole("region", { name: "이번 달 배정" })).getByRole("button", { name: "저장" }));
   await screen.findByText("이 PC에 명단·조건·배정표를 저장했어요.");
   const saved = required(await loadLedger(deck)).current;
   expect(saved.assignments).toEqual(state.assignments);
@@ -150,7 +152,7 @@ async function open(saved: unknown = null, expandRoster = true) {
     </DeckProvider>,
   );
   await screen.findByRole("heading", { name: "지도일배정기" });
-  const rosterToggle = screen.getByRole("button", { name: "명단 준비" });
+  const rosterToggle = screen.getByLabelText("명단 준비", { selector: "button" });
   if (expandRoster && rosterToggle.getAttribute("aria-expanded") === "false") fireEvent.click(rosterToggle);
   return {
     deck,
@@ -175,7 +177,7 @@ async function openRestoreConfirmation() {
 async function previewBackup(text: string) {
   fireEvent.click(screen.getByText("월 마감 · 백업 · 내보내기"));
   fireEvent.click(screen.getByText("JSON 백업 복원"));
-  fireEvent.change(screen.getByRole("textbox", { name: "복원할 JSON" }), { target: { value: text } });
+  fireEvent.change(screen.getByLabelText("복원할 JSON", { selector: "textarea" }), { target: { value: text } });
   return openRestoreConfirmation();
 }
 it("cancels a replacement preview without changing the current roster or stored records", async () => {
@@ -513,4 +515,110 @@ it("restores a prepared roster with calendar editing visible and compact monthly
   fireEvent.click(screen.getByRole("button", { name: "명단 준비" }));
   expect(screen.getByRole("textbox", { name: "교사 이름" })).toBeTruthy();
   deck.dispose();
+});
+
+async function chooseActual(slot: number, name: string) {
+  const trigger = screen.getByLabelText(`${slot}번째 실제 수행자`, { selector: "button[role=combobox]" });
+  expect(trigger.getAttribute("role")).toBe("combobox");
+  fireEvent.click(trigger);
+  fireEvent.click(within(await screen.findByRole("listbox")).getByRole("option", { name }));
+}
+function actualFixture() {
+  const state = initialState(new Date(2026, 9, 1));
+  state.input.perDay = 2;
+  state.input.teachers = ["A", "B", "C"].map((id) => ({
+    id,
+    name: `합성교사${id}`,
+    past: 0,
+    fixed: [],
+    excluded: [],
+    weekdays: [],
+  }));
+  return state;
+}
+it("preserves actual editor holes, rejects duplicates and saves every performer after out-of-order edits", async () => {
+  const f = await open(actualFixture(), false);
+  const save = within(screen.getByRole("region", { name: "이번 달 배정" })).getByRole("button", { name: "저장" });
+  fireEvent.click(screen.getByLabelText("수행자 수정 · 월 수행 기록", { selector: "button" }));
+  await chooseActual(2, "합성교사B");
+  expect(screen.getByLabelText("1번째 실제 수행자", { selector: "[role=combobox]" }).textContent).toBe(
+    "교사를 선택해 주세요",
+  );
+  await chooseActual(1, "합성교사B");
+  await screen.findByText("실제 수행자는 서로 다르게 선택해 주세요.");
+  await chooseActual(1, "합성교사A");
+  await chooseActual(1, "교사를 선택해 주세요");
+  expect(screen.getByLabelText("2번째 실제 수행자", { selector: "[role=combobox]" }).textContent).toBe("합성교사B");
+  fireEvent.click(save);
+  await screen.findByText("이 PC에 명단·조건·배정표를 저장했어요.");
+  expect(required(await loadLedger(f.deck)).current.actual?.["1"]).toEqual(["B"]);
+  await chooseActual(1, "합성교사C");
+  fireEvent.click(save);
+  await screen.findByText("이 PC에 명단·조건·배정표를 저장했어요.");
+  const saved = required(await loadLedger(f.deck)).current;
+  expect(saved.actual?.["1"]).toEqual(["C", "B"]);
+  expect(performanceCounts(saved)).toMatchObject({ C: 1, B: 1 });
+  f.deck.dispose();
+});
+it("retains actual slot drafts across dates, months, failed saving and month closure", async () => {
+  const f = await open(actualFixture(), false);
+  const save = within(screen.getByRole("region", { name: "이번 달 배정" })).getByRole("button", { name: "저장" });
+  fireEvent.click(screen.getByLabelText("수행자 수정 · 월 수행 기록", { selector: "button" }));
+  await chooseActual(2, "합성교사B");
+  fireEvent.click(screen.getByLabelText("6일 배정 편집", { selector: "button" }));
+  fireEvent.click(screen.getByLabelText("1일 배정 편집", { selector: "button" }));
+  expect(screen.getByLabelText("2번째 실제 수행자", { selector: "[role=combobox]" }).textContent).toBe("합성교사B");
+  const month = screen.getByLabelText("월", { selector: "input" });
+  fireEvent.change(month, { target: { value: "11" } });
+  fireEvent.blur(month);
+  fireEvent.change(month, { target: { value: "10" } });
+  fireEvent.blur(month);
+  expect(screen.getByLabelText("2번째 실제 수행자", { selector: "[role=combobox]" }).textContent).toBe("합성교사B");
+  f.fail(ACTIVE_LEDGER);
+  fireEvent.click(save);
+  await screen.findByText("저장하지 못했어요. 다시 저장해 주세요.");
+  expect(screen.getByLabelText("2번째 실제 수행자", { selector: "[role=combobox]" }).textContent).toBe("합성교사B");
+  await chooseActual(1, "합성교사A");
+  f.fail("");
+  fireEvent.click(screen.getByLabelText("월 마감 · 백업 · 내보내기", { selector: "button" }));
+  fireEvent.click(
+    within(screen.getByRole("group", { name: "월 마감 · 백업 · 내보내기" })).getByRole("button", { name: "월 마감" }),
+  );
+  await screen.findByText("실제 수행 횟수로 월을 마감했어요.");
+  const saved = required(await loadLedger(f.deck)).current;
+  expect(saved.actual?.["1"]).toEqual(["A", "B"]);
+  expect(saved.closed).toBe(true);
+  expect(performanceCounts(saved)).toMatchObject({ A: 1, B: 1 });
+  f.deck.dispose();
+});
+it("replaces stale actual slot drafts when recording assignments or restoring a backup", async () => {
+  const state = actualFixture();
+  state.assignments = { "6": ["A", "C"] };
+  const f = await open(state, false);
+  const save = within(screen.getByRole("region", { name: "이번 달 배정" })).getByRole("button", { name: "저장" });
+  fireEvent.click(screen.getByLabelText("6일 배정 편집", { selector: "button" }));
+  fireEvent.click(screen.getByLabelText("수행자 수정 · 월 수행 기록", { selector: "button" }));
+  await chooseActual(2, "합성교사B");
+  fireEvent.click(
+    within(screen.getByRole("region", { name: "날짜별 직접 배정" })).getByRole("button", {
+      name: "이 날짜 배정대로 수행 기록",
+    }),
+  );
+  expect(screen.getByLabelText("1번째 실제 수행자", { selector: "[role=combobox]" }).textContent).toBe("합성교사A");
+  expect(screen.getByLabelText("2번째 실제 수행자", { selector: "[role=combobox]" }).textContent).toBe("합성교사C");
+  const restored = actualFixture();
+  restored.actual = { "6": ["B"] };
+  const dialog = await previewBackup(encodeBackup({ "2026-10": restored }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "확인하고 복원" }));
+  await screen.findByText("백업을 화면에 복원했어요. 내용을 확인하고 저장해 주세요.");
+  await waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  expect(screen.getByLabelText("1번째 실제 수행자", { selector: "[role=combobox]" }).textContent).toBe("합성교사B");
+  expect(screen.getByLabelText("2번째 실제 수행자", { selector: "[role=combobox]" }).textContent).toBe(
+    "교사를 선택해 주세요",
+  );
+  await chooseActual(2, "합성교사A");
+  fireEvent.click(save);
+  await screen.findByText("이 PC에 명단·조건·배정표를 저장했어요.");
+  expect(required(await loadLedger(f.deck)).current.actual?.["6"]).toEqual(["B", "A"]);
+  f.deck.dispose();
 });

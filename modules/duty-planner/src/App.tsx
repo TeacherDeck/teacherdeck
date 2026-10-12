@@ -138,9 +138,16 @@ export function App({ deck }: { deck: Deck }) {
   const composingName = useRef(false);
   const workerRef = useRef<Worker | null>(null);
   const saving = useRef(false);
+  // Stored actual performers are a compact set; editor slots retain empty positions.
+  // A different source array (recording/restoring a month) invalidates its old draft.
+  const actualEditors = useRef(new Map<string, { source: string[] | undefined; slots: string[] }>());
   const cumulative = cumulativeInput(state, months);
   const input = { ...state.input, holidays: HOLIDAYS };
   const daySlots = slotsForDay(input, Number(selectedDay));
+  const actualKey = `${monthKey(state)}:${selectedDay}`;
+  const actualSource = state.actual?.[selectedDay];
+  const actualEditor = actualEditors.current.get(actualKey);
+  const actualSlots = actualEditor && actualEditor.source === actualSource ? actualEditor.slots : (actualSource ?? []);
   const days = calendar(input);
   const teacher = state.input.teachers.find((t) => t.id === teacherId);
   const currentDay = days.find((d) => String(d.day) === selectedDay);
@@ -543,23 +550,25 @@ export function App({ deck }: { deck: Deck }) {
         >
           오늘까지 배정대로 수행 기록
         </Button>
-        {Array.from({ length: daySlots }, (_, i) => (
+        {Array.from({ length: Math.max(daySlots, actualSlots.length) }, (_, i) => (
           <ComboBox
             key={`actual-${i}`}
             header={`${i + 1}번째 실제 수행자`}
-            value={state.actual?.[selectedDay]?.[i] ?? ""}
+            value={actualSlots[i] ?? ""}
             options={teacherOptions}
             disabled={busy || !!state.closed || !currentDay}
             onChange={(id) => {
               if (!currentDay) return;
-              const next = Array.from({ length: daySlots }, (_, n) =>
-                n === i ? id : (state.actual?.[selectedDay]?.[n] ?? ""),
+              const next = Array.from({ length: Math.max(daySlots, actualSlots.length) }, (_, n) =>
+                n === i ? id : (actualSlots[n] ?? ""),
               );
               if (id && next.filter((x) => x === id).length > 1) {
                 setMessage("실제 수행자는 서로 다르게 선택해 주세요.");
                 return;
               }
-              setState((prev) => ({ ...prev, actual: { ...prev.actual, [selectedDay]: next.filter(Boolean) } }));
+              const performers = next.filter(Boolean);
+              actualEditors.current.set(actualKey, { source: performers, slots: next });
+              setState((prev) => ({ ...prev, actual: { ...prev.actual, [selectedDay]: performers } }));
             }}
           />
         ))}
