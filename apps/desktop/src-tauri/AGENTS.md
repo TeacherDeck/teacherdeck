@@ -30,6 +30,8 @@
 
 셸 제목 표시줄의 로컬 `main` 창 권한 범위는 [ADR-0015](../../../docs/adr/0015-shell-window-controls.md)를 따른다(SEC-003). 모듈의 창 조작은 기존 캡을 거친다.
 
+편집 문서 수명은 [ADR-0030](../../../docs/adr/0030-unsaved-document-lifecycle.md)과 [문서 보호 계약](../../../docs/spec/document-lifecycle.md)을 따른다(CAP-002·008). `document_host.rs`가 내용 없는 소유 문서 등록과 네이티브 종료 경계를 중재한다.
+
 ## 파일 지도
 
 | 위치                                                             | 내용                                                                                                      |

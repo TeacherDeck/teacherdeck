@@ -466,6 +466,21 @@
       "methods": [
         {
           "long": false,
+          "name": "registerDocument",
+          "summary": "편집 문서의 수명 보호 등록"
+        },
+        {
+          "long": false,
+          "name": "setDocumentState",
+          "summary": "미저장·저장 중 상태 등록"
+        },
+        {
+          "long": false,
+          "name": "completeDocumentSave",
+          "summary": "셸이 요청한 작업 저장 결과"
+        },
+        {
+          "long": false,
           "name": "listDisplays",
           "summary": "학생 화면을 표시할 모니터 목록"
         },
@@ -497,7 +512,7 @@
       ],
       "name": "window",
       "summary": "창 상태(모듈이 숨겨지면 원래대로 복원)",
-      "version": "1.1.0"
+      "version": "1.2.0"
     }
   ]
 }

@@ -4,7 +4,7 @@
 // Shell-level handshake: opening a tool from the deck must answer its `hello` with `init`
 // (BRG-003). Without init the module shows "도구를 시작하지 못했어요" after its timeout. Kept-alive
 // tools must keep their iframe window: a moved iframe reloads as a window the bridge never saw.
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PROTOCOL_VERSION } from "@deck/sdk";
@@ -61,6 +61,9 @@ vi.mock("./host.ts", () => ({
     moduleGranted: vi.fn(() => Promise.resolve([])),
     moduleVisibility: vi.fn(() => Promise.resolve()),
     moduleUnloaded: vi.fn(() => Promise.resolve()),
+    modulesUnloaded: vi.fn(() => Promise.resolve()),
+    documentAction: vi.fn(() => Promise.resolve({ state: null, requestId: null, saved: null })),
+    onDocumentExit: vi.fn(noop),
     hostInvoke: vi.fn(() => Promise.resolve(null)),
     checkUpdate: vi.fn(),
     installUpdate: vi.fn(),
@@ -85,7 +88,10 @@ vi.mock("./host.ts", () => ({
 const { App } = await import("./App.tsx");
 const { host } = await import("./host.ts");
 
-beforeEach(() => window.localStorage.setItem("deck.shell.motion", "off"));
+beforeEach(() => {
+  window.localStorage.setItem("deck.shell.motion", "off");
+  vi.mocked(host.documentAction).mockReset().mockResolvedValue({ state: null, requestId: null, saved: null });
+});
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
@@ -102,6 +108,18 @@ async function openTool() {
   const win = frame.contentWindow;
   if (win === null) throw new Error("iframe window missing");
   return win;
+}
+
+async function documentDialog() {
+  const dialog = await screen.findByRole("dialog", { name: "작업을 저장할까요?" });
+  // Match the common ContentDialog fixture: jsdom needs Tabster registration
+  // and explicit action focus before modal buttons become accessible.
+  await waitFor(() => expect(dialog.querySelector("[data-tabster-dummy]")).toBeTruthy());
+  const action = dialog.querySelector("button");
+  if (action === null) throw new Error("document dialog action missing");
+  action.focus();
+  await waitFor(() => expect(within(dialog).getByRole("button", { name: "취소" })).toBeTruthy());
+  return dialog;
 }
 
 function hello(win: Window, id = "sample-timer") {
@@ -121,6 +139,7 @@ async function open(name: string) {
   if (back !== null && screen.queryByRole("navigation", { name: "메뉴" }) === null) fireEvent.click(back);
   fireEvent.click(await screen.findByRole("button", { name: `${name} 열기` }));
   await screen.findByTitle(name);
+  await waitFor(() => expect(screen.getByTitle(name).getAttribute("aria-hidden")).toBe("false"));
 }
 
 describe("tool handshake", () => {
@@ -266,4 +285,79 @@ it("serializes foreground IPC updates across rapid navigation", async () => {
   await act(async () => releaseFirst([]));
   await waitFor(() => expect(vi.mocked(host.moduleActivated).mock.calls.at(-1)?.[0]).toBe("sample-notes"));
   expect(vi.mocked(host.moduleActivated).mock.calls.map(([id]) => id)).toEqual(["sample-clock", null, "sample-notes"]);
+});
+
+it("keeps an unsaved iframe and restores browser history when leaving is cancelled", async () => {
+  const win = await openTool();
+  vi.mocked(host.moduleUnloaded).mockClear();
+  vi.mocked(host.modulesUnloaded).mockClear();
+  vi.mocked(host.documentAction).mockImplementation(async (_owner, action) => ({
+    state: { documentHandle: "synthetic-document", dirty: true, saving: false },
+    requestId: action.kind === "prepare" ? "synthetic-leave" : null,
+    saved: null,
+  }));
+  fireEvent.click(screen.getByRole("button", { name: "뒤로" }));
+  const dialog = await documentDialog();
+  expect(frameWindow("합성 타이머")).toBe(win);
+  expect(screen.getByTitle("합성 타이머").closest("[inert]")).not.toBeNull();
+  fireEvent.click(within(dialog).getByRole("button", { name: "취소" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(screen.getByTitle("합성 타이머").closest("[inert]")).toBeNull());
+  await waitFor(() => expect(window.history.state).toEqual({ page: { kind: "module", id: "sample-timer" }, index: 1 }));
+  expect(frameWindow("합성 타이머")).toBe(win);
+  expect(host.moduleUnloaded).not.toHaveBeenCalled();
+  expect(host.modulesUnloaded).not.toHaveBeenCalled();
+});
+
+it("native exit cancellation resolves the host token without closing or unloading", async () => {
+  await openTool();
+  vi.mocked(host.moduleUnloaded).mockClear();
+  vi.mocked(host.modulesUnloaded).mockClear();
+  vi.mocked(host.documentAction).mockImplementation(async (_owner, action) => ({
+    state: { documentHandle: "synthetic-document", dirty: true, saving: false },
+    requestId: action.kind === "prepare" ? "synthetic-leave" : null,
+    saved: null,
+  }));
+  const deliver = vi.mocked(host.onDocumentExit).mock.calls.at(-1)?.[0];
+  if (deliver === undefined) throw new Error("native exit subscription missing");
+  act(() => deliver({ requestId: "synthetic-exit", action: "exit" }));
+  const dialog = await documentDialog();
+  fireEvent.click(within(dialog).getByRole("button", { name: "취소" }));
+  await waitFor(() =>
+    expect(host.documentAction).toHaveBeenCalledWith("", {
+      kind: "resolveExit",
+      requestId: "synthetic-exit",
+      proceed: false,
+    }),
+  );
+  expect(host.moduleUnloaded).not.toHaveBeenCalled();
+  expect(host.modulesUnloaded).not.toHaveBeenCalled();
+});
+
+it("blocks another edit after discard confirmation until host cleanup finishes", async () => {
+  await openTool();
+  let finishUnload!: () => void;
+  vi.mocked(host.moduleUnloaded).mockImplementationOnce(
+    () =>
+      new Promise<undefined>((resolve) => {
+        finishUnload = () => resolve(undefined);
+      }),
+  );
+  vi.mocked(host.documentAction).mockImplementation(async (_owner, action) =>
+    action.kind === "prepare"
+      ? {
+          state: { documentHandle: "synthetic-document", dirty: true, saving: false },
+          requestId: "synthetic-leave",
+          saved: null,
+        }
+      : { state: null, requestId: null, saved: null },
+  );
+  fireEvent.click(screen.getByRole("button", { name: "뒤로" }));
+  const dialog = await documentDialog();
+  fireEvent.click(within(dialog).getByRole("button", { name: "버리기" }));
+  await waitFor(() => expect(finishUnload).toBeTypeOf("function"));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.getByTitle("합성 타이머").closest("[inert]")).not.toBeNull();
+  await act(async () => finishUnload());
+  await waitFor(() => expect(screen.queryByTitle("합성 타이머")).toBeNull());
 });

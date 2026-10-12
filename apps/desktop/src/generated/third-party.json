@@ -2484,6 +2484,12 @@
     "source": "npm"
   },
   {
+    "name": "@types/react",
+    "version": "19.3.0",
+    "license": "MIT",
+    "source": "npm"
+  },
+  {
     "name": "csstype",
     "version": "3.2.3",
     "license": "MIT",

@@ -4,10 +4,12 @@
 import { Button, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { HomeRegular, InfoRegular, PaintBrushRegular, SettingsRegular } from "@fluentui/react-icons";
 import { type InitPayload } from "@deck/sdk";
-import { DeckProvider, EmptyState, deckTokens, themeToPayload } from "@deck/ui";
+import { DeckProvider, EmptyState, InfoBar, deckTokens, themeToPayload } from "@deck/ui";
 import { type ReactElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ModuleBridge, moduleEntryOrigin } from "./bridge/ModuleBridge.ts";
 import { KeepAliveSet } from "./bridge/keepAlive.ts";
+import { DocumentProtection, type DocumentDecision, type DocumentPrompt } from "./bridge/documentProtection.ts";
+import { DocumentConfirmation } from "./DocumentConfirmation.tsx";
 import { CATEGORY_ICONS, CATEGORY_ORDER } from "./categories.tsx";
 import { loadFavorites, saveFavorites, takeFreshModules, withFavoriteToggled } from "./deckState.ts";
 import type { Category } from "./generated/Category.ts";
@@ -214,6 +216,15 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState<Page>({ kind: "home" });
   const [mounted, setMounted] = useState<string[]>([]);
+  const mountedRef = useRef(mounted);
+  mountedRef.current = mounted;
+  const pageRef = useRef(page);
+  pageRef.current = page;
+  const transitionBusy = useRef(false);
+  const [transitionPending, setTransitionPending] = useState(false);
+  const [documentPrompt, setDocumentPrompt] = useState<DocumentPrompt | null>(null);
+  const documentDecision = useRef<((decision: DocumentDecision) => void) | null>(null);
+  const [documentError, setDocumentError] = useState(false);
   const [loadErrors, setLoadErrors] = useState<ReadonlySet<string>>(new Set());
   const [pref, setPref] = useState<ThemePreference>(loadPreference);
   const mode = useColorMode(pref);
@@ -236,6 +247,31 @@ export function App() {
   const freshRef = useRef<ReadonlySet<string> | null>(null);
   const [launch, setLaunch] = useState<"loading" | "leaving" | "done">("loading");
   const launchStart = useRef(performance.now());
+  const protection = useMemo(
+    () =>
+      new DocumentProtection(
+        host,
+        (prompt) =>
+          new Promise<DocumentDecision>((resolve) => {
+            documentDecision.current = resolve;
+            setDocumentPrompt(prompt);
+          }),
+        (moduleId) => {
+          keepAlive.current.remove(moduleId);
+          mountedRef.current = mountedRef.current.filter((id) => id !== moduleId);
+          setMounted(mountedRef.current);
+        },
+        setDocumentPrompt,
+      ),
+    [],
+  );
+  const decideDocument = (decision: DocumentDecision) => {
+    const resolve = documentDecision.current;
+    documentDecision.current = null;
+    if (resolve === null) protection.cancel();
+    else resolve(decision);
+    setDocumentPrompt(null);
+  };
 
   useEffect(() => {
     Promise.all([host.shellInfo(), host.listModules()])
@@ -297,47 +333,70 @@ export function App() {
 
   /** Shows a page without touching history (used by navigate and by back/forward). */
   const show = useCallback(
-    (next: Page) => {
-      const activeId = next.kind === "module" ? next.id : null;
-      activeModuleRef.current = activeId;
-      const keep = (id: string) =>
-        modulesRef.current.find((m) => m.resolution.id === id)?.manifest?.ui?.keepAlive === true;
-      const before = page.kind === "module" ? page.id : null;
-      const { mounted: nextMounted, evicted } = keepAlive.current.activate(activeId, keep);
-      if (before !== null && before !== activeId && nextMounted.includes(before)) {
-        bridge.sendEvent(before, "module.visibility", { visible: false });
-        void host.moduleVisibility(before, false);
+    async (next: Page): Promise<boolean> => {
+      if (transitionBusy.current) return false;
+      transitionBusy.current = true;
+      setTransitionPending(true);
+      try {
+        const activeId = next.kind === "module" ? next.id : null;
+        const keep = (id: string) =>
+          modulesRef.current.find((m) => m.resolution.id === id)?.manifest?.ui?.keepAlive === true;
+        const before = pageRef.current.kind === "module" ? pageRef.current.id : null;
+        const planned = keepAlive.current.preview(activeId, keep);
+        const affected = [...(before !== null && before !== activeId ? [before] : []), ...planned.evicted];
+        if (!(await protection.allow(affected))) return false;
+        const afterDecision = keepAlive.current.preview(activeId, keep);
+        // The host rechecks dirty/saving at unload, covering a late edit after confirmation.
+        if (afterDecision.evicted.length > 0) await host.modulesUnloaded(afterDecision.evicted);
+        const { mounted: nextMounted } = keepAlive.current.activate(activeId, keep);
+        activeModuleRef.current = activeId;
+        if (before !== null && before !== activeId && nextMounted.includes(before)) {
+          bridge.sendEvent(before, "module.visibility", { visible: false });
+          void host.moduleVisibility(before, false);
+        }
+        if (activeId !== null && activeId !== before && mountedRef.current.includes(activeId)) {
+          bridge.sendEvent(activeId, "module.visibility", { visible: true });
+          void host.moduleVisibility(activeId, true);
+        }
+        // Serialize native foreground updates so an older IPC completion cannot win navigation.
+        activationQueue.current = activationQueue.current
+          .then(() => host.moduleActivated(activeId))
+          .then(() => undefined)
+          .catch(() => undefined);
+        setMounted(nextMounted);
+        mountedRef.current = nextMounted;
+        pageRef.current = next;
+        setPage(next);
+        return true;
+      } catch {
+        setDocumentError(true);
+        return false;
+      } finally {
+        transitionBusy.current = false;
+        setTransitionPending(false);
       }
-      if (activeId !== null && activeId !== before && mounted.includes(activeId)) {
-        bridge.sendEvent(activeId, "module.visibility", { visible: true });
-        void host.moduleVisibility(activeId, true);
-      }
-      for (const id of evicted) void host.moduleUnloaded(id);
-      // Serialize native foreground updates so an older IPC completion cannot win navigation.
-      activationQueue.current = activationQueue.current
-        .then(() => host.moduleActivated(activeId))
-        .then(() => undefined)
-        .catch(() => undefined);
-      setMounted(nextMounted);
-      setPage(next);
     },
-    [bridge, page, mounted],
+    [bridge, protection],
   );
 
   // Every page change is a history entry, so the mouse back/forward buttons and Alt+←/→ work like
   // a browser. WebView2 handles those natively, also while the pointer is over a module iframe. The
   // entry index tells the title bar whether there is anywhere to go back to.
   const [historyIndex, setHistoryIndex] = useState(0);
+  const historyIndexRef = useRef(historyIndex);
+  historyIndexRef.current = historyIndex;
   const navigate = useCallback(
-    (next: Page) => {
-      if (JSON.stringify(next) === JSON.stringify(page)) return;
-      window.history.pushState({ page: next, index: historyIndex + 1 }, "");
-      setHistoryIndex(historyIndex + 1);
+    async (next: Page) => {
+      if (JSON.stringify(next) === JSON.stringify(pageRef.current)) return;
+      if (!(await show(next))) return;
+      const index = historyIndexRef.current + 1;
+      window.history.pushState({ page: next, index }, "");
+      historyIndexRef.current = index;
+      setHistoryIndex(index);
       // The "새 도구" badge has done its job once the tool is opened.
       if (next.kind === "module" && fresh.has(next.id)) setFresh(new Set([...fresh].filter((id) => id !== next.id)));
-      show(next);
     },
-    [page, show, fresh, historyIndex],
+    [show, fresh],
   );
   const toggleFavorite = (id: string) => {
     const next = withFavoriteToggled(favorites, id);
@@ -352,10 +411,30 @@ export function App() {
   showRef.current = show;
   useEffect(() => {
     window.history.replaceState({ page: { kind: "home" } satisfies Page, index: 0 }, "");
+    let restoringIndex: number | null = null;
     const onPop = (e: PopStateEvent) => {
       const state = e.state as { page?: Page; index?: number } | null;
-      if (state?.page !== undefined) showRef.current(state.page);
-      setHistoryIndex(state?.index ?? 0);
+      const nextIndex = state?.index ?? 0;
+      if (restoringIndex === nextIndex) {
+        restoringIndex = null;
+        return;
+      }
+      if (state?.page === undefined) return;
+      void showRef.current(state.page).then((allowed) => {
+        const browserIndex = (window.history.state as { index?: number } | null)?.index ?? 0;
+        if (allowed) {
+          historyIndexRef.current = nextIndex;
+          setHistoryIndex(nextIndex);
+          // Another native Back during the modal may already have restored the visible entry.
+          if (browserIndex !== nextIndex) {
+            restoringIndex = nextIndex;
+            window.history.go(nextIndex - browserIndex);
+          }
+        } else if (historyIndexRef.current !== browserIndex) {
+          restoringIndex = historyIndexRef.current;
+          window.history.go(historyIndexRef.current - browserIndex);
+        }
+      });
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -372,6 +451,7 @@ export function App() {
         "shortcut.triggered": "global-shortcut",
         "window.presentationClosed": "window",
         "window.presentationDisconnected": "window",
+        "window.documentSaveRequested": "window",
       } as const;
       if (!Object.hasOwn(caps, event.topic)) return;
       const cap = caps[event.topic];
@@ -380,6 +460,29 @@ export function App() {
     });
     return () => void off.then((fn) => fn()).catch(() => undefined);
   }, [bridge]);
+  useEffect(() => {
+    const off = host.onDocumentExit((request) => {
+      const run = async () => {
+        if (transitionBusy.current) {
+          await host.documentAction("", { kind: "resolveExit", requestId: request.requestId, proceed: false });
+          return;
+        }
+        transitionBusy.current = true;
+        setTransitionPending(true);
+        try {
+          const proceed = await protection.allow(mountedRef.current);
+          await host.documentAction("", { kind: "resolveExit", requestId: request.requestId, proceed });
+        } catch {
+          setDocumentError(true);
+        } finally {
+          transitionBusy.current = false;
+          setTransitionPending(false);
+        }
+      };
+      void run().catch(() => setDocumentError(true));
+    });
+    return () => void off.then((fn) => fn()).catch(() => undefined);
+  }, [protection]);
   useEffect(() => {
     const off = host.onShowModule(({ moduleId }) => {
       if (modulesRef.current.some((m) => m.resolution.id === moduleId && m.resolution.picked && m.entryUrl))
@@ -515,6 +618,13 @@ export function App() {
           controls={windowControls}
           {...(historyIndex > 0 ? { onBack: () => window.history.back() } : {})}
         />
+        {documentError && (
+          <InfoBar
+            severity="warning"
+            onClose={() => setDocumentError(false)}
+            message="작업을 유지했어요. 저장한 뒤 다시 이동해 주세요."
+          />
+        )}
         <div className={s.stage}>
           <div className={mergeClasses(s.body, motion && launch === "leaving" && s.bodyEnter)}>
             {/* Tools get the whole width; the title bar back button leads out (design-system.md §1). */}
@@ -540,7 +650,11 @@ export function App() {
               </span>
             </nav>
             <main className={mergeClasses(s.content, activeModule !== null && s.contentFull)}>
-              <div ref={moduleLayerRef} className={activeModule === null ? s.hidden : s.moduleLayer}>
+              <div
+                ref={moduleLayerRef}
+                className={activeModule === null ? s.hidden : s.moduleLayer}
+                inert={transitionPending}
+              >
                 <ModuleHost
                   bridge={bridge}
                   modules={modules}
@@ -579,6 +693,11 @@ export function App() {
       {info.secProbe && <SecProbe origin={info.moduleOrigin} modules={modules} />}
       <SchoolDataAccess host={schoolDataHost} />
       <MessagingConfirmation host={messagingConfirmationHost} />
+      <DocumentConfirmation
+        prompt={documentPrompt}
+        moduleName={modules.find((entry) => entry.resolution.id === documentPrompt?.moduleId)?.manifest?.name ?? "도구"}
+        decide={decideDocument}
+      />
     </DeckProvider>
   );
 }

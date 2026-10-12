@@ -250,9 +250,12 @@ pub const REGISTRY: &[CapSpec] = &[
     },
     CapSpec {
         name: "window",
-        version: "1.1.0",
+        version: "1.2.0",
         summary: "창 상태(모듈이 숨겨지면 원래대로 복원)",
         methods: &[
+            m("registerDocument", false, "편집 문서의 수명 보호 등록"),
+            m("setDocumentState", false, "미저장·저장 중 상태 등록"),
+            m("completeDocumentSave", false, "셸이 요청한 작업 저장 결과"),
             m("listDisplays", false, "학생 화면을 표시할 모니터 목록"),
             m("openPresentation", false, "선택한 모니터에 공개 결과 표시"),
             m("updatePresentation", false, "학생 화면의 공개 결과 갱신"),

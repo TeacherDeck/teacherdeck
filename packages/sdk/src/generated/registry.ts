@@ -142,8 +142,11 @@ export const CAPABILITIES = {
     },
   },
   "window": {
-    version: "1.1.0",
+    version: "1.2.0",
     methods: {
+      registerDocument: { long: false },
+      setDocumentState: { long: false },
+      completeDocumentSave: { long: false },
       listDisplays: { long: false },
       openPresentation: { long: false },
       updatePresentation: { long: false },

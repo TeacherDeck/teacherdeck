@@ -23,6 +23,9 @@ import {
   Image,
   ImageCropPreview,
   ColorPicker,
+  Slider,
+  CanvasSurface,
+  CurveEditor,
   ListView,
   NumberBox,
   PageHeader,
@@ -96,6 +99,34 @@ function CropSample() {
       onRectChange={setRect}
     />
   );
+}
+function SliderSample() {
+  const [value, setValue] = useState(50);
+  return <Slider header="불투명도" value={value} min={0} max={100} onChange={setValue} />;
+}
+function CanvasSample() {
+  const [point, setPoint] = useState({ x: 20, y: 20 });
+  return (
+    <CanvasSurface
+      header="편집 캔버스"
+      alt="합성 선택 영역"
+      source={null}
+      width={240}
+      height={160}
+      zoom={1}
+      points={[point]}
+      rectangle={{ ...point, width: 80, height: 60 }}
+      onGesture={(g) => setPoint(g.point)}
+    />
+  );
+}
+function CurveSample() {
+  const [points, setPoints] = useState([
+    { x: 0, y: 0 },
+    { x: 128, y: 150 },
+    { x: 255, y: 255 },
+  ]);
+  return <CurveEditor header="RGB 곡선" points={points} onChange={setPoints} />;
 }
 function DialogSample() {
   const [open, setOpen] = useState(false);
@@ -174,6 +205,9 @@ function ListSample() {
 }
 
 const SAMPLES: Record<ComponentName, () => ReactNode> = {
+  Slider: SliderSample,
+  CanvasSurface: CanvasSample,
+  CurveEditor: CurveSample,
   PresentationControls: () => (
     <PresentationControls
       deck={presentationSampleDeck}

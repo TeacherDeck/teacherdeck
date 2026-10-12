@@ -36,7 +36,7 @@ use deck_core::caps::school_data::*;
 use deck_core::caps::storage::{KeyArgs, SetArgs};
 use deck_core::caps::system::{OsInfo, SystemInfo};
 use deck_core::caps::timealert::*;
-use deck_core::caps::window::ToggleArgs;
+use deck_core::caps::window::*;
 use deck_core::caps::{NoArgs, REGISTRY};
 use deck_core::catalog::{CatalogIndex, IndexEntry};
 use deck_core::error::{DeckError, ErrorCode};
@@ -337,6 +337,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         ts::<FolderHandleInfo>(SDK_DIR, &cfg)?,
         ts::<DroppedFiles>(SDK_DIR, &cfg)?,
         ts::<ToggleArgs>(SDK_DIR, &cfg)?,
+        ts::<DocumentRegistration>(SDK_DIR, &cfg)?,
+        ts::<DocumentState>(SDK_DIR, &cfg)?,
+        ts::<DocumentSaveRequested>(SDK_DIR, &cfg)?,
+        ts::<CompleteDocumentSaveArgs>(SDK_DIR, &cfg)?,
         ts::<PresentationKind>(SDK_DIR, &cfg)?,
         ts::<PresentationItem>(SDK_DIR, &cfg)?,
         ts::<PresentationPayload>(SDK_DIR, &cfg)?,
@@ -432,6 +436,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         ts::<ModuleEntry>(SHELL_DIR, &cfg)?,
         ts::<FsDroppedEvent>(SHELL_DIR, &cfg)?,
         ts::<UpdateStatus>(SHELL_DIR, &cfg)?,
+        ts::<DocumentState>(SHELL_DIR, &cfg)?,
+        ts::<DocumentAction>(SHELL_DIR, &cfg)?,
+        ts::<DocumentActionResult>(SHELL_DIR, &cfg)?,
+        ts::<DocumentExitAction>(SHELL_DIR, &cfg)?,
+        ts::<DocumentExitRequest>(SHELL_DIR, &cfg)?,
         // Shell-side copies of payload types it forwards to modules.
         ts::<DroppedFiles>(SHELL_DIR, &cfg)?,
         ts::<FileHandleInfo>(SHELL_DIR, &cfg)?,

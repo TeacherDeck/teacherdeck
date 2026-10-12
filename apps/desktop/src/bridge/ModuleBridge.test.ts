@@ -227,6 +227,15 @@ describe("requests", () => {
 describe("keepAlive LRU", () => {
   const keep = (id: string) => id !== "plain";
 
+  it("previews LRU removal without unloading or changing order while a dialog is open", () => {
+    const k = new KeepAliveSet();
+    for (const id of ["a", "b", "c"]) k.activate(id, keep);
+    expect(k.preview("d", keep)).toEqual({ mounted: ["d", "c", "b"], evicted: ["a"] });
+    expect(k.activate("c", keep).mounted).toEqual(["c", "b", "a"]);
+    k.remove("b");
+    expect(k.activate("d", keep).mounted).toEqual(["d", "c", "a"]);
+  });
+
   it("keeps at most three keepAlive modules including the active one", () => {
     const k = new KeepAliveSet(3);
     for (const id of ["a", "b", "c", "d"]) k.activate(id, keep);

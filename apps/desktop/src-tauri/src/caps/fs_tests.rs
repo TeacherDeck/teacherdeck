@@ -75,6 +75,7 @@ impl Fixture {
             ),
             storage: StorageService::new(guard.path().join("storage")),
             overrides: Mutex::new(HashMap::new()),
+            documents: Mutex::new(Default::default()),
             active: Mutex::new(Some("sample-tool".to_owned())),
             mica: AtomicBool::new(false),
             sec_probe: false,

@@ -1,0 +1,10 @@
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<!-- Additional terms: see LICENSE-ADDITIONAL-TERMS -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <rect x="4" y="4" width="40" height="40" rx="10" fill="#0f6cbd"/>
+  <path d="m10 28 14-7 14 7-14 7Z" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linejoin="round"/>
+  <path d="m10 22 14-7 14 7-14 7Z" fill="#ffffff"/>
+  <path d="m10 34 14 7 14-7" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m30 10 3-3 6 6-3 3Z" fill="#f9a825"/>
+  <path d="m27 13 3-3 6 6-3 3-6 1Z" fill="#ffffff"/>
+</svg>

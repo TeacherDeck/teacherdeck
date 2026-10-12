@@ -22,6 +22,20 @@ export class KeepAliveSet {
     this.max = max;
   }
 
+  /** Computes evictions without changing the LRU while a save confirmation is pending. */
+  preview(next: string | null, keepAlive: (id: string) => boolean): Mounted {
+    const copy = new KeepAliveSet(this.max);
+    copy.hidden = [...this.hidden];
+    copy.active = this.active;
+    return copy.activate(next, keepAlive);
+  }
+
+  /** A confirmed discarded document must unload even when it opted into keepAlive. */
+  remove(moduleId: string): void {
+    this.hidden = this.hidden.filter((id) => id !== moduleId);
+    if (this.active === moduleId) this.active = null;
+  }
+
   /** Switches to `next` (null = no module shown). `keepAlive(id)` tells whether a module opted in. */
   activate(next: string | null, keepAlive: (id: string) => boolean): Mounted {
     const before = new Set(this.mountedIds());

@@ -95,7 +95,10 @@ window1.1의 로컬 학생 화면 추가 계약과 권한 범위는 [학생 화�
 |  |  | `commitWrite` (long) | 완성된 결과를 덮어쓰기 없이 게시 |
 |  |  | `abortWrite` | 미완성 파일 쓰기 취소 |
 |  |  | `closeOutputFolder` | 결과 폴더 작업 권한 닫기 |
-| `window` | 1.1.0 | `listDisplays` | 학생 화면을 표시할 모니터 목록 |
+| `window` | 1.2.0 | `registerDocument` | 편집 문서의 수명 보호 등록 |
+|  |  | `setDocumentState` | 미저장·저장 중 상태 등록 |
+|  |  | `completeDocumentSave` | 셸이 요청한 작업 저장 결과 |
+|  |  | `listDisplays` | 학생 화면을 표시할 모니터 목록 |
 |  |  | `openPresentation` | 선택한 모니터에 공개 결과 표시 |
 |  |  | `updatePresentation` | 학생 화면의 공개 결과 갱신 |
 |  |  | `closePresentation` | 자기 모듈의 학생 화면 닫기 |
@@ -128,6 +131,7 @@ window1.1의 로컬 학생 화면 추가 계약과 권한 범위는 [학생 화�
 ### 2.3 `window`
 
 - 모듈이 숨겨지거나 언로드되면 호스트가 창 상태를 원래대로 되돌린다.
+- window 1.2의 문서 등록·미저장 상태·저장 응답은 [문서 수명 보호](document-lifecycle.md)와 [ADR-0030](../adr/0030-unsaved-document-lifecycle.md)을 따른다.
 
 ## 2.4 clipboard 1.0 — 출력 전용
 

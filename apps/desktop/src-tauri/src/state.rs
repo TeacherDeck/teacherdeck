@@ -39,6 +39,8 @@ pub struct AppState {
     pub storage: StorageService,
     /// Window state each module changed, restored when it hides.
     pub overrides: Mutex<HashMap<String, WindowOverrides>>,
+    /// Content-free owner document references and pending save/exit decisions.
+    pub documents: Mutex<deck_core::document_lifecycle::DocumentRegistry>,
     /// Module currently shown in the shell (receives `fs.dropped`).
     pub active: Mutex<Option<String>>,
     /// Mica applied to the main window.

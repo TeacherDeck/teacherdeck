@@ -80,7 +80,7 @@ CoolReserve 원작의 커밋된 소스를 가져오는 명령과 파일 잠금 �
 도구별 사용법과 지원 범위예요.
 
 - 파일·문서: [파일명 작업기](modules/file-rename/README.md), [문서 변환](modules/office-convert/README.md), [PDF 압축](modules/pdf-compress/README.md), [PDF 개인정보 지우기](modules/pdf-mask/README.md)
-- 이미지: [이미지 압축](modules/image-compress/README.md), [명렬표 사진 추출](modules/photo-extract/README.md), [이미지 자르기](modules/image-crop/README.md), [퀵캡처](modules/quick-capture/README.md)
+- 이미지: [이미지 압축](modules/image-compress/README.md), [명렬표 사진 추출](modules/photo-extract/README.md), [이미지 자르기](modules/image-crop/README.md), [고급 이미지 편집](modules/advanced-image-editor/README.md), [퀵캡처](modules/quick-capture/README.md)
 - 수업·업무: [회의록](modules/meeting-note/README.md), [지도일 배정](modules/duty-planner/README.md), [발표자 뽑기](modules/presenter-picker/README.md), [모둠 편성](modules/group-planner/README.md), [자리 배치](modules/seat-planner/README.md), [역할·당번 배정](modules/role-planner/README.md)
 - 작은 도구: [빠른 메모](modules/quick-note/README.md), [D-day](modules/dday/README.md), [QR 코드 만들기](modules/qr-maker/README.md)
 - 보류: [영상 다운로드](modules/youtube-download/README.md)는 기본 모듈에서 빠져 덱에 나타나지 않아요([#15](https://github.com/TeacherDeck/teacherdeck/issues/15)).
