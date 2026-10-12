@@ -4,7 +4,7 @@
 //! Shell-only commands (never reachable from modules; capabilities/main.json grants them to
 //! the main window only).
 
-use std::sync::atomic::Ordering;
+use std::sync::{Mutex, atomic::Ordering};
 
 use deck_core::shell::{ModuleEntry, ShellInfo, UpdateStatus};
 use serde_json::Value;
@@ -40,13 +40,27 @@ pub fn list_modules(state: State<'_, AppState>) -> Vec<ModuleEntry> {
 
 /// Granted caps of a runnable module (`init.granted`).
 #[tauri::command]
-pub fn module_activated(state: State<'_, AppState>, module_id: Option<String>) -> Vec<String> {
-    if let Ok(mut active) = state.active.lock() {
-        active.clone_from(&module_id);
-    }
+pub fn module_activated(
+    state: State<'_, AppState>,
+    module_id: Option<String>,
+    activate: Option<bool>,
+) -> Vec<String> {
+    update_active_module(&state.active, &module_id, activate);
     match (module_id, state.modules.read()) {
         (Some(id), Ok(store)) => store.granted(&id, &state.host_caps),
         _ => Vec::new(),
+    }
+}
+
+fn update_active_module(
+    active: &Mutex<Option<String>>,
+    module_id: &Option<String>,
+    activate: Option<bool>,
+) {
+    if activate.unwrap_or(true)
+        && let Ok(mut active) = active.lock()
+    {
+        active.clone_from(module_id);
     }
 }
 
@@ -171,4 +185,24 @@ pub fn sec_probe_report(app: AppHandle, state: State<'_, AppState>, report: Valu
             .unwrap_or_default()
             .as_bytes(),
     );
+}
+
+#[cfg(test)]
+mod foreground_tests {
+    use super::update_active_module;
+    use std::sync::Mutex;
+
+    #[test]
+    fn grant_lookup_preserves_foreground_and_legacy_activation_still_updates_it() {
+        let active = Mutex::new(Some("synthetic-visible".to_owned()));
+        update_active_module(&active, &Some("synthetic-hidden".to_owned()), Some(false));
+        assert_eq!(
+            *active.lock().unwrap(),
+            Some("synthetic-visible".to_owned())
+        );
+        update_active_module(&active, &Some("synthetic-next".to_owned()), None);
+        assert_eq!(*active.lock().unwrap(), Some("synthetic-next".to_owned()));
+        update_active_module(&active, &None, Some(true));
+        assert_eq!(*active.lock().unwrap(), None);
+    }
 }

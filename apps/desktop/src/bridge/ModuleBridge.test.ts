@@ -227,12 +227,20 @@ describe("requests", () => {
 describe("keepAlive LRU", () => {
   const keep = (id: string) => id !== "plain";
 
-  it("keeps up to three hidden keepAlive modules and evicts the oldest", () => {
+  it("keeps at most three keepAlive modules including the active one", () => {
     const k = new KeepAliveSet(3);
     for (const id of ["a", "b", "c", "d"]) k.activate(id, keep);
     const r = k.activate("e", keep);
-    expect(r.mounted).toEqual(["e", "d", "c", "b"]);
-    expect(r.evicted).toEqual(["a"]);
+    expect(r.mounted).toEqual(["e", "d", "c"]);
+    expect(r.evicted).toEqual(["b"]);
+  });
+
+  it("retains three hidden keepAlive tools beside a non-keepAlive tool or home", () => {
+    const k = new KeepAliveSet();
+    for (const id of ["a", "b", "c"]) k.activate(id, keep);
+    expect(k.activate("plain", keep).mounted).toEqual(["plain", "c", "b", "a"]);
+    expect(k.activate(null, keep)).toEqual({ mounted: ["c", "b", "a"], evicted: ["plain"] });
+    expect(k.activate("d", keep)).toEqual({ mounted: ["d", "c", "b"], evicted: ["a"] });
   });
 
   it("unloads modules without keepAlive when leaving them", () => {

@@ -58,6 +58,7 @@ vi.mock("./host.ts", () => ({
       ]),
     ),
     moduleActivated: vi.fn(() => Promise.resolve([])),
+    moduleGranted: vi.fn(() => Promise.resolve([])),
     moduleVisibility: vi.fn(() => Promise.resolve()),
     moduleUnloaded: vi.fn(() => Promise.resolve()),
     hostInvoke: vi.fn(() => Promise.resolve(null)),
@@ -213,4 +214,56 @@ describe("tool handshake", () => {
       expect(post).toHaveBeenCalledWith(expect.objectContaining({ kind: "init" }), expect.any(String)),
     );
   });
+});
+it("keeps foreground ownership when a hidden tool says hello late", async () => {
+  render(<App />);
+  await open("합성 시계");
+  const a = frameWindow("합성 시계");
+  if (a === null) throw new Error("iframe window missing");
+  const postA = vi.spyOn(a, "postMessage");
+  await open("합성 메모");
+  const b = frameWindow("합성 메모");
+  if (b === null) throw new Error("iframe window missing");
+  const postB = vi.spyOn(b, "postMessage");
+  act(() => hello(b, "sample-notes"));
+  await waitFor(() =>
+    expect(postB).toHaveBeenCalledWith(expect.objectContaining({ kind: "init" }), expect.any(String)),
+  );
+  expect(vi.mocked(host.moduleActivated).mock.calls.at(-1)?.[0]).toBe("sample-notes");
+  act(() => hello(a, "sample-clock"));
+  await waitFor(() =>
+    expect(postA).toHaveBeenCalledWith(expect.objectContaining({ kind: "init" }), expect.any(String)),
+  );
+  expect(vi.mocked(host.moduleActivated).mock.calls.at(-1)?.[0]).toBe("sample-notes");
+  expect(screen.getByTitle("합성 시계").getAttribute("aria-hidden")).toBe("true");
+  expect(screen.getByTitle("합성 메모").getAttribute("aria-hidden")).toBe("false");
+  const deliver = vi.mocked(host.onFsDropped).mock.calls.at(-1)?.[0];
+  if (deliver === undefined) throw new Error("file drop subscription missing");
+  postA.mockClear();
+  postB.mockClear();
+  act(() => deliver({ moduleId: "sample-clock", payload: { files: [] } }));
+  expect(postA).not.toHaveBeenCalled();
+  expect(postB).not.toHaveBeenCalled();
+  act(() => deliver({ moduleId: "sample-notes", payload: { files: [] } }));
+  expect(postB).toHaveBeenCalledWith(expect.objectContaining({ kind: "evt", topic: "fs.dropped" }), expect.any(String));
+  expect(host.moduleGranted).toHaveBeenCalledWith("sample-clock");
+});
+
+it("serializes foreground IPC updates across rapid navigation", async () => {
+  let releaseFirst!: (caps: string[]) => void;
+  vi.mocked(host.moduleActivated).mockClear();
+  vi.mocked(host.moduleActivated).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        releaseFirst = resolve;
+      }),
+  );
+  render(<App />);
+  await open("합성 시계");
+  await waitFor(() => expect(host.moduleActivated).toHaveBeenCalledTimes(1));
+  await open("합성 메모");
+  expect(host.moduleActivated).toHaveBeenCalledTimes(1);
+  await act(async () => releaseFirst([]));
+  await waitFor(() => expect(vi.mocked(host.moduleActivated).mock.calls.at(-1)?.[0]).toBe("sample-notes"));
+  expect(vi.mocked(host.moduleActivated).mock.calls.map(([id]) => id)).toEqual(["sample-clock", null, "sample-notes"]);
 });

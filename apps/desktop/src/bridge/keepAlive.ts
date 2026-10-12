@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-// Which module iframes stay mounted (modules.md §3): the active one, plus up to MAX_KEEP_ALIVE
-// hidden modules that asked for `ui.keepAlive`, evicting the least recently used.
+// Up to MAX_KEEP_ALIVE opted-in modules total, including the active one (modules.md §3).
 
 export const MAX_KEEP_ALIVE = 3;
 
@@ -29,7 +28,7 @@ export class KeepAliveSet {
     const prev = this.active;
     this.hidden = this.hidden.filter((id) => id !== next);
     if (prev !== null && prev !== next && keepAlive(prev)) this.hidden.unshift(prev);
-    this.hidden = this.hidden.slice(0, this.max);
+    this.hidden = this.hidden.slice(0, Math.max(0, this.max - (next !== null && keepAlive(next) ? 1 : 0)));
     this.active = next;
     const mounted = this.mountedIds();
     const now = new Set(mounted);
