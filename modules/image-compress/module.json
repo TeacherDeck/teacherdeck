@@ -3,8 +3,8 @@
   "manifestVersion": 1,
   "id": "image-compress",
   "name": "이미지 용량 줄이기",
-  "description": "여러 이미지의 크기와 용량을 줄여 원본을 보존한 채 새 폴더에 저장해요.",
-  "version": "0.2.1",
+  "description": "여러 이미지의 크기와 용량을 줄여 원본과 같은 폴더에 새 파일로 저장해요.",
+  "version": "0.3.0",
   "category": "image",
   "icon": "icon.svg",
   "entry": "index.html",
@@ -15,7 +15,7 @@
     }
   ],
   "requires": {
-    "fs": "^1.1",
+    "fs": "^1.4.0",
     "storage": "^1.0"
   },
   "optional": {}

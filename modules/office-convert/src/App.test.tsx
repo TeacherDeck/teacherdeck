@@ -31,7 +31,7 @@ async function setup(convert: (args: OfficeConvertArgs) => unknown, cancel = () 
       "office.cancel": cancel,
       "fs.pickFiles": () => [],
       "fs.pickFolder": () => ({ handle: "parent", name: "합성 폴더" }),
-      "fs.createOutputFolder": () => ({ batchId: "batch", folder: { handle: "output", name: "변환한 문서" } }),
+      "fs.openOutputFolder": () => ({ batchId: "batch", folder: { handle: "output", name: "변환한 문서" } }),
       "fs.closeOutputFolder": () => null,
       "fs.reveal": () => null,
     },
@@ -53,6 +53,31 @@ const result = (args: OfficeConvertArgs) => ({
   warnings: ["review_layout"],
 });
 describe("installed Office SDK workflow", () => {
+  it("acknowledges dropped documents, saves beside each source, and only opens a folder chooser on request", async () => {
+    const { host, deck } = await setup(result);
+    host.emit("fs.dropped", { files: [file("first", "첫 문서.xls"), file("second", "둘째 문서.doc")] });
+    await screen.findByText("2개 문서");
+    expect(screen.getByRole("status").textContent).toContain("문서 2개를 추가했어요");
+    expect(host.requests.some((r) => ["pickFiles", "pickFolder"].includes(r.method))).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "변환" }));
+    await screen.findByText("변환을 마쳤어요. 새 문서의 표·그림·수식과 서식을 확인해 주세요.");
+    expect(host.requests.filter((r) => r.method === "openOutputFolder").map((r) => r.args)).toEqual([
+      { sourceHandle: "first" },
+      { sourceHandle: "second" },
+    ]);
+    expect(host.requests.some((r) => ["pickFolder", "createOutputFolder"].includes(r.method))).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "다른 저장 폴더 선택" }));
+    await screen.findByText("저장 폴더: 합성 폴더");
+    fireEvent.click(screen.getByRole("button", { name: "변환" }));
+    await waitFor(() => expect(host.requests.filter((r) => r.method === "openOutputFolder")).toHaveLength(4));
+    expect(
+      host.requests
+        .filter((r) => r.method === "openOutputFolder")
+        .slice(2)
+        .map((r) => r.args),
+    ).toEqual([{ parentHandle: "parent" }, { parentHandle: "parent" }]);
+    deck.dispose();
+  });
   it("retains completed results and failed-only retry when no new supported document is added", async () => {
     const { host, deck } = await setup((args) => {
       if (args.sourceHandle === "failed") throw new DeckCallError("INTERNAL", "합성 오류");
@@ -61,7 +86,7 @@ describe("installed Office SDK workflow", () => {
     const existing = [file("done", "합성 완료.xls"), file("failed", "합성 실패.xls")];
     host.emit("fs.dropped", { files: existing });
     await screen.findByText("2개 문서");
-    fireEvent.click(screen.getByRole("button", { name: "출력 폴더 선택하고 변환" }));
+    fireEvent.click(screen.getByRole("button", { name: "변환" }));
     await screen.findByRole("button", { name: "실패한 문서 다시 변환" });
     for (const incoming of [[file("unsupported", "합성.txt")], existing, []]) {
       host.emit("fs.dropped", { files: incoming });
@@ -109,7 +134,7 @@ describe("installed Office SDK workflow", () => {
     host.emit("fs.dropped", { files: [file("plain", "합성 문서.xls")] });
     await screen.findByRole("button", { name: "문서 추가" });
     expect(screen.queryByText("HWP·XLS·PPT·DOC 문서를 선택하거나 덱 창에 놓아 주세요.")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "출력 폴더 선택하고 변환" }));
+    fireEvent.click(screen.getByRole("button", { name: "변환" }));
     await screen.findByRole("button", { name: "중지" });
     await waitFor(() => expect(complete).toBeTypeOf("function"));
     if (pendingArgs) complete?.(result(pendingArgs));
@@ -130,7 +155,7 @@ describe("installed Office SDK workflow", () => {
     host.emit("fs.dropped", { files: [file("hancom", "합성.hwp")] });
     await waitFor(() => expect(screen.getByText("1개 문서")).toBeTruthy());
     expect(screen.queryByText(/파일 접근은 작업용 사본과 새 결과로 제한/)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "출력 폴더 선택하고 변환" }));
+    fireEvent.click(screen.getByRole("button", { name: "변환" }));
     const approval = await screen.findByText(/파일 접근은 작업용 사본과 새 결과로 제한/);
     expect(approval.textContent).toContain("안전하게 연결하지 못하면 변환을 중지");
     expect(screen.getByText("변환 중")).toBeTruthy();
@@ -155,7 +180,7 @@ describe("installed Office SDK workflow", () => {
     });
     host.emit("fs.dropped", { files: [file("plain", "샘플.xls"), file("macro", "샘플.xlsx")] });
     await waitFor(() => expect(screen.getByText("2개 문서")).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: "출력 폴더 선택하고 변환" }));
+    fireEvent.click(screen.getByRole("button", { name: "변환" }));
     await waitFor(() => expect(screen.getByText("다시 확인")).toBeTruthy());
     fireEvent.click(screen.getByRole("switch", { name: "매크로 보존 형식으로 변환" }));
     expect(screen.getByText("변환했어요")).toBeTruthy();
@@ -169,7 +194,7 @@ describe("installed Office SDK workflow", () => {
       targetFormat: "xlsm",
       suggestedName: "샘플 (2).xlsm",
     });
-    expect(host.requests.filter((r) => r.method === "closeOutputFolder")).toHaveLength(2);
+    expect(host.requests.filter((r) => r.method === "closeOutputFolder")).toHaveLength(3);
     deck.dispose();
   });
   it("cancels the host worker, retains earlier files and does not start queued documents", async () => {
@@ -190,7 +215,7 @@ describe("installed Office SDK workflow", () => {
       files: [file("first", "첫 문서.xls"), file("second", "둘째 문서.xls"), file("third", "셋째 문서.xls")],
     });
     await waitFor(() => expect(screen.getByText("3개 문서")).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: "출력 폴더 선택하고 변환" }));
+    fireEvent.click(screen.getByRole("button", { name: "변환" }));
     await waitFor(() => expect(rejectPending).toBeTypeOf("function"));
     fireEvent.click(screen.getByRole("button", { name: "중지" }));
     await waitFor(() => expect(screen.getByText("변환을 중지했어요. 저장한 결과는 유지해요.")).toBeTruthy());

@@ -567,3 +567,258 @@ fn typed_write_boundary_rejects_non_u8_and_oversized_data_then_can_commit_valid_
     );
     assert_eq!(response.body(), &vec![0, 255]);
 }
+
+fn publish_direct(fixture: &Fixture, batch: &OutputBatch, name: &str) -> FileHandleInfo {
+    let write: deck_core::caps::fs::FileWrite = serde_json::from_value(
+        fixture
+            .invoke(
+                Op::BeginWrite,
+                json!({"batchId":batch.batch_id,"suggestedName":name,"size":3}),
+            )
+            .unwrap(),
+    )
+    .unwrap();
+    fixture
+        .invoke(
+            Op::WriteChunk,
+            json!({"writeId":write.write_id,"offset":0,"data":[1,2,3]}),
+        )
+        .unwrap();
+    serde_json::from_value(
+        fixture
+            .invoke(Op::CommitWrite, json!({"writeId":write.write_id}))
+            .unwrap(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn direct_outputs_use_each_source_parent_and_preserve_colliding_originals() {
+    let fixture = Fixture::new(true);
+    for directory in ["synthetic-a", "synthetic-b"] {
+        let parent = fixture.path().join(directory);
+        std::fs::create_dir(&parent).unwrap();
+        let original = parent.join("synthetic.bin");
+        std::fs::write(&original, b"original bytes").unwrap();
+        let handle = issue(
+            fixture.state(),
+            "sample-tool",
+            original.clone(),
+            FileHandleKind::ReadFile,
+            0,
+        )
+        .unwrap();
+        let batch: OutputBatch = serde_json::from_value(
+            fixture
+                .invoke(Op::OpenOutputFolder, json!({"sourceHandle":handle}))
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(batch.folder.name, directory);
+        assert_eq!(
+            fixture
+                .invoke(
+                    Op::ListFiles,
+                    json!({"folderHandle":batch.folder.handle,"recursive":false})
+                )
+                .unwrap_err()
+                .code,
+            ErrorCode::PermissionDenied
+        );
+        assert_eq!(
+            fixture
+                .invoke(Op::OpenRead, json!({"handle":batch.folder.handle}))
+                .unwrap_err()
+                .code,
+            ErrorCode::PermissionDenied
+        );
+        assert_eq!(std::fs::read_dir(&parent).unwrap().count(), 1);
+        let output = publish_direct(&fixture, &batch, "synthetic.bin");
+        let output_path = resolve(
+            fixture.state(),
+            "sample-tool",
+            &output.handle,
+            0,
+            Some(FileHandleKind::ReadFile),
+        )
+        .unwrap();
+        assert_eq!(output_path.parent(), Some(parent.as_path()));
+        assert_ne!(output_path, original);
+        assert_eq!(std::fs::read(&original).unwrap(), b"original bytes");
+        assert_eq!(std::fs::read(&output_path).unwrap(), vec![1, 2, 3]);
+        fixture
+            .invoke(Op::CloseOutputFolder, json!({"batchId":batch.batch_id}))
+            .unwrap();
+        let entries: Vec<_> = std::fs::read_dir(&parent).unwrap().collect();
+        assert_eq!(entries.len(), 2);
+        assert!(
+            entries
+                .into_iter()
+                .all(|entry| entry.unwrap().file_type().unwrap().is_file())
+        );
+    }
+}
+
+#[test]
+fn direct_outputs_use_selected_folder_without_creating_children_and_close_permissions() {
+    let fixture = Fixture::new(true);
+    let selected = fixture.path().join("synthetic-selected");
+    std::fs::create_dir(&selected).unwrap();
+    let handle = issue(
+        fixture.state(),
+        "sample-tool",
+        selected.clone(),
+        FileHandleKind::OutputParent,
+        0,
+    )
+    .unwrap();
+    let batch: OutputBatch = serde_json::from_value(
+        fixture
+            .invoke(Op::OpenOutputFolder, json!({"parentHandle":handle}))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(std::fs::read_dir(&selected).unwrap().count(), 0);
+    let output = publish_direct(&fixture, &batch, "synthetic-result.bin");
+    let path = resolve(
+        fixture.state(),
+        "sample-tool",
+        &output.handle,
+        0,
+        Some(FileHandleKind::ReadFile),
+    )
+    .unwrap();
+    assert_eq!(path, selected.join("synthetic-result.bin"));
+    fixture
+        .invoke(Op::CloseOutputFolder, json!({"batchId":batch.batch_id}))
+        .unwrap();
+    assert!(
+        fixture
+            .invoke(
+                Op::BeginWrite,
+                json!({"batchId":batch.batch_id,"suggestedName":"synthetic-second.bin","size":0})
+            )
+            .is_err()
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), vec![1, 2, 3]);
+    assert_eq!(std::fs::read_dir(&selected).unwrap().count(), 1);
+}
+
+#[test]
+fn direct_output_rejects_ambiguous_wrong_kind_foreign_stale_and_missing_sources() {
+    let fixture = Fixture::new(true);
+    let source = fixture.input();
+    let parent = fixture.parent();
+    for args in [
+        json!({}),
+        json!({"sourceHandle":source,"parentHandle":parent}),
+        json!({"sourceHandle":source,"path":"synthetic"}),
+    ] {
+        assert_eq!(
+            fixture.invoke(Op::OpenOutputFolder, args).unwrap_err().code,
+            ErrorCode::InvalidArgs
+        );
+    }
+    for args in [
+        json!({"sourceHandle":parent}),
+        json!({"parentHandle":source}),
+    ] {
+        assert_eq!(
+            fixture.invoke(Op::OpenOutputFolder, args).unwrap_err().code,
+            ErrorCode::PermissionDenied
+        );
+    }
+    assert!(
+        transfer_call(
+            fixture.state(),
+            "other-tool",
+            0,
+            Op::OpenOutputFolder,
+            json!({"sourceHandle":source})
+        )
+        .is_err()
+    );
+    let missing = issue(
+        fixture.state(),
+        "sample-tool",
+        fixture.path().join("synthetic-missing.bin"),
+        FileHandleKind::ReadFile,
+        0,
+    )
+    .unwrap();
+    assert!(
+        fixture
+            .invoke(Op::OpenOutputFolder, json!({"sourceHandle":missing}))
+            .is_err()
+    );
+    fixture
+        .state()
+        .transfers
+        .lock()
+        .unwrap()
+        .unload("sample-tool");
+    assert_eq!(
+        fixture
+            .invoke(Op::OpenOutputFolder, json!({"sourceHandle":source}))
+            .unwrap_err()
+            .code,
+        ErrorCode::PermissionDenied
+    );
+    assert_eq!(
+        transfer_call(
+            fixture.state(),
+            "sample-tool",
+            1,
+            Op::OpenOutputFolder,
+            json!({"sourceHandle":source})
+        )
+        .unwrap_err()
+        .code,
+        ErrorCode::PermissionDenied
+    );
+}
+
+#[test]
+fn direct_output_routing_requires_fs_permission_and_applies_batch_limits() {
+    let denied = Fixture::new(false);
+    assert!(
+        crate::bridge::authorize(
+            &denied.state().modules.read().unwrap(),
+            &denied.state().host_caps,
+            "sample-tool",
+            "fs",
+            "openOutputFolder"
+        )
+        .is_err()
+    );
+    let fixture = Fixture::new(true);
+    assert_eq!(Op::parse("openOutputFolder"), Some(Op::OpenOutputFolder));
+    let parent = fixture.parent();
+    let mut batches = Vec::new();
+    for _ in 0..4 {
+        let batch: OutputBatch = serde_json::from_value(
+            fixture
+                .invoke(Op::OpenOutputFolder, json!({"parentHandle":parent}))
+                .unwrap(),
+        )
+        .unwrap();
+        batches.push(batch);
+    }
+    assert_eq!(
+        fixture
+            .invoke(Op::OpenOutputFolder, json!({"parentHandle":parent}))
+            .unwrap_err()
+            .code,
+        ErrorCode::Busy
+    );
+    for batch in batches {
+        fixture
+            .invoke(Op::CloseOutputFolder, json!({"batchId":batch.batch_id}))
+            .unwrap();
+    }
+    assert!(
+        fixture
+            .invoke(Op::OpenOutputFolder, json!({"parentHandle":parent}))
+            .is_ok()
+    );
+}

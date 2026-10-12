@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-import type { Deck } from "@deck/sdk";
+import type { Deck, FileHandleInfo } from "@deck/sdk";
 import { SchoolRoster } from "./SchoolRoster.tsx";
 import {
   Body,
@@ -125,6 +125,9 @@ export function App({ deck }: { deck: Deck }) {
   const [publicSnapshot, setPublicSnapshot] = useState<Snapshot | null>(null),
     [historyId, setHistoryId] = useState(""),
     [undo, setUndo] = useState<SeatState | null>(null);
+  const sourceFile = useRef<FileHandleInfo | undefined>(undefined);
+  const pendingSource = useRef<FileHandleInfo | undefined>(undefined);
+  const rosterSource = useRef<FileHandleInfo | undefined>(undefined);
   const working = useRef(false),
     drag = useRef<number | null>(null),
     disabled = busy || blocked || !loaded;
@@ -224,6 +227,52 @@ export function App({ deck }: { deck: Deck }) {
       setBusy(false);
     }
   }
+  const importFile = (file?: FileHandleInfo) =>
+    io(async () => {
+      if (file) setMessage(`${file.name}을 받았어요. 기록을 읽고 있어요.`);
+      let sourceName = "";
+      pendingSource.current = undefined;
+      const next = await readBackup(deck, file, (selected) => {
+        pendingSource.current = selected;
+        sourceName = selected.name;
+      });
+      if (next) {
+        setReplacement(next);
+        setMessage(`${sourceName || "기록 파일"}을 읽었어요. 내용을 확인한 뒤 가져와 주세요.`);
+      }
+    });
+  const importRoster = (file?: FileHandleInfo) =>
+    io(async () => {
+      if (file) setMessage(`${file.name}을 받았어요. 명단을 읽고 있어요.`);
+      const text = await readRoster(deck, file, (selected) => {
+        rosterSource.current = selected;
+      });
+      if (text !== null) {
+        setRoster(text);
+        setEditingRoster(true);
+        setMessage(`${rosterSource.current?.name ?? "명단 파일"}을 읽었어요. 내용을 확인한 뒤 적용해 주세요.`);
+      }
+    });
+  const dropped = useRef({ importFile, importRoster, loaded, replacement });
+  dropped.current = { importFile, importRoster, loaded, replacement };
+  useEffect(
+    () =>
+      deck.on("fs.dropped", ({ files }) => {
+        const file = files[0];
+        if (working.current || !dropped.current.loaded || dropped.current.replacement) {
+          setError("현재 작업을 마친 뒤 파일을 다시 놓아 주세요.");
+          return;
+        }
+        if (files.length !== 1 || !file || !["json", "txt", "csv", "tsv"].includes(file?.ext.toLowerCase() ?? "")) {
+          setError("JSON 기록 또는 TXT·CSV·TSV 명단 파일을 한 번에 1개씩 놓아 주세요.");
+          return;
+        }
+        setMessage(`${file.name}을 받았어요. 파일을 읽고 있어요.`);
+        if (file.ext.toLowerCase() === "json") void dropped.current.importFile(file);
+        else void dropped.current.importRoster(file);
+      }),
+    [deck],
+  );
   function updateLayout(patch: Partial<Layout>) {
     void change(() => {
       return resizeLayout(state, patch);
@@ -452,21 +501,24 @@ export function App({ deck }: { deck: Deck }) {
           disabled={disabled}
           onClick={() =>
             void io(async () => {
-              if (await exportFile(deck, state)) setMessage("자리 배치 기록을 새 폴더에 저장했어요.");
+              if (await exportFile(deck, state, null, sourceFile.current))
+                setMessage("자리 배치 기록을 새 폴더에 저장했어요.");
             })
           }
         >
           기록 파일 저장
         </Button>
         <Button
-          disabled={busy || !loaded}
+          disabled={disabled}
           onClick={() =>
             void io(async () => {
-              const next = await readBackup(deck);
-              if (next) setReplacement(next);
+              if (await exportFile(deck, state, null, undefined, true)) setMessage("선택한 폴더에 기록을 저장했어요.");
             })
           }
         >
+          다른 폴더에 기록 저장
+        </Button>
+        <Button disabled={busy || !loaded} onClick={() => void importFile()}>
           기록 파일 가져오기
         </Button>
         <Button disabled={busy || !loaded} onClick={() => setResetDialog(true)}>
@@ -488,23 +540,15 @@ export function App({ deck }: { deck: Deck }) {
             multiline
             rows={8}
             value={roster}
-            onChange={setRoster}
+            onChange={(value) => {
+              rosterSource.current = undefined;
+              setRoster(value);
+            }}
             placeholder={"1 학생가\n2 학생나"}
             disabled={disabled}
           />
           <div className={s.row}>
-            <Button
-              disabled={disabled}
-              onClick={() =>
-                void io(async () => {
-                  const text = await readRoster(deck);
-                  if (text !== null) {
-                    setRoster(text);
-                    setMessage("명단 파일을 읽었어요. 내용을 확인한 뒤 적용해 주세요.");
-                  }
-                })
-              }
-            >
+            <Button disabled={disabled} onClick={() => void importRoster()}>
               명단 파일 읽기
             </Button>
             <Button
@@ -515,7 +559,11 @@ export function App({ deck }: { deck: Deck }) {
                   () => replaceRoster(state, parseRoster(roster, state.students), label),
                   "명단을 적용했어요. 이전 확정 기록은 보존했어요.",
                 ).then((ok) => {
-                  if (ok) setEditingRoster(false);
+                  if (ok) {
+                    if (rosterSource.current) sourceFile.current = rosterSource.current;
+                    rosterSource.current = undefined;
+                    setEditingRoster(false);
+                  }
                 })
               }
             >
@@ -525,6 +573,7 @@ export function App({ deck }: { deck: Deck }) {
               <Button
                 disabled={busy}
                 onClick={() => {
+                  rosterSource.current = undefined;
                   show(state);
                   setEditingRoster(false);
                 }}
@@ -856,7 +905,8 @@ export function App({ deck }: { deck: Deck }) {
                   disabled={disabled || !chosen}
                   onClick={() =>
                     void io(async () => {
-                      if (await exportFile(deck, state, chosen)) setMessage("학생용 자리 배치를 새 폴더에 저장했어요.");
+                      if (await exportFile(deck, state, chosen, sourceFile.current))
+                        setMessage("학생용 자리 배치를 새 폴더에 저장했어요.");
                     })
                   }
                 >
@@ -890,6 +940,8 @@ export function App({ deck }: { deck: Deck }) {
           if (result === "primary")
             void change(emptyState, "새 작업을 시작했어요.", true).then((ok) => {
               if (ok) {
+                sourceFile.current = undefined;
+                rosterSource.current = undefined;
                 show(emptyState());
                 setEditingRoster(false);
                 setUndo(null);
@@ -907,16 +959,21 @@ export function App({ deck }: { deck: Deck }) {
         defaultButton="close"
         onClose={(result) => {
           const next = replacement;
+          const importedSource = pendingSource.current;
+          pendingSource.current = undefined;
           setReplacement(null);
           if (result === "primary" && next)
             void change(() => next, "자리 배치 기록을 가져왔어요.", true).then((ok) => {
               if (ok) {
+                sourceFile.current = importedSource;
+                rosterSource.current = undefined;
                 show(next);
                 setEditingRoster(false);
               }
             });
         }}
       >
+        <Body>{pendingSource.current?.name ?? "기록 파일"}</Body>
         <Body>현재 작업을 선택한 파일의 명단·조건·확정 기록으로 바꿔요. 취소하면 현재 작업을 유지해요.</Body>
       </ContentDialog>
     </div>

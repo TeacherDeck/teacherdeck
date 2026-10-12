@@ -152,10 +152,10 @@ export async function saveResult(
   input: Input,
   blob: Blob,
   signal: AbortSignal,
+  parentHandle?: string,
 ): Promise<{ folder: FolderHandleInfo; saved: FileHandleInfo } | null> {
-  const parent = await deck.fs.pickFolder();
-  if (!parent || signal.aborted) return null;
-  const batch = await deck.fs.createOutputFolder({ parentHandle: parent.handle, suggestedName: "개인정보 제거 PDF" });
+  if (signal.aborted) return null;
+  const batch = await deck.fs.openOutputFolder(parentHandle ? { parentHandle } : { sourceHandle: input.file.handle });
   try {
     const saved = await deck.fs.writeBlob(
       { batchId: batch.batchId, suggestedName: outputName(input.file.name), blob },

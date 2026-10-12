@@ -11,11 +11,11 @@ import { MAX_INPUT_BYTES } from "./limits.ts";
 async function setup(extra: Record<string, MockHandler> = {}) {
   const host = createMockHost({
     module: { id: "advanced-image-editor", version: "0.1.0" },
-    caps: { fs: "1.1.0" },
+    caps: { fs: "1.4.0" },
     granted: ["fs"],
     handlers: {
       "fs.pickFolder": () => ({ handle: "synthetic-parent", name: "합성 폴더" }),
-      "fs.createOutputFolder": () => ({
+      "fs.openOutputFolder": () => ({
         batchId: "synthetic-batch",
         folder: { handle: "synthetic-output", name: "합성 결과" },
       }),
@@ -43,11 +43,54 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("safe SDK file handling", () => {
+  it("remembers the explicitly picked parent of a new document after releasing each save grant", async () => {
+    const { deck, host } = await setup();
+    const first = new OutputSession(deck);
+    const signal = new AbortController().signal;
+    await first.save(new Blob(["first"]), "합성.deckimage", signal);
+    const parent = first.selectedFolder;
+    expect(parent?.handle).toBe("synthetic-parent");
+    await first.close();
+    const second = new OutputSession(deck, parent?.handle);
+    await second.save(new Blob(["second"]), "합성.deckimage", signal);
+    await second.close();
+    expect(host.requests.filter((r) => r.method === "pickFolder")).toHaveLength(1);
+    expect(host.requests.filter((r) => r.method === "openOutputFolder").map((r) => r.args)).toEqual([
+      { parentHandle: "synthetic-parent" },
+      { parentHandle: "synthetic-parent" },
+    ]);
+    expect(host.requests.filter((r) => r.method === "closeOutputFolder")).toHaveLength(2);
+    deck.dispose();
+  });
+  it("saves imported PSD and project exports in their source folder without any picker", async () => {
+    const { deck, host } = await setup();
+    const session = new OutputSession(deck);
+    const signal = new AbortController().signal;
+    await session.save(new Blob(["project"]), "합성.deckimage", signal, "source-psd");
+    await session.save(new Blob(["psd"]), "합성.psd", signal, "source-psd");
+    await session.close();
+    expect(host.requests.filter((r) => r.method === "openOutputFolder").map((r) => r.args)).toEqual([
+      { sourceHandle: "source-psd" },
+    ]);
+    expect(host.requests.some((r) => ["pickFiles", "pickFolder", "createOutputFolder"].includes(r.method))).toBe(false);
+    deck.dispose();
+  });
+  it("uses an explicitly selected existing folder directly", async () => {
+    const { deck, host } = await setup();
+    const session = new OutputSession(deck, "selected-parent");
+    await session.save(new Blob(["project"]), "합성.deckimage", new AbortController().signal, "source-psd");
+    await session.close();
+    expect(host.requests.find((r) => r.method === "openOutputFolder")?.args).toEqual({
+      parentHandle: "selected-parent",
+    });
+    expect(host.requests.some((r) => ["pickFolder", "createOutputFolder"].includes(r.method))).toBe(false);
+    deck.dispose();
+  });
   it("reads opaque source handles in chunks and closes the host read on success", async () => {
     const origin = "http://deckmod.advanced-image-editor.modules.localhost";
     const host = createMockHost({
       module: { id: "advanced-image-editor", version: "0.1.0" },
-      caps: { fs: "1.1.0" },
+      caps: { fs: "1.4.0" },
       granted: ["fs"],
       handlers: {
         "fs.openRead": () => ({
@@ -78,7 +121,7 @@ describe("safe SDK file handling", () => {
   });
   it("saves only new output batches with distinct names and closes its handle without deleting saved work", async () => {
     const { host, deck } = await setup();
-    const session = new OutputSession(deck, "편집한 이미지"),
+    const session = new OutputSession(deck),
       signal = new AbortController().signal;
     await session.save(new Blob(["first"]), "합성.deckimage", signal);
     await session.save(new Blob(["second"]), "합성.deckimage", signal);
@@ -96,7 +139,7 @@ describe("safe SDK file handling", () => {
   });
   it("writes nothing after folder cancellation and propagates a failed save", async () => {
     const cancelled = await setup({ "fs.pickFolder": () => null });
-    const session = new OutputSession(cancelled.deck, "편집한 이미지");
+    const session = new OutputSession(cancelled.deck);
     expect(await session.save(new Blob(), "합성.png", new AbortController().signal)).toBeNull();
     expect(cancelled.host.requests.some((r) => r.method === "beginWrite")).toBe(false);
     cancelled.deck.dispose();
@@ -105,7 +148,7 @@ describe("safe SDK file handling", () => {
         throw new DeckCallError("INTERNAL", "저장하지 못했어요.");
       },
     });
-    const failedSession = new OutputSession(failed.deck, "편집한 이미지");
+    const failedSession = new OutputSession(failed.deck);
     await expect(
       failedSession.save(new Blob(["data"]), "합성.png", new AbortController().signal),
     ).rejects.toMatchObject({ code: "INTERNAL" });

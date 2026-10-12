@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import type { Deck, FileHandleInfo, FolderHandleInfo } from "@deck/sdk";
+import { OutputSession } from "./output-session.ts";
 import { MAX_BYTES, outputName, signatureExtension, validateOptions, type Options } from "./image.ts";
 export const DEFAULT_OPTIONS: Options = { quality: 82, maxEdge: 1600, format: "webp" };
 export const SETTINGS_KEY = "compression-options";
@@ -72,7 +73,7 @@ export const encode: Encoder = (blob, options, signal) =>
 export async function runBatch(
   deck: Deck,
   files: readonly FileHandleInfo[],
-  parentHandle: string,
+  parentHandle: string | undefined,
   options: Options,
   signal: AbortSignal,
   encoder: Encoder,
@@ -80,12 +81,17 @@ export async function runBatch(
 ) {
   validateOptions(options);
   if (signal.aborted) return { results: [], folder: null };
-  const batch = await deck.fs.createOutputFolder({ parentHandle, suggestedName: "압축 이미지" });
+  const destination = new OutputSession(deck, parentHandle);
+  let folder: FolderHandleInfo | null = null;
   const results: Result[] = [];
   try {
     for (const file of files) {
       if (signal.aborted) break;
+      let outputFolder: FolderHandleInfo | null = null;
       try {
+        const batch = await destination.get(signal, file.handle);
+        if (!batch) break;
+        folder = outputFolder = batch.folder;
         if (file.size > MAX_BYTES) throw new Error("INPUT_TOO_LARGE");
         const chunks: BlobPart[] = [];
         let total = 0;
@@ -116,12 +122,12 @@ export async function runBatch(
         });
       } catch {
         if (signal.aborted) break;
-        results.push({ file, status: "failed", folder: batch.folder });
+        results.push({ file, status: "failed", ...(outputFolder ? { folder: outputFolder } : {}) });
       }
       progress([...results]);
     }
   } finally {
-    await deck.fs.closeOutputFolder({ batchId: batch.batchId });
+    await destination.close();
   }
-  return { results, folder: batch.folder };
+  return { results, folder };
 }

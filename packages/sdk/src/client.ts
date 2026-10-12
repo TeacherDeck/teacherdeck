@@ -96,6 +96,7 @@ import type { HandleArgs } from "./generated/HandleArgs.ts";
 import type { FileRead } from "./generated/FileRead.ts";
 import type { CloseReadArgs } from "./generated/CloseReadArgs.ts";
 import type { CreateOutputFolderArgs } from "./generated/CreateOutputFolderArgs.ts";
+import type { OpenOutputFolderArgs } from "./generated/OpenOutputFolderArgs.ts";
 import type { OutputBatch } from "./generated/OutputBatch.ts";
 import type { BeginWriteArgs } from "./generated/BeginWriteArgs.ts";
 import type { FileWrite } from "./generated/FileWrite.ts";
@@ -268,6 +269,8 @@ export interface Deck {
     openRead(args: HandleArgs): Promise<FileRead>;
     closeRead(args: CloseReadArgs): Promise<void>;
     createOutputFolder(args: CreateOutputFolderArgs): Promise<OutputBatch>;
+    /** Save new files directly in an owned source parent or explicitly selected folder (fs 1.4). */
+    openOutputFolder(args: OpenOutputFolderArgs): Promise<OutputBatch>;
     beginWrite(args: BeginWriteArgs): Promise<FileWrite>;
     writeChunk(args: WriteChunkArgs): Promise<WriteChunkResult>;
     commitWrite(args: WriteIdArgs): Promise<FileHandleInfo>;
@@ -581,6 +584,19 @@ export function connect(options: ConnectOptions = {}): Promise<Deck> {
         openRead: (args) => callFs11<FileRead>("openRead", args),
         closeRead: (args) => callFs11("closeRead", args).then(() => undefined),
         createOutputFolder: (args) => callFs11<OutputBatch>("createOutputFolder", args),
+        openOutputFolder: (args) => {
+          const version = /^1\.(\d+)\.\d+$/.exec(requireInit().host.caps["fs"] ?? "");
+          if (requireInit().granted.includes("fs") && (!version || Number(version[1]) < 4))
+            return Promise.reject(
+              new DeckCallError("VERSION_MISMATCH", "원본 폴더 저장은 fs 1.4 이상 앱에서 사용할 수 있어요."),
+            );
+          if (
+            (args.sourceHandle !== undefined) === (args.parentHandle !== undefined) ||
+            args.sourceHandle === "" || args.parentHandle === ""
+          )
+            return Promise.reject(new DeckCallError("INVALID_ARGS", "원본 파일 또는 저장 폴더 하나를 지정해 주세요."));
+          return call<OutputBatch>("fs", "openOutputFolder", args);
+        },
         beginWrite: (args) => callFs11<FileWrite>("beginWrite", args),
         writeChunk: (args) => callFs11<WriteChunkResult>("writeChunk", args),
         commitWrite: (args) => callFs11<FileHandleInfo>("commitWrite", args),

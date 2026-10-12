@@ -3,7 +3,7 @@
 // Start here. UI only from @deck/ui, icons from @fluentui/react-icons (MOD-010); batch file tools use ToolLayout (MOD-011);
 // host features only through `deck` (MOD-006). See modules/timer for a complete example.
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Deck, FileHandleInfo } from "@deck/sdk";
+import type { Deck, FileHandleInfo, FolderHandleInfo } from "@deck/sdk";
 import { DeckCallError } from "@deck/sdk";
 import {
   Body,
@@ -260,7 +260,12 @@ export function App({ deck }: { deck: Deck }) {
   const s = useStyles();
   const documentRef = useRef<EditorDocument>(createDocument());
   const history = useRef(new EditorHistory());
-  const output = useRef(new OutputSession(deck, "편집한 이미지"));
+  const output = useRef(new OutputSession(deck));
+  const sourceHandle = useRef<string | undefined>(undefined);
+  const parentRef = useRef<FolderHandleInfo | null>(null);
+  const [parent, setParent] = useState<FolderHandleInfo | null>(null);
+  const [inputName, setInputName] = useState("");
+  const [pendingInputName, setPendingInputName] = useState("");
   const mounted = useRef(true);
   const handle = useRef<string | null>(null);
   const dirtyRef = useRef(false);
@@ -319,6 +324,7 @@ export function App({ deck }: { deck: Deck }) {
     names: string[];
     add: boolean;
     name: string;
+    sourceHandle: string;
   } | null>(null);
   const [replacement, setReplacement] = useState(DEFAULT_FONT);
   modal.current = !!prompt || !!fonts || newOpen || noticesOpen;
@@ -494,7 +500,12 @@ export function App({ deck }: { deck: Deck }) {
         const result = await exportDocument(documentRef.current, target, controller.signal, {
           reservedBytes: history.current.memoryBytes + visibleBytes,
         });
-        const written = await output.current.save(result.blob, exportName(nameRef.current, target), controller.signal);
+        const written = await output.current.save(
+          result.blob,
+          exportName(nameRef.current, target),
+          controller.signal,
+          sourceHandle.current,
+        );
         if (!written) return false;
         if (target === "deckimage") savedRevision.current = revision;
         await mark(hasChanges(), false);
@@ -508,6 +519,18 @@ export function App({ deck }: { deck: Deck }) {
         setMessage(errorText(e));
         return false;
       } finally {
+        const session = output.current;
+        const chosen = session.selectedFolder;
+        if (chosen) {
+          parentRef.current = chosen;
+          setParent(chosen);
+        }
+        try {
+          await session.close();
+        } catch {
+          setMessage("저장한 결과는 유지해요. 저장 작업을 정리하지 못했어요.");
+        }
+        output.current = new OutputSession(deck, parentRef.current?.handle);
         job.current = null;
         setBusy("");
         resumePreview();
@@ -524,7 +547,7 @@ export function App({ deck }: { deck: Deck }) {
   useEffect(() => {
     let alive = true;
     mounted.current = true;
-    output.current = new OutputSession(deck, "편집한 이미지");
+    output.current = new OutputSession(deck);
     renderer.current = new PreviewRenderer();
     void deck.window
       .registerDocument()
@@ -575,7 +598,7 @@ export function App({ deck }: { deck: Deck }) {
     });
     return r === "primary" ? saveRef.current() : r === "secondary";
   };
-  const install = async (imported: ImportedDocument, add: boolean, filename: string) => {
+  const install = async (imported: ImportedDocument, add: boolean, filename: string, originalHandle?: string) => {
     if (add)
       edit("이미지 레이어 추가", (draft) => {
         for (const copy of cloneDocumentMetadata(imported.document).layers) {
@@ -586,9 +609,11 @@ export function App({ deck }: { deck: Deck }) {
       });
     else {
       await output.current.close();
-      output.current = new OutputSession(deck, "편집한 이미지");
+      output.current = new OutputSession(deck, parentRef.current?.handle);
       const converted = imported.warnings.length > 0;
       if (converted) await protect();
+      sourceHandle.current = originalHandle;
+      setInputName(originalHandle ? filename : "");
       documentRef.current = imported.document;
       drafts.current.clear();
       history.current.clear();
@@ -608,7 +633,10 @@ export function App({ deck }: { deck: Deck }) {
     setWarning(imported.warnings.join(" · "));
   };
   const openFile = async (add = false, dropped?: FileHandleInfo) => {
-    if (!ready || job.current || flow.current || modal.current) return;
+    if (!ready || job.current || flow.current || modal.current) {
+      if (dropped) setMessage("현재 작업 중이라 파일을 추가하지 못했어요. 작업이 끝나면 다시 놓아주세요.");
+      return;
+    }
     flow.current = true;
     setFlowBusy(true);
     let awaitingFont = false;
@@ -620,11 +648,13 @@ export function App({ deck }: { deck: Deck }) {
             multiple: false,
           });
       const file = picked[0];
-      if (!file || (!add && !(await canReplace()))) return;
+      if (!file) return;
+      setPendingInputName(file.name);
+      setMessage(`${file.name} 파일을 입력했어요.`);
+      if (!add && !(await canReplace())) return;
       const controller = new AbortController();
       job.current = controller;
-      setBusy("파일 여는 중");
-      setMessage("");
+      setBusy(`${file.name} 파일 여는 중`);
       suspendPreview();
       const options: ImportOptions = {
         reservedBytes:
@@ -655,30 +685,67 @@ export function App({ deck }: { deck: Deck }) {
       const absent = imported.fonts.filter((font) => !fontAvailable(font));
       if (absent.length) {
         awaitingFont = true;
-        setFonts({ imported, names: absent, add, name: file.name });
+        setFonts({ imported, names: absent, add, name: file.name, sourceHandle: file.handle });
         return;
       }
       job.current = null;
       setBusy("");
-      await install(imported, add, file.name);
+      await install(imported, add, file.name, file.handle);
+      setMessage(`${file.name} 파일을 열었어요.${add ? " 이미지 레이어로 추가했어요." : ""}`);
     } catch (e) {
       setMessage(errorText(e));
     } finally {
       job.current = null;
       setBusy("");
       if (!awaitingFont) {
+        setPendingInputName("");
         flow.current = false;
         setFlowBusy(false);
         resumePreview();
       }
     }
   };
+  const chooseDestination = async () => {
+    if (job.current || flow.current || !ready) return;
+    flow.current = true;
+    setFlowBusy(true);
+    try {
+      const picked = await deck.fs.pickFolder();
+      if (picked) {
+        await output.current.close();
+        parentRef.current = picked;
+        setParent(picked);
+        output.current = new OutputSession(deck, picked.handle);
+      }
+    } catch (e) {
+      setMessage(errorText(e));
+    } finally {
+      flow.current = false;
+      setFlowBusy(false);
+    }
+  };
+  const resetDestination = async () => {
+    if (job.current || flow.current) return;
+    await output.current.close();
+    parentRef.current = null;
+    setParent(null);
+    output.current = new OutputSession(deck);
+  };
   const openRef = useRef(openFile);
   openRef.current = openFile;
   useEffect(
     () =>
       deck.on("fs.dropped", ({ files }) => {
-        if (files[0]) void openRef.current(false, files[0]);
+        const file = files[0];
+        if (!file) {
+          setMessage("폴더나 읽을 수 없는 파일은 추가하지 않았어요. 지원하는 파일을 놓아주세요.");
+          return;
+        }
+        if (!/\.(jpe?g|png|webp|psd|deckimage)$/i.test(file.name)) {
+          setMessage("JPG·PNG·WebP·PSD·작업 파일을 놓아주세요.");
+          return;
+        }
+        void openRef.current(false, file);
       }),
     [deck],
   );
@@ -1232,6 +1299,32 @@ export function App({ deck }: { deck: Deck }) {
         />
         <CheckBox content="보정 전 비교" checked={compare} onChange={setCompare} />
       </section>
+      <div className={s.options} aria-label="파일 입력과 저장 위치">
+        {!!inputName && <Caption aria-live="polite">입력 파일: {inputName}</Caption>}
+        {!!pendingInputName && <Caption aria-live="polite">입력 파일 확인 중: {pendingInputName}</Caption>}
+        <EditorAction
+          icon="open"
+          label="저장 폴더 선택"
+          labelVisible
+          size="small"
+          disabled={disabled}
+          onClick={() => void chooseDestination()}
+        />
+        <EditorAction
+          icon="reset"
+          label="원본 폴더에 저장"
+          size="small"
+          disabled={disabled || !parent}
+          onClick={() => void resetDestination()}
+        />
+        <Caption>
+          {parent
+            ? `저장 위치: ${parent.name}`
+            : sourceHandle.current
+              ? "원본 파일과 같은 폴더에 저장해요."
+              : "새 작업은 처음 저장할 때 폴더를 선택해요."}
+        </Caption>
+      </div>
       {!!message && <InfoBar severity="informational" onClose={() => setMessage("")} message={message} />}
       {!!warning && <InfoBar severity="warning" onClose={() => setWarning("")} message={warning} />}
       {!!busy && (
@@ -1658,6 +1751,7 @@ export function App({ deck }: { deck: Deck }) {
           const pending = fonts;
           setFonts(null);
           const release = () => {
+            setPendingInputName("");
             flow.current = false;
             setFlowBusy(false);
             resumePreview();
@@ -1670,7 +1764,7 @@ export function App({ deck }: { deck: Deck }) {
             if (item.kind === "text" && pending.names.includes(item.text.fontFamily))
               item.text.fontFamily = replacement;
           pending.imported.warnings.push("글꼴을 바꿔 글자 배치가 달라질 수 있어요.");
-          void install(pending.imported, pending.add, pending.name)
+          void install(pending.imported, pending.add, pending.name, pending.sourceHandle)
             .catch((e: unknown) => setMessage(errorText(e)))
             .finally(release);
         }}

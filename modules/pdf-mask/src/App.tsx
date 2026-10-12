@@ -47,6 +47,8 @@ export function App({ deck }: { deck: Deck }) {
   const lock = useRef(false);
   const controller = useRef<AbortController | null>(null);
   const [message, setMessage] = useState("");
+  const [inputMessage, setInputMessage] = useState("");
+  const [pendingFile, setPendingFile] = useState<FileHandleInfo | null>(null);
   const [done, setDone] = useState(0);
   const [total, setTotal] = useState(0);
   const [enabled, setEnabled] = useState<Kind[]>([...TYPES]);
@@ -61,6 +63,7 @@ export function App({ deck }: { deck: Deck }) {
   const [rect, setRect] = useState<Rect>({ x: 20, y: 20, width: 100, height: 30 });
   const [ack, setAck] = useState(false);
   const [folder, setFolder] = useState<FolderHandleInfo | null>(null);
+  const [parent, setParent] = useState<FolderHandleInfo | null>(null);
   const [saved, setSaved] = useState<FileHandleInfo | null>(null);
   const page = input?.pages[pageIndex];
   const onPage = candidates.filter((c) => c.page === page?.number);
@@ -75,10 +78,24 @@ export function App({ deck }: { deck: Deck }) {
   useEffect(
     () =>
       deck.on("fs.dropped", ({ files }) => {
-        if (!lock.current) {
-          const file = files.find((f) => f.ext.toLowerCase() === "pdf");
-          if (file) void load(file);
-          else setMessage("PDF 파일을 추가해 주세요.");
+        if (!files.length) return;
+        if (lock.current) {
+          setInputMessage("현재 문서를 처리하고 있어요. 끝난 뒤 파일을 추가해 주세요.");
+          return;
+        }
+        const file = files.find((f) => f.ext.toLowerCase() === "pdf");
+        if (file) {
+          if (current.current?.file.handle === file.handle) {
+            setInputMessage("이미 입력한 PDF예요. 현재 문서를 유지해요.");
+          } else
+            void load(
+              file,
+              files.length > 1 ? "첫 번째 PDF를 입력했어요. 나머지 파일은 추가하지 않았어요." : undefined,
+            );
+        } else {
+          const termsFile = files.find((f) => ["txt", "csv"].includes(f.ext.toLowerCase()));
+          if (termsFile) void importTerms(termsFile);
+          else setInputMessage("PDF 또는 검색어 목록 TXT·CSV를 추가해 주세요.");
         }
       }),
     [deck, terms, enabled, autoOcr],
@@ -130,9 +147,11 @@ export function App({ deck }: { deck: Deck }) {
     setDone(count);
     setTotal(maximum);
   }
-  async function load(file: FileHandleInfo) {
+  async function load(file: FileHandleInfo, notice = "PDF를 입력했어요. 문서 내용을 읽고 있어요.") {
     if (lock.current) return;
     setRun(true);
+    setPendingFile(file);
+    setInputMessage(notice);
     setMessage("");
     const abort = new AbortController();
     controller.current = abort;
@@ -163,6 +182,9 @@ export function App({ deck }: { deck: Deck }) {
       setFolder(null);
       setSaved(null);
       setAck(false);
+      setInputMessage(
+        `PDF ${file.name}을 입력했어요. ${next.pages.length}쪽을 확인할 수 있어요.${notice.includes("나머지") ? " 나머지 파일은 추가하지 않았어요." : ""}`,
+      );
       setMessage(
         `${next.pages.length}쪽에서 개인정보 후보 ${found.length}건을 찾았어요. 제거할 영역을 확인해 주세요.${scanMessage}`,
       );
@@ -175,6 +197,7 @@ export function App({ deck }: { deck: Deck }) {
       );
     } finally {
       controller.current = null;
+      setPendingFile(null);
       setRun(false);
     }
   }
@@ -243,18 +266,21 @@ export function App({ deck }: { deck: Deck }) {
       setMessage("검색어는 256개까지, 한 항목은 200자까지 입력해 주세요.");
     }
   }
-  async function importTerms() {
+  async function importTerms(dropped?: FileHandleInfo) {
     if (lock.current) return;
     setRun(true);
     const abort = new AbortController();
     controller.current = abort;
     try {
-      const files = await deck.fs.pickFiles({
-        multiple: false,
-        filters: [{ name: "목록", extensions: ["txt", "csv"] }],
-      });
+      const files = dropped
+        ? [dropped]
+        : await deck.fs.pickFiles({
+            multiple: false,
+            filters: [{ name: "목록", extensions: ["txt", "csv"] }],
+          });
       const file = files[0];
       if (!file) return;
+      setInputMessage(`검색어 목록 ${file.name}을 입력했어요. 내용을 읽고 있어요.`);
       const data = await readFile(deck, file, abort.signal, 128 * 1024);
       const imported = readTerms(
         new TextDecoder("utf-8", { fatal: true }).decode(data),
@@ -264,6 +290,7 @@ export function App({ deck }: { deck: Deck }) {
       const next = readTerms([...terms, ...imported].join("\n"), false, false);
       setTerms(next);
       refresh(next);
+      setInputMessage(`검색어 목록 ${file.name}에서 ${imported.length}개 검색어를 입력했어요.`);
       setMessage(`${imported.length}개 검색어를 추가했어요. CSV는 첫 번째 열을 읽어요.`);
     } catch {
       setMessage("목록을 읽지 못했어요. UTF-8 TXT·CSV 128 KB 이하, 검색어 256개 이하로 저장해 주세요.");
@@ -278,9 +305,9 @@ export function App({ deck }: { deck: Deck }) {
     const abort = new AbortController();
     controller.current = abort;
     try {
-      const parent = await deck.fs.pickFolder();
-      if (!parent) return;
-      const batch = await deck.fs.createOutputFolder({ parentHandle: parent.handle, suggestedName: "검색어 양식" });
+      const destination = parent ?? (await deck.fs.pickFolder());
+      if (!destination || abort.signal.aborted) return;
+      const batch = await deck.fs.openOutputFolder({ parentHandle: destination.handle });
       try {
         await deck.fs.writeBlob(
           {
@@ -326,14 +353,14 @@ export function App({ deck }: { deck: Deck }) {
     controller.current = abort;
     try {
       const blob = await redact(input, candidates, abort.signal, progress);
-      const output = await saveResult(deck, input, blob, abort.signal);
+      const output = await saveResult(deck, input, blob, abort.signal, parent?.handle);
       if (output) {
         setFolder(output.folder);
         setSaved(output.saved);
         setMessage(
           `선택한 ${selected.length}개 영역을 제거하고 새 PDF를 저장했어요. 출력의 텍스트·주석·첨부가 없는 것을 확인했어요.`,
         );
-      } else setMessage("저장 폴더 선택을 취소했어요. 제거 영역은 유지해요.");
+      } else setMessage("저장을 취소했어요. 제거 영역은 유지해요.");
     } catch {
       setMessage(
         abort.signal.aborted
@@ -352,9 +379,7 @@ export function App({ deck }: { deck: Deck }) {
     >
       <ToolLayout.Section step="input" title="1. PDF 선택">
         <DropZone
-          onPick={() => {
-            void pick();
-          }}
+          {...(busy ? {} : { onPick: () => void pick() })}
           description="PDF 한 개를 끌어 놓거나 선택해 주세요. 원본은 그대로 남아요."
         />
         <CheckBox
@@ -363,6 +388,12 @@ export function App({ deck }: { deck: Deck }) {
           disabled={busy}
           onChange={setAutoOcr}
         />
+        {inputMessage && (
+          <div role="status">
+            <InfoBar severity="informational" message={inputMessage} />
+          </div>
+        )}
+        {pendingFile && <Body>{pendingFile.name} · 읽는 중</Body>}
         {input && (
           <Body>
             {input.file.name} · {input.pages.length}쪽
@@ -378,12 +409,42 @@ export function App({ deck }: { deck: Deck }) {
             setFolder(null);
             setSaved(null);
             setMessage("");
+            setInputMessage("");
           }}
         >
           문서 비우기
         </Button>
       </ToolLayout.Section>
       <ToolLayout.Section step="options" title="2. 찾을 정보">
+        <div className={s.actions}>
+          <Button
+            disabled={busy}
+            onClick={() =>
+              void (async () => {
+                if (lock.current) return;
+                setRun(true);
+                try {
+                  const selected = await deck.fs.pickFolder();
+                  if (selected) setParent(selected);
+                } catch {
+                  setMessage("저장 폴더를 선택하지 못했어요. 다시 선택해 주세요.");
+                } finally {
+                  setRun(false);
+                }
+              })()
+            }
+          >
+            다른 저장 폴더 선택
+          </Button>
+          {parent && (
+            <Button disabled={busy} onClick={() => setParent(null)}>
+              원본 폴더에 저장
+            </Button>
+          )}
+        </div>
+        <Caption>
+          {parent ? `저장 폴더: ${parent.name}` : "새 PDF는 원본과 같은 폴더에 저장해요. 새 폴더는 만들지 않아요."}
+        </Caption>
         <div className={s.actions}>
           {TYPES.filter((kind) => kind !== "검색어").map((kind) => (
             <CheckBox

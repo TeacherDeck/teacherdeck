@@ -19,7 +19,7 @@ const files = [
   { handle: "first", name: "합성 첫사진.png", ext: "png", size: 4, modifiedAt: 0 },
   { handle: "second", name: "합성 다음사진.png", ext: "png", size: 4, modifiedAt: 0 },
 ];
-async function setup(previewSize = 1, incoming = files) {
+async function setup(previewSize = 1, incoming = files, pickInitial = true) {
   const originalUrl = URL;
   vi.stubGlobal(
     "URL",
@@ -43,7 +43,7 @@ async function setup(previewSize = 1, incoming = files) {
   });
   const host = createMockHost({
     module: { id: "image-crop", version: "0.1.0" },
-    caps: { fs: "1.1.0" },
+    caps: { fs: "1.4.0" },
     granted: ["fs"],
     handlers: { "fs.pickFiles": () => incoming },
   });
@@ -53,11 +53,13 @@ async function setup(previewSize = 1, incoming = files) {
       <App deck={deck} />
     </DeckProvider>,
   );
-  fireEvent.click(screen.getByRole("button", { name: "파일 추가" }));
-  await screen.findByRole("group", { name: "사진에서 자를 영역" });
-  await waitFor(() =>
-    expect(screen.getByRole("button", { name: "현재 사진 저장" }).hasAttribute("disabled")).toBe(false),
-  );
+  if (pickInitial) {
+    fireEvent.click(screen.getByRole("button", { name: "파일 추가" }));
+    await screen.findByRole("group", { name: "사진에서 자를 영역" });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "현재 사진 저장" }).hasAttribute("disabled")).toBe(false),
+    );
+  }
   return { deck, host };
 }
 afterEach(() => {
@@ -66,6 +68,29 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe("image crop editing flow", () => {
+  it("acknowledges dropped filenames before decoding without opening a picker", async () => {
+    const { deck, host } = await setup(1, files, false);
+    let finish: ((value: Uint8Array<ArrayBuffer>) => void) | undefined;
+    vi.mocked(readImage).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const first = files[0];
+    if (!first) throw new Error("SYNTHETIC_FILE_MISSING");
+    await act(async () => {
+      host.emit("fs.dropped", { files: [first] });
+    });
+    expect(await screen.findByText("합성 첫사진.png · 파일 입력됨")).toBeTruthy();
+    expect(screen.getByText("입력한 파일 1개 · 읽는 중")).toBeTruthy();
+    expect(host.requests.some((r) => ["pickFiles", "pickFolder"].includes(r.method))).toBe(false);
+    await act(async () => {
+      finish?.(new Uint8Array([1, 2, 3, 4]));
+    });
+    await screen.findByRole("group", { name: "사진에서 자를 영역" });
+    deck.dispose();
+  });
   it("queues an additional drop during reading and ignores a repeated in-flight handle", async () => {
     const { deck, host } = await setup();
     const third = { handle: "third", name: "합성 세번째.png", ext: "png", size: 4, modifiedAt: 0 };
@@ -196,6 +221,20 @@ describe("image crop editing flow", () => {
 });
 
 describe("crop save recovery", () => {
+  it("does not assign another source's saved folder to an unopened failed source", async () => {
+    vi.mocked(saveCrops).mockResolvedValueOnce({
+      folder: { handle: "source-a-parent", name: "합성 A 폴더" },
+      folders: { first: { handle: "source-a-parent", name: "합성 A 폴더" } },
+      saved: ["first"],
+      failed: ["second"],
+      cancelled: false,
+    });
+    const { deck } = await setup();
+    fireEvent.click(screen.getByRole("button", { name: "전체 사진 저장" }));
+    await screen.findByText(/합성 다음사진.png · 저장 실패/);
+    expect(screen.getAllByRole("button", { name: "저장 위치 열기" })).toHaveLength(1);
+    deck.dispose();
+  });
   it("lists each failed photo and retries only unsaved photos in the same session", async () => {
     vi.mocked(saveCrops)
       .mockResolvedValueOnce({
@@ -243,6 +282,7 @@ describe("crop destination recovery UI", () => {
     vi.mocked(saveCrops)
       .mockResolvedValueOnce({
         folder: { handle: "old-output", name: "합성 결과" },
+        folders: { first: { handle: "old-output", name: "합성 결과" } },
         saved: ["first"],
         failed: ["second"],
         cancelled: false,
@@ -250,6 +290,7 @@ describe("crop destination recovery UI", () => {
       })
       .mockResolvedValueOnce({
         folder: { handle: "new-output", name: "합성 새 결과" },
+        folders: { second: { handle: "new-output", name: "합성 새 결과" } },
         saved: ["second"],
         failed: [],
         cancelled: false,

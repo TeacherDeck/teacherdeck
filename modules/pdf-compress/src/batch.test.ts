@@ -12,10 +12,10 @@ async function fixture() {
   const written: Uint8Array[] = [];
   const host = createMockHost({
     module: { id: "pdf-compress", version: "0.1.0" },
-    caps: { fs: "1.1.0" },
+    caps: { fs: "1.4.0" },
     granted: ["fs"],
     handlers: {
-      "fs.createOutputFolder": () => ({ batchId: "batch", folder: { handle: "output", name: "합성 결과" } }),
+      "fs.openOutputFolder": () => ({ batchId: "batch", folder: { handle: "output", name: "합성 결과" } }),
       "fs.closeOutputFolder": closed,
     },
   });
@@ -28,9 +28,47 @@ async function fixture() {
     written.push(bytes);
     return { handle: "saved", name: suggestedName, ext: "pdf", size: bytes.length, modifiedAt: 0 };
   };
-  return { deck, closed, written };
+  return { deck, host, closed, written };
 }
 describe("PDF batch output boundaries", () => {
+  it("writes each source beside its original by default without opening dialogs or creating directories", async () => {
+    const f = await fixture();
+    await runBatch(
+      f.deck,
+      files.slice(0, 2),
+      null,
+      DEFAULT_OPTIONS,
+      new AbortController().signal,
+      () => undefined,
+      async () => new Uint8Array([9]),
+    );
+    expect(f.host.requests.filter((r) => r.method === "openOutputFolder").map((r) => r.args)).toEqual([
+      { sourceHandle: "a" },
+      { sourceHandle: "b" },
+    ]);
+    expect(f.host.requests.some((r) => ["pickFiles", "pickFolder", "createOutputFolder"].includes(r.method))).toBe(
+      false,
+    );
+    expect(f.closed).toHaveBeenCalledTimes(2);
+    f.deck.dispose();
+  });
+  it("uses the explicitly selected existing folder for every source", async () => {
+    const f = await fixture();
+    await runBatch(
+      f.deck,
+      files.slice(0, 2),
+      "chosen",
+      DEFAULT_OPTIONS,
+      new AbortController().signal,
+      () => undefined,
+      async () => new Uint8Array([9]),
+    );
+    expect(f.host.requests.filter((r) => r.method === "openOutputFolder").map((r) => r.args)).toEqual([
+      { parentHandle: "chosen" },
+      { parentHandle: "chosen" },
+    ]);
+    f.deck.dispose();
+  });
   it("keeps source bytes when larger, continues failures, and closes output", async () => {
     const f = await fixture();
     let calls = 0;
@@ -50,7 +88,7 @@ describe("PDF batch output boundaries", () => {
     expect(result.results.map((r) => r.status)).toEqual(["original", "failed", "compressed"]);
     expect([...(f.written[0] ?? [])]).toEqual([1, 2, 3, 4]);
     expect([...(f.written[1] ?? [])]).toEqual([9, 8]);
-    expect(f.closed).toHaveBeenCalledOnce();
+    expect(f.closed).toHaveBeenCalledTimes(2);
   });
   it("cancellation preserves completed outputs and leaves remaining files untouched", async () => {
     const f = await fixture();

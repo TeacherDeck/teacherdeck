@@ -44,7 +44,9 @@ export function App({ deck }: { deck: Deck }) {
     [macros, setMacros] = useState(false),
     [availability, setAvailability] = useState<OfficeAvailability | null>(null),
     [folder, setFolder] = useState<FolderHandleInfo | null>(null),
+    [parent, setParent] = useState<FolderHandleInfo | null>(null),
     [busy, setBusy] = useState(false),
+    [inputMessage, setInputMessage] = useState(""),
     [message, setMessage] = useState("");
   const locked = useRef(false),
     stopped = useRef(false),
@@ -63,7 +65,11 @@ export function App({ deck }: { deck: Deck }) {
     };
   }, [deck]);
   function addFiles(incoming: FileHandleInfo[]) {
-    if (locked.current) return;
+    if (locked.current) {
+      setInputMessage("현재 문서를 처리하고 있어요. 끝난 뒤 문서를 추가해 주세요.");
+      return;
+    }
+    if (!incoming.length) return;
     const valid = incoming.filter((file) => providerFor(file) !== null);
     const known = new Set(selectedFiles.current.map((file) => file.handle));
     const additions = valid.filter((file) => {
@@ -76,10 +82,15 @@ export function App({ deck }: { deck: Deck }) {
       setFiles(selectedFiles.current);
       setRows([]);
     }
-    if (valid.length !== incoming.length) setMessage("한글·Excel·PowerPoint·Word 문서만 선택해 주세요.");
+    setInputMessage(
+      additions.length
+        ? `문서 ${additions.length}개를 추가했어요. 새 파일 미리보기에서 확인해 주세요.${additions.length !== incoming.length ? " 지원하지 않거나 이미 추가한 파일은 제외했어요." : ""}`
+        : "추가할 문서가 없어요. 한글·Excel·PowerPoint·Word 문서만 추가하며 이미 추가한 문서는 유지해요.",
+    );
   }
   useEffect(() => deck.on("fs.dropped", ({ files: incoming }) => addFiles(incoming)), [deck]);
   async function pick() {
+    if (locked.current) return;
     try {
       addFiles(
         await deck.fs.pickFiles({
@@ -115,7 +126,6 @@ export function App({ deck }: { deck: Deck }) {
     stopped.current = false;
     setBusy(true);
     setMessage("");
-    let batchId: string | null = null;
     const next = retry
       ? rows.map((row) => {
           if (!selected.includes(row)) return { ...row };
@@ -124,11 +134,6 @@ export function App({ deck }: { deck: Deck }) {
         })
       : plans.map((row) => ({ ...row }));
     try {
-      const parent = await deck.fs.pickFolder();
-      if (parent === null) return;
-      const output = await deck.fs.createOutputFolder({ parentHandle: parent.handle, suggestedName: "변환한 문서" });
-      batchId = output.batchId;
-      setFolder(output.folder);
       update(next);
       for (const row of next) {
         if (!selected.some((chosen) => chosen.file.handle === row.file.handle) || row.state === "converted") continue;
@@ -139,7 +144,16 @@ export function App({ deck }: { deck: Deck }) {
         }
         row.state = "converting";
         update(next);
+        let batchId: string | undefined;
         try {
+          const output = await deck.fs.openOutputFolder(
+            parent ? { parentHandle: parent.handle } : { sourceHandle: row.file.handle },
+          );
+          batchId = output.batchId;
+          if (stopped.current || !mounted.current) {
+            row.state = "cancelled";
+            continue;
+          }
           const result = await deck.office.convert({
             sourceHandle: row.file.handle,
             batchId,
@@ -148,6 +162,7 @@ export function App({ deck }: { deck: Deck }) {
           });
           row.state = "converted";
           row.result = result.file;
+          setFolder(output.folder);
           setAvailability((previous) =>
             previous
               ? {
@@ -167,6 +182,8 @@ export function App({ deck }: { deck: Deck }) {
               : undefined;
           row.message = conversionError(code, advice);
           if (code === "CANCELLED") stopped.current = true;
+        } finally {
+          if (batchId) await deck.fs.closeOutputFolder({ batchId }).catch(() => undefined);
         }
         update(next);
       }
@@ -180,10 +197,6 @@ export function App({ deck }: { deck: Deck }) {
     } catch {
       setMessage("출력 폴더를 준비하지 못했어요. 다른 폴더를 선택해 주세요.");
     } finally {
-      if (batchId !== null)
-        await deck.fs.closeOutputFolder({ batchId }).catch(() => {
-          if (mounted.current) setMessage("저장한 결과는 유지했어요. 도구를 다시 열어 주세요.");
-        });
       locked.current = false;
       if (mounted.current) setBusy(false);
     }
@@ -199,7 +212,7 @@ export function App({ deck }: { deck: Deck }) {
   return (
     <ToolLayout
       title="문서 형식 변환"
-      description="설치된 한글·Office로 실제 문서 형식을 바꿔요. 원본은 유지하고 새 폴더에 저장해요."
+      description="설치된 한글·Office로 실제 문서 형식을 바꿔 원본과 같은 폴더에 새 파일로 저장해요."
     >
       <ToolLayout.Section step="input" title="변환할 문서">
         {files.length === 0 && (
@@ -222,6 +235,7 @@ export function App({ deck }: { deck: Deck }) {
               setRows([]);
               setFolder(null);
               setMessage("");
+              setInputMessage("");
             }}
           >
             목록 비우기
@@ -229,8 +243,44 @@ export function App({ deck }: { deck: Deck }) {
           <Caption>{files.length}개 문서</Caption>
           {files.length > 0 && <Caption>덱 창에 문서를 놓아 더 추가할 수 있어요.</Caption>}
         </div>
+        {inputMessage && (
+          <div role="status">
+            <InfoBar severity="informational" message={inputMessage} />
+          </div>
+        )}
       </ToolLayout.Section>
       <ToolLayout.Section step="options" title="변환 옵션">
+        <div className={s.actions}>
+          <Button
+            disabled={busy}
+            onClick={() =>
+              void (async () => {
+                if (locked.current) return;
+                locked.current = true;
+                setBusy(true);
+                try {
+                  const selected = await deck.fs.pickFolder();
+                  if (selected && mounted.current) setParent(selected);
+                } catch {
+                  if (mounted.current) setMessage("저장 폴더를 선택하지 못했어요. 다시 선택해 주세요.");
+                } finally {
+                  locked.current = false;
+                  if (mounted.current) setBusy(false);
+                }
+              })()
+            }
+          >
+            다른 저장 폴더 선택
+          </Button>
+          {parent && (
+            <Button disabled={busy} onClick={() => setParent(null)}>
+              원본 폴더에 저장
+            </Button>
+          )}
+        </div>
+        <Caption>
+          {parent ? `저장 폴더: ${parent.name}` : "각 원본 파일과 같은 폴더에 저장해요. 새 폴더는 만들지 않아요."}
+        </Caption>
         <ToggleSwitch
           header="매크로 보존 형식으로 변환"
           checked={macros}
@@ -270,7 +320,7 @@ export function App({ deck }: { deck: Deck }) {
               <div className={s.row}>
                 <div className={s.text}>
                   <Body>
-                    {row.file.name} → {row.outputName}
+                    {row.file.name} → {row.result?.name ?? row.outputName}
                   </Body>
                   {row.message && <Caption>{row.message}</Caption>}
                 </div>
@@ -295,7 +345,7 @@ export function App({ deck }: { deck: Deck }) {
       <ToolLayout.Section step="run" title="변환">
         <div className={s.actions}>
           <Button appearance="primary" disabled={busy || plans.length === 0} onClick={() => void run()}>
-            출력 폴더 선택하고 변환
+            변환
           </Button>
           {busy && <Button onClick={() => void stop()}>중지</Button>}
           {!busy && rows.some((row) => row.state === "failed" || row.state === "cancelled") && (

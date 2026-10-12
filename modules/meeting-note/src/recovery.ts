@@ -23,7 +23,7 @@ export async function saveRecoveryBackup(deck: Pick<Deck, "storage" | "fs">): Pr
   const snapshot = snapshotOf(meeting, library);
   const parent = await deck.fs.pickFolder();
   if (!parent) return null;
-  const batch = await deck.fs.createOutputFolder({ parentHandle: parent.handle, suggestedName: "회의록 복구자료" });
+  const batch = await deck.fs.openOutputFolder({ parentHandle: parent.handle });
   try {
     const blob = new Blob([JSON.stringify({ meeting, library }, null, 2)], { type: "application/json" });
     const saved = await deck.fs.writeBlob({ batchId: batch.batchId, suggestedName: "recovery.json", blob });

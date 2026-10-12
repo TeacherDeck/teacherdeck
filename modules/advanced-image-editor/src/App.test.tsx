@@ -80,7 +80,7 @@ function importedText(fontFamily = "Arial"): ImportedDocument {
 async function setup(handlers: Record<string, MockHandler> = {}) {
   const host = createMockHost({
     module: { id: "advanced-image-editor", version: "0.1.0" },
-    caps: { fs: "1.1.0", window: "1.2.0" },
+    caps: { fs: "1.4.0", window: "1.2.0" },
     granted: ["fs", "window"],
     handlers: {
       "window.registerDocument": () => ({ documentHandle: "synthetic-document" }),
@@ -130,6 +130,45 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+});
+describe("dropped editor inputs", () => {
+  it("keeps the current document's input name after another dropped file fails to read", async () => {
+    const { deck, host } = await setup();
+    await openText();
+    files.read.mockRejectedValueOnce(new FileOperationError("INVALID_FILE"));
+    await act(async () => {
+      host.emit("fs.dropped", { files: [{ ...syntheticFile, handle: "source-b", name: "합성 B.psd" }] });
+    });
+    await screen.findByText("작업을 마치지 못했어요. 파일 상태를 확인하고 다시 시도하세요.");
+    expect(screen.getByText("입력 파일: 합성.psd")).toBeTruthy();
+    expect(screen.queryByText("입력 파일: 합성 B.psd")).toBeNull();
+    expect(screen.queryByText("입력 파일 확인 중: 합성 B.psd")).toBeNull();
+    expect(screen.getByDisplayValue("합성 원문")).toBeTruthy();
+    deck.dispose();
+  });
+  it("acknowledges a dropped file before reading without opening any picker", async () => {
+    const { deck, host } = await setup();
+    let finish: ((bytes: Uint8Array) => void) | undefined;
+    files.read.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    files.import.mockResolvedValueOnce(importedText());
+    await act(async () => {
+      host.emit("fs.dropped", { files: [syntheticFile] });
+    });
+    expect(await screen.findByText("입력 파일 확인 중: 합성.psd")).toBeTruthy();
+    expect(screen.getAllByText("합성.psd 파일 여는 중").length).toBeGreaterThan(0);
+    expect(host.requests.some((r) => ["pickFiles", "pickFolder"].includes(r.method))).toBe(false);
+    await act(async () => {
+      finish?.(new Uint8Array([1, 2, 3, 4]));
+    });
+    await screen.findByDisplayValue("합성 원문");
+    expect(files.read.mock.calls[0]?.[1]).toEqual(syntheticFile);
+    deck.dispose();
+  });
 });
 describe("advanced editor document lifecycle", () => {
   it("exposes named icon actions and switches tools by shortcut without consuming text or composition keys", async () => {
@@ -535,6 +574,8 @@ describe("advanced editor document lifecycle", () => {
     await screen.findByText("새 파일로 내보냈어요. 편집 상태는 작업 파일로 저장하세요.");
     expect(files.export.mock.calls[0]?.[0].layers[0].text.content).toBe("수정한 합성 글자\n두 번째 줄");
     expect(files.export.mock.calls[0]?.[1]).toBe("png");
+    expect(files.save.mock.calls[0]?.[3]).toBe(syntheticFile.handle);
+    expect(files.close).toHaveBeenCalledTimes(2);
     expect(screen.getByText(/미저장 작업/)).toBeTruthy();
     expect(host.requests.filter((request) => request.method === "setDocumentState").at(-1)?.args).toMatchObject({
       dirty: true,

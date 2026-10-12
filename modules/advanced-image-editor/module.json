@@ -4,12 +4,25 @@
   "id": "advanced-image-editor",
   "name": "고급 이미지 편집",
   "description": "레이어·색보정·누끼와 기본 PSD를 편집해요.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "category": "image",
   "icon": "icon.svg",
   "entry": "index.html",
-  "authors": [{ "name": "rochelobeJYJ" }, { "name": "bitbof (Klecks)", "github": "bitbof" }],
-  "requires": { "fs": "^1.1", "window": "^1.2" },
+  "authors": [
+    {
+      "name": "rochelobeJYJ"
+    },
+    {
+      "name": "bitbof (Klecks)",
+      "github": "bitbof"
+    }
+  ],
+  "requires": {
+    "fs": "^1.4.0",
+    "window": "^1.2"
+  },
   "optional": {},
-  "ui": { "keepAlive": true }
+  "ui": {
+    "keepAlive": true
+  }
 }

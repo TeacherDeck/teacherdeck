@@ -36,6 +36,7 @@ export type { HandleArgs } from "./generated/HandleArgs.ts";
 export type { FileRead } from "./generated/FileRead.ts";
 export type { CloseReadArgs } from "./generated/CloseReadArgs.ts";
 export type { CreateOutputFolderArgs } from "./generated/CreateOutputFolderArgs.ts";
+export type { OpenOutputFolderArgs } from "./generated/OpenOutputFolderArgs.ts";
 export type { OutputBatch } from "./generated/OutputBatch.ts";
 export type { BeginWriteArgs } from "./generated/BeginWriteArgs.ts";
 export type { FileWrite } from "./generated/FileWrite.ts";

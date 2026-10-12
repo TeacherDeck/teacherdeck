@@ -20,7 +20,7 @@ async function setup(
   const selection = { files: [first] };
   const host = createMockHost({
     module: { id: "image-compress", version: "0.1.2" },
-    caps: { fs: "1.1.0", storage: "1.0.0" },
+    caps: { fs: "1.4.0", storage: "1.0.0" },
     granted: ["fs", "storage"],
     handlers: {
       "storage.get": () => null,
@@ -55,7 +55,7 @@ describe("compression additions and recovery", () => {
     await waitFor(() => expect(runBatch).toHaveBeenCalledTimes(1));
     await screen.findByText(/대기 0개/);
     expect(vi.mocked(runBatch).mock.calls[0]?.[1]).toEqual([first]);
-    expect(host.requests.filter((r) => r.method === "pickFolder")).toHaveLength(1);
+    expect(host.requests.filter((r) => ["pickFolder", "createOutputFolder"].includes(r.method))).toHaveLength(0);
     await act(async () => {
       host.emit("fs.dropped", { files: [second] });
     });
@@ -136,55 +136,51 @@ describe("compression additions and recovery", () => {
 });
 
 describe("default automatic drop queue", () => {
-  it("keeps rapid drops during the first folder picker and reuses the selected folder", async () => {
-    let choose: ((folder: unknown) => void) | undefined;
-    const { deck, host } = await setup(
-      true,
-      () =>
-        new Promise((resolve) => {
-          choose = resolve;
-        }),
-    );
+  it("shows dropped filenames during automatic processing without opening either picker", async () => {
+    let complete: (() => void) | undefined;
+    vi.mocked(runBatch).mockImplementation(async (_deck, selected) => {
+      await new Promise<void>((resolve) => {
+        complete = resolve;
+      });
+      return {
+        folder,
+        results: selected.map((file) => ({ file, status: "compressed" as const, folder, outputSize: 2 })),
+      };
+    });
+    const { deck, host } = await setup(true);
+    await act(async () => {
+      host.emit("fs.dropped", { files: [first, second] });
+    });
+    await waitFor(() => expect(complete).toBeDefined());
+    expect(screen.getByText(/합성 첫사진.png · .*압축 대기/)).toBeTruthy();
+    expect(screen.getByText(/합성 다음사진.png · .*압축 대기/)).toBeTruthy();
+    expect(screen.getByText(/2개 · .*대기 2개/)).toBeTruthy();
+    expect(host.requests.some((r) => ["pickFiles", "pickFolder", "createOutputFolder"].includes(r.method))).toBe(false);
+    expect(vi.mocked(runBatch).mock.calls[0]?.[2]).toBeUndefined();
+    complete?.();
+    await screen.findByText(/2개 · .*대기 0개/);
+    deck.dispose();
+  });
+  it("an explicit destination override can return to each original folder", async () => {
     vi.mocked(runBatch).mockImplementation(async (_deck, selected) => ({
       folder,
-      results: selected.map((file) => ({ file, status: "compressed", folder, outputSize: 2 })),
+      results: selected.map((file) => ({ file, status: "compressed" as const, folder, outputSize: 2 })),
     }));
+    const { deck, host } = await setup(true);
+    fireEvent.click(screen.getByRole("button", { name: "저장 폴더 선택" }));
+    await screen.findByText("저장 위치: 합성 저장 폴더");
     await act(async () => {
       host.emit("fs.dropped", { files: [first] });
     });
-    await waitFor(() => expect(choose).toBeDefined());
+    await waitFor(() => expect(runBatch).toHaveBeenCalledOnce());
+    expect(vi.mocked(runBatch).mock.calls[0]?.[2]).toBe("parent");
+    await screen.findByText(/1개 · .*대기 0개/);
+    fireEvent.click(screen.getByRole("button", { name: "원본 폴더에 저장" }));
     await act(async () => {
-      host.emit("fs.dropped", { files: [first, second] });
+      host.emit("fs.dropped", { files: [second] });
     });
-    await act(async () => {
-      choose?.({ handle: "parent", name: "합성 저장 폴더" });
-    });
-    await screen.findByText(/2개 · .*대기 0개/);
-    expect(vi.mocked(runBatch).mock.calls.flatMap((call) => call[1])).toEqual([first, second]);
-    expect(host.requests.filter((r) => r.method === "pickFolder")).toHaveLength(1);
-    deck.dispose();
-  });
-  it("cancels before a folder picker resolves and leaves every input recoverable", async () => {
-    let choose: ((folder: unknown) => void) | undefined;
-    const { deck, host } = await setup(
-      true,
-      () =>
-        new Promise((resolve) => {
-          choose = resolve;
-        }),
-    );
-    await act(async () => {
-      host.emit("fs.dropped", { files: [first, second] });
-    });
-    await waitFor(() => expect(choose).toBeDefined());
-    fireEvent.click(screen.getByRole("button", { name: "취소" }));
-    await act(async () => {
-      choose?.({ handle: "parent", name: "합성 저장 폴더" });
-    });
-    await screen.findByText(/폴더 선택을 취소했어요/);
-    expect(runBatch).not.toHaveBeenCalled();
-    expect(screen.getByText(/2개 · .*대기 2개/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "압축하여 저장" }).hasAttribute("disabled")).toBe(false);
+    await waitFor(() => expect(runBatch).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(runBatch).mock.calls[1]?.[2]).toBeUndefined();
     deck.dispose();
   });
   it("processes drops arriving during encoding next and never repeats committed files", async () => {

@@ -2,7 +2,7 @@
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 // Start here. UI only from @deck/ui, icons from @fluentui/react-icons (MOD-010); batch file tools use ToolLayout (MOD-011);
 // host features only through `deck` (MOD-006). See modules/timer for a complete example.
-import type { Deck } from "@deck/sdk";
+import type { Deck, FileHandleInfo } from "@deck/sdk";
 import {
   Body,
   BodyStrong,
@@ -123,6 +123,8 @@ export function App({ deck }: { deck: Deck }) {
     [replaceTo, setReplaceTo] = useState("");
   const planner = useRef<AbortController | null>(null);
   useEffect(() => () => planner.current?.abort(), []);
+  const sourceFile = useRef<FileHandleInfo | undefined>(undefined);
+  const pendingSource = useRef<FileHandleInfo | undefined>(undefined);
   const working = useRef(false);
   const disabled = busy || blocked || !loaded,
     performed = state.events.some((e) => e.cycle === state.cycle);
@@ -186,7 +188,7 @@ export function App({ deck }: { deck: Deck }) {
       setBusy(false);
     }
   }
-  async function files(importing: boolean) {
+  async function files(importing: boolean, provided?: FileHandleInfo, chooseFolder = false) {
     if (working.current || busy || !loaded || (blocked && !importing)) return;
     working.current = true;
     setBusy(true);
@@ -194,9 +196,19 @@ export function App({ deck }: { deck: Deck }) {
     setMessage("");
     try {
       if (importing) {
-        const next = await readBackup(deck);
-        if (next) setReplacement(next);
-      } else if (await writeBackup(deck, state)) setMessage("새 결과 폴더에 기록 파일을 저장했어요.");
+        if (provided) setMessage(`${provided.name}을 받았어요. 기록을 읽고 있어요.`);
+        let sourceName = "";
+        pendingSource.current = undefined;
+        const next = await readBackup(deck, provided, (file) => {
+          pendingSource.current = file;
+          sourceName = file.name;
+        });
+        if (next) {
+          setReplacement(next);
+          setMessage(`${sourceName || "기록 파일"}을 읽었어요. 내용을 확인한 뒤 가져와 주세요.`);
+        }
+      } else if (await writeBackup(deck, state, sourceFile.current, chooseFolder))
+        setMessage("저장 폴더에 기록 파일을 저장했어요.");
     } catch {
       setError(
         importing
@@ -208,6 +220,25 @@ export function App({ deck }: { deck: Deck }) {
       setBusy(false);
     }
   }
+  const dropped = useRef({ action: files, loaded, replacement });
+  dropped.current = { action: files, loaded, replacement };
+  useEffect(
+    () =>
+      deck.on("fs.dropped", ({ files: incoming }) => {
+        const file = incoming[0];
+        if (working.current || !dropped.current.loaded || dropped.current.replacement) {
+          setError("현재 작업을 마친 뒤 기록 파일을 다시 놓아 주세요.");
+          return;
+        }
+        if (incoming.length !== 1 || !file || file?.ext.toLowerCase() !== "json") {
+          setError("이 도구의 JSON 기록 파일을 한 번에 1개씩 놓아 주세요.");
+          return;
+        }
+        setMessage(`${file.name}을 받았어요. 기록을 읽고 있어요.`);
+        void dropped.current.action(true, file);
+      }),
+    [deck],
+  );
   async function switchView(show: boolean) {
     if (busy) return;
     setBusy(true);
@@ -600,6 +631,9 @@ export function App({ deck }: { deck: Deck }) {
           >
             기록 파일 저장
           </Button>
+          <Button disabled={disabled} onClick={() => void files(false, undefined, true)}>
+            다른 폴더에 기록 저장
+          </Button>
           <Button
             disabled={busy || !loaded}
             onClick={() => {
@@ -679,7 +713,10 @@ export function App({ deck }: { deck: Deck }) {
             if (result === "primary") {
               const next = emptyState();
               void change(() => next, "새 작업을 시작했어요.", true).then((saved) => {
-                if (saved) refreshForm(next);
+                if (saved) {
+                  sourceFile.current = undefined;
+                  refreshForm(next);
+                }
               });
             }
           }}
@@ -696,13 +733,19 @@ export function App({ deck }: { deck: Deck }) {
           defaultButton="close"
           onClose={(result) => {
             const next = replacement;
+            const importedSource = pendingSource.current;
+            pendingSource.current = undefined;
             setReplacement(null);
             if (result === "primary" && next)
               void change(() => next, "기록 파일을 가져왔어요.", true).then((saved) => {
-                if (saved) refreshForm(next);
+                if (saved) {
+                  sourceFile.current = importedSource;
+                  refreshForm(next);
+                }
               });
           }}
         >
+          <Body>{pendingSource.current?.name ?? "기록 파일"}</Body>
           <Body>현재 작업을 가져온 명단·배정·완료 기록으로 바꿔요. 필요한 현재 기록은 먼저 파일로 저장해 주세요.</Body>
         </ContentDialog>
       )}

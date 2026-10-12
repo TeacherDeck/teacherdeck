@@ -31,6 +31,8 @@ if (deck.has("fs")) await deck.fs.pickFiles(); // optional 캡 (MOD-007)
 
 ## 작업 체크리스트
 
+기존 폴더 직접 출력은 fs 1.4의 소유 원본·선택 폴더 핸들과 [ADR-0031](../../docs/adr/0031-file-input-direct-output.md)을 따른다(CAP-002·004·006). 기존 하위 폴더 생성 API를 바꾸지 않는다.
+
 학생 화면은 window 1.1 typed API와 소유자 전용 종료·연결 변경 이벤트를 따른다([계약](../../docs/spec/presentation.md)). 이전 window 1.0 호스트에는 호출 전에 버전 오류를 반환한다.
 
 편집 문서는 window 1.2의 소유 문서 등록·저장 응답과 [수명 보호 계약](../../docs/spec/document-lifecycle.md)을 따른다(CAP-002·006, BRG-009). 최초 편집 전에 등록과 dirty 설정 성공을 기다린다.

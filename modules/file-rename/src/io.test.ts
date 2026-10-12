@@ -4,7 +4,7 @@ import { connect } from "@deck/sdk";
 import { createMockHost, type MockHandler } from "@deck/sdk/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("pdfjs-dist", () => ({ GlobalWorkerOptions: {}, getDocument: vi.fn() }));
-import { copyBatch, folderFiles, renameBatch, RenamePlanExpired } from "./io.ts";
+import { copyBatch, folderFiles, renameBatch, RenamePlanExpired, templateFile } from "./io.ts";
 import { DEFAULT_MATCH, DEFAULT_NAMING, preview } from "./logic.ts";
 const origin = "http://deckmod.file-rename.modules.localhost";
 const input = new Uint8Array(300000).map((_, i) => i % 251);
@@ -27,11 +27,11 @@ async function setup(overrides: Record<string, MockHandler> = {}) {
   let write = 0;
   const host = createMockHost({
     module: { id: "file-rename", version: "0.1.0" },
-    caps: { fs: "1.3.0", "file-ops": "1.0.0" },
+    caps: { fs: "1.4.0", "file-ops": "1.0.0" },
     granted: ["fs", "file-ops"],
     handlers: {
       "fs.pickFolder": () => ({ handle: "parent", name: "합성 폴더" }),
-      "fs.createOutputFolder": () => ({ batchId: "batch", folder: { handle: "out", name: "합성 결과" } }),
+      "fs.openOutputFolder": () => ({ batchId: "batch", folder: { handle: "out", name: "합성 결과" } }),
       "fs.beginWrite": () => ({ writeId: `write-${++write}`, chunkBytes: 65536 }),
       "fs.writeChunk": (args) => {
         const a = args as { data: number[]; offset: number };
@@ -65,6 +65,38 @@ async function setup(overrides: Record<string, MockHandler> = {}) {
 }
 afterEach(() => vi.unstubAllGlobals());
 describe("typed SDK file workflows", () => {
+  it("saves a source-free template directly in the selected folder without making a child directory", async () => {
+    const selected = await setup();
+    await templateFile(selected.deck);
+    expect(selected.host.requests.filter((r) => r.method === "pickFolder")).toHaveLength(1);
+    expect(selected.host.requests.find((r) => r.method === "openOutputFolder")?.args).toEqual({
+      parentHandle: "parent",
+    });
+    expect(selected.host.requests.some((r) => r.method === "createOutputFolder")).toBe(false);
+    selected.deck.dispose();
+    const remembered = await setup();
+    await templateFile(remembered.deck, "chosen");
+    expect(remembered.host.requests.find((r) => r.method === "openOutputFolder")?.args).toEqual({
+      parentHandle: "chosen",
+    });
+    expect(remembered.host.requests.some((r) => r.method === "pickFolder")).toBe(false);
+    remembered.deck.dispose();
+  });
+  it("copies sources into their own folders by default and directly into an explicit override", async () => {
+    const source = await setup();
+    await copyBatch(source.deck, rows.slice(0, 2), new AbortController().signal, () => undefined);
+    expect(source.host.requests.filter((r) => r.method === "openOutputFolder").map((r) => r.args)).toEqual([
+      { sourceHandle: "source-1" },
+      { sourceHandle: "source-2" },
+    ]);
+    expect(source.host.requests.some((r) => ["pickFolder", "createOutputFolder"].includes(r.method))).toBe(false);
+    expect(source.host.requests.filter((r) => r.method === "closeOutputFolder")).toHaveLength(2);
+    source.deck.dispose();
+    const chosen = await setup();
+    await copyBatch(chosen.deck, rows.slice(0, 1), new AbortController().signal, () => undefined, [], "chosen");
+    expect(chosen.host.requests.find((r) => r.method === "openOutputFolder")?.args).toEqual({ parentHandle: "chosen" });
+    chosen.deck.dispose();
+  });
   it("stops an expired plan before another native group and preserves the last complete result", async () => {
     const expiresAt = Date.now() + 300000;
     const partial = {
@@ -124,7 +156,7 @@ describe("typed SDK file workflows", () => {
     expect(completed.results.every((r) => r.status === "success")).toBe(true);
     retry.deck.dispose();
   });
-  it("aborts only unfinished writes on failure, preserves previous success when folder selection is cancelled", async () => {
+  it("aborts unfinished writes and returns existing results when already cancelled", async () => {
     const fail = await setup({
       "fs.writeChunk": () => {
         throw new Error("SYNTHETIC_WRITE_FAILURE");
@@ -134,11 +166,13 @@ describe("typed SDK file workflows", () => {
     expect(result.results[0]?.status).toBe("failed");
     expect(fail.host.requests.filter((r) => r.method === "abortWrite")).toHaveLength(1);
     fail.deck.dispose();
-    const cancel = await setup({ "fs.pickFolder": () => null });
+    const cancel = await setup();
+    const abort = new AbortController();
+    abort.abort();
     expect(
-      (await copyBatch(cancel.deck, rows, new AbortController().signal, () => undefined, result.results)).results,
+      (await copyBatch(cancel.deck, rows.slice(0, 1), abort.signal, () => undefined, result.results)).results,
     ).toEqual(result.results);
-    expect(cancel.host.requests.some((r) => r.method === "createOutputFolder")).toBe(false);
+    expect(cancel.host.requests.some((r) => r.method === "openOutputFolder")).toBe(false);
     cancel.deck.dispose();
   });
   it("cancels between complete native groups and between folder pages", async () => {

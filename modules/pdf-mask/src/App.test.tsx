@@ -4,7 +4,7 @@
 import { connect } from "@deck/sdk";
 import { createMockHost } from "@deck/sdk/testing";
 import { DeckProvider } from "@deck/ui";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 vi.mock("./pdf.ts", () => ({ renderPage: vi.fn(async () => new Blob(["synthetic-preview"])) }));
 vi.mock("./ocr.ts", () => ({ recognizePages: vi.fn() }));
@@ -33,6 +33,70 @@ function scannedInput(): Input {
     pages: [{ number: 1, width: 600, height: 800, boxes: [] }],
   } as unknown as Input;
 }
+it("shows a dropped filename immediately without a picker and reports busy, duplicate and unsupported drops", async () => {
+  vi.stubGlobal(
+    "URL",
+    class extends URL {
+      static override createObjectURL() {
+        return "blob:synthetic-preview";
+      }
+      static override revokeObjectURL() {
+        /* Synthetic preview. */
+      }
+    },
+  );
+  const input = scannedInput();
+  const firstPage = input.pages[0];
+  if (!firstPage) throw new Error("Synthetic page missing");
+  firstPage.boxes = [{ text: "합성 문서", x: 20, y: 30, width: 40, height: 20 }];
+  let complete!: (input: Input) => void;
+  vi.mocked(readInput).mockReturnValueOnce(
+    new Promise((resolve) => {
+      complete = resolve;
+    }),
+  );
+  const pick = vi.fn(() => [input.file]);
+  const host = createMockHost({ granted: ["fs"], handlers: { "fs.pickFiles": pick } });
+  const deck = await connect({ window: host.window });
+  const view = render(
+    <DeckProvider>
+      <App deck={deck} />
+    </DeckProvider>,
+  );
+  try {
+    await act(async () => {
+      host.emit("fs.dropped", { files: [input.file] });
+      await host.flush();
+    });
+    expect(screen.getByText("synthetic-scan.pdf · 읽는 중")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain("PDF를 입력했어요");
+    expect(pick).not.toHaveBeenCalled();
+    await act(async () => {
+      host.emit("fs.dropped", { files: [input.file] });
+      await host.flush();
+    });
+    expect(screen.getByRole("status").textContent).toContain("현재 문서를 처리하고 있어요");
+    await act(async () => {
+      complete(input);
+      await host.flush();
+    });
+    await screen.findByText("synthetic-scan.pdf · 1쪽");
+    await act(async () => {
+      host.emit("fs.dropped", { files: [input.file] });
+      await host.flush();
+    });
+    expect(screen.getByRole("status").textContent).toContain("이미 입력한 PDF예요");
+    await act(async () => {
+      host.emit("fs.dropped", { files: [{ ...input.file, handle: "unsupported", ext: "zip" }] });
+      await host.flush();
+    });
+    expect(screen.getByRole("status").textContent).toContain("PDF 또는 검색어 목록");
+    expect(pick).not.toHaveBeenCalled();
+  } finally {
+    view.unmount();
+    deck.dispose();
+  }
+});
 async function mountScanner() {
   vi.stubGlobal(
     "URL",

@@ -4,8 +4,9 @@
 import { connect } from "@deck/sdk";
 import { createMockHost } from "@deck/sdk/testing";
 import { DeckProvider } from "@deck/ui";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { StrictMode } from "react";
 import { App } from "./App.tsx";
 import { readExtraction, savePhotos, type Extraction } from "./batch.ts";
 import { fakeJpeg } from "./fixtures.test-support.ts";
@@ -50,15 +51,17 @@ async function setup() {
   const selection = { files: [file] };
   const host = createMockHost({
     module: { id: "photo-extract", version: "0.1.0" },
-    caps: { fs: "1.1.0" },
+    caps: { fs: "1.4.0" },
     granted: ["fs"],
     handlers: { "fs.pickFiles": () => selection.files },
   });
   const deck = await connect({ window: host.window });
   render(
-    <DeckProvider>
-      <App deck={deck} />
-    </DeckProvider>,
+    <StrictMode>
+      <DeckProvider>
+        <App deck={deck} />
+      </DeckProvider>
+    </StrictMode>,
   );
   return { deck, host, selection };
 }
@@ -68,6 +71,33 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe("compact photo extraction flow", () => {
+  it("keeps dropped names visible while decoding and queues a later drop without opening a picker", async () => {
+    const { deck, host } = await setup();
+    let finish: ((value: Extraction) => void) | undefined;
+    vi.mocked(readExtraction)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({ ...sample, file: { ...file, handle: "next", name: "합성 다음명렬표.xlsx" } });
+    await act(async () => {
+      host.emit("fs.dropped", { files: [file] });
+    });
+    expect(await screen.findByText("합성 명렬표.xlsx · 파일 입력됨")).toBeTruthy();
+    await act(async () => {
+      host.emit("fs.dropped", { files: [{ ...file, handle: "next", name: "합성 다음명렬표.xlsx" }] });
+    });
+    expect(await screen.findByText("합성 다음명렬표.xlsx · 파일 입력됨")).toBeTruthy();
+    expect(host.requests.some((r) => ["pickFiles", "pickFolder"].includes(r.method))).toBe(false);
+    await act(async () => {
+      finish?.(sample);
+    });
+    await screen.findByText("2개 파일 · 사진 4장 · 학생 4명");
+    expect(readExtraction).toHaveBeenCalledTimes(2);
+    deck.dispose();
+  });
   it("shows thumbnails, preserves the no-photo roster, edits a filename and saves all photos directly", async () => {
     const originalUrl = URL;
     const revoke = vi.fn();
@@ -156,6 +186,32 @@ describe("compact photo extraction flow", () => {
 });
 
 describe("photo saving recovery", () => {
+  it("keeps a failed document from displaying the folder of another successful document", async () => {
+    const a = sample.photos[0],
+      b = sample.photos[1];
+    if (!a || !b) throw new Error("SYNTHETIC_PHOTO_MISSING");
+    const next = { ...file, handle: "source-b", name: "합성 B명렬표.xlsx" };
+    vi.mocked(readExtraction)
+      .mockResolvedValueOnce({ ...sample, photos: [{ ...a, preview: false }] })
+      .mockResolvedValueOnce({ ...sample, file: next, students: [], photos: [{ ...b, preview: false }] });
+    const saved = `${file.handle}:${a.key}`,
+      failed = `${next.handle}:${b.key}`;
+    vi.mocked(savePhotos).mockResolvedValueOnce({
+      folder: { handle: "parent-a", name: "합성 A폴더" },
+      folders: { [saved]: { handle: "parent-a", name: "합성 A폴더" } },
+      saved: [saved],
+      failed: [failed],
+      cancelled: false,
+    });
+    const { deck, selection } = await setup();
+    selection.files = [file, next];
+    fireEvent.click(screen.getByRole("button", { name: "파일 추가" }));
+    await screen.findByText("2개 파일 · 사진 2장 · 학생 2명");
+    fireEvent.click(screen.getByRole("button", { name: "사진 저장" }));
+    await screen.findByText(/미확인_001.jpg · 저장 실패/);
+    expect(screen.getAllByRole("button", { name: "저장 위치 열기" })).toHaveLength(1);
+    deck.dispose();
+  });
   it("preserves saved and failed photo identities when another document is added, and retries only failures", async () => {
     const noPreview = { ...sample, photos: sample.photos.map((photo) => ({ ...photo, preview: false })) };
     vi.mocked(readExtraction).mockResolvedValueOnce(noPreview);

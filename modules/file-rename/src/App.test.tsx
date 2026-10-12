@@ -4,7 +4,7 @@
 import { connect } from "@deck/sdk";
 import { createMockHost, type MockHandler } from "@deck/sdk/testing";
 import { DeckProvider } from "@deck/ui";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("pdfjs-dist", () => ({ GlobalWorkerOptions: {}, getDocument: vi.fn() }));
 import { App } from "./App.tsx";
@@ -41,6 +41,27 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("rename screen workflows", () => {
+  it("acknowledges dropped files and duplicates without opening a file picker", async () => {
+    const { host, deck, view } = await setup();
+    try {
+      await act(async () => {
+        host.emit("fs.dropped", { files });
+        await host.flush();
+      });
+      expect(screen.getByRole("status").textContent).toContain("파일 2개를 추가했어요");
+      expect(screen.getByText("합성자료1.txt")).toBeTruthy();
+      expect(host.requests.some((r) => r.method === "pickFiles")).toBe(false);
+      await act(async () => {
+        host.emit("fs.dropped", { files });
+        await host.flush();
+      });
+      expect(screen.getByRole("status").textContent).toContain("이미 추가한 파일이에요");
+      expect(screen.getAllByRole("textbox", { name: "최종 파일명 (확장자 포함)" })).toHaveLength(2);
+    } finally {
+      view.unmount();
+      deck.dispose();
+    }
+  });
   it("keeps preview and manual edits before the single run area, with a keyboard shortcut past the list", async () => {
     const { deck, view } = await setup();
     fireEvent.click(screen.getByRole("button", { name: "파일 추가" }));
@@ -52,8 +73,8 @@ describe("rename screen workflows", () => {
     const previewSection = view.container.querySelector('[data-step="preview"]') as HTMLElement;
     const runSection = view.container.querySelector('[data-step="run"]') as HTMLElement;
     expect(within(previewSection).getAllByRole("textbox", { name: "최종 파일명 (확장자 포함)" })).toHaveLength(2);
-    expect(within(previewSection).queryByRole("button", { name: "새 폴더에 복사" })).toBeNull();
-    expect(within(runSection).getByRole("button", { name: "새 폴더에 복사" })).toBeTruthy();
+    expect(within(previewSection).queryByRole("button", { name: "새 파일로 복사" })).toBeNull();
+    expect(within(runSection).getByRole("button", { name: "새 파일로 복사" })).toBeTruthy();
     expect(screen.getByRole("combobox", { name: "실행 방식" }).closest("[data-step]")?.getAttribute("data-step")).toBe(
       "options",
     );
@@ -111,7 +132,7 @@ describe("rename screen workflows", () => {
     expect((screen.getAllByRole("textbox", { name: "최종 파일명 (확장자 포함)" })[0] as HTMLInputElement).value).toBe(
       "직접확인.txt",
     );
-    expect((screen.getByRole("button", { name: "새 폴더에 복사" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "새 파일로 복사" }) as HTMLButtonElement).disabled).toBe(true);
     await choose("이름 만드는 방식", "문서 정보");
     expect((screen.getAllByRole("textbox", { name: "최종 파일명 (확장자 포함)" })[0] as HTMLInputElement).value).toBe(
       "직접확인.txt",
@@ -119,7 +140,7 @@ describe("rename screen workflows", () => {
     view.unmount();
     deck.dispose();
   });
-  it("defaults to copy and keeps successful results when retry is cancelled at folder selection", async () => {
+  it("defaults to copying new files and keeps successful results on retry", async () => {
     const done = {
       source: "source-1",
       name: "001_합성자료1.txt",
@@ -138,7 +159,7 @@ describe("rename screen workflows", () => {
     const { deck, view } = await setup();
     fireEvent.click(screen.getByRole("button", { name: "파일 추가" }));
     await screen.findByText("합성자료1.txt");
-    fireEvent.click(screen.getByRole("button", { name: "새 폴더에 복사" }));
+    fireEvent.click(screen.getByRole("button", { name: "새 파일로 복사" }));
     await screen.findByRole("button", { name: "실패·미처리 다시 시도" });
     fireEvent.click(screen.getByRole("button", { name: "실패·미처리 다시 시도" }));
     await waitFor(() => expect(copy).toHaveBeenCalledTimes(2));

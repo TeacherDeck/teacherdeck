@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-import { DeckCallError, type Deck } from "@deck/sdk";
+import { DeckCallError, type Deck, type FileHandleInfo } from "@deck/sdk";
 import {
   Body,
   BodyStrong,
@@ -381,6 +381,8 @@ export function App({ deck }: { deck: Deck }) {
   const [removeKey, setRemoveKey] = useState("");
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  const sourceFile = useRef<FileHandleInfo | undefined>(undefined);
+  const rosterSource = useRef<FileHandleInfo | undefined>(undefined);
   const [names, setNames] = useState("");
   const [absent, setAbsent] = useState("");
   const [rosterName, setRosterName] = useState("");
@@ -797,6 +799,7 @@ export function App({ deck }: { deck: Deck }) {
     const next = await archiveMeeting(deck, latest.current, library);
     setLibrary(next);
     await write(data);
+    sourceFile.current = undefined;
     scrollToNewEntry.current = true;
     update(data, true);
     setNames(activeSpeakers(data).join("\n"));
@@ -830,10 +833,17 @@ export function App({ deck }: { deck: Deck }) {
         );
       }
     });
-  const loadFile = () =>
+  const loadFile = (provided?: FileHandleInfo) =>
     void task(async () => {
-      const data = await pickMeeting(deck);
-      if (data) await switchTo(data);
+      let selected: FileHandleInfo | undefined;
+      const data = await pickMeeting(deck, provided, (file) => {
+        selected = file;
+      });
+      if (data) {
+        await switchTo(data);
+        sourceFile.current = selected;
+        setStatus(`${selected?.name ?? "회의록 파일"}을 불러왔어요.`);
+      }
     });
   const saveRoster = () =>
     void task(async () => {
@@ -873,9 +883,9 @@ export function App({ deck }: { deck: Deck }) {
   );
   const [format, setFormat] = useState<ExportFormat>("md");
   const exportBody = useMemo(() => (dialog === "export" ? exportText(meeting, format) : ""), [dialog, format, meeting]);
-  const saveExport = (backup: boolean) =>
+  const saveExport = (backup: boolean, chooseFolder = false) =>
     void task(async () => {
-      if (await saveFile(deck, latest.current, backup, format))
+      if (await saveFile(deck, latest.current, backup, format, sourceFile.current, chooseFolder))
         setStatus(
           backup ? "비공개 메모와 초안을 포함한 백업 파일을 저장했어요." : "비공개 메모를 뺀 회의록 파일을 저장했어요.",
         );
@@ -912,15 +922,63 @@ export function App({ deck }: { deck: Deck }) {
       />
     </div>
   );
-  const importRosters = () =>
+  const importRosters = (provided?: FileHandleInfo) =>
     void task(async () => {
-      const value = await pickRosters(deck);
+      let selected: FileHandleInfo | undefined;
+      const value = await pickRosters(deck, provided, (file) => {
+        selected = file;
+      });
       if (!value) return;
       const next = { ...library, rosters: mergeRosters(library.rosters, value) };
       await deck.storage.set(LIBRARY_KEY, next);
       setLibrary(next);
-      setStatus("위원회 명단을 불러왔어요.");
+      rosterSource.current = selected;
+      setStatus(`${selected?.name ?? "위원회 파일"}에서 위원회 명단을 불러왔어요.`);
     });
+  const importDropped = (file: FileHandleInfo) =>
+    void task(async () => {
+      let data: Meeting | null = null;
+      try {
+        data = await pickMeeting(deck, file);
+      } catch {
+        /* A roster JSON has a separate validated contract. */
+      }
+      if (data) {
+        await switchTo(data);
+        sourceFile.current = file;
+        setStatus(`${file.name}에서 회의록을 불러왔어요.`);
+        return;
+      }
+      const value = await pickRosters(deck, file);
+      const next = { ...library, rosters: mergeRosters(library.rosters, value) };
+      await deck.storage.set(LIBRARY_KEY, next);
+      setLibrary(next);
+      rosterSource.current = file;
+      setStatus(`${file.name}에서 위원회 명단을 불러왔어요.`);
+    });
+  const dropped = useRef({ importDropped, ready, dialog });
+  dropped.current = { importDropped, ready, dialog };
+  useEffect(
+    () =>
+      deck.on("fs.dropped", ({ files }) => {
+        const file = files[0];
+        if (
+          busyRef.current ||
+          !dropped.current.ready ||
+          (dropped.current.dialog && !["people", "export"].includes(dropped.current.dialog))
+        ) {
+          setStatus("현재 작업을 마친 뒤 회의록·위원회 파일을 다시 놓아 주세요.");
+          return;
+        }
+        if (files.length !== 1 || !file || file?.ext.toLowerCase() !== "json") {
+          setStatus("회의록·위원회 JSON 파일을 한 번에 1개씩 놓아 주세요.");
+          return;
+        }
+        setStatus(`${file.name}을 받았어요. 내용을 읽고 있어요.`);
+        dropped.current.importDropped(file);
+      }),
+    [deck],
+  );
   const rosterFields = (
     <SettingsExpander header="위원회 · 저장된 명단" description="자주 쓰는 참석자 명단을 저장하고 불러와요.">
       <div className={s.row}>
@@ -937,14 +995,20 @@ export function App({ deck }: { deck: Deck }) {
         </Button>
       </div>
       <div className={s.row}>
-        <Button disabled={busy} onClick={importRosters}>
+        <Button disabled={busy} onClick={() => importRosters()}>
           위원회 파일 불러오기
+        </Button>
+        <Button
+          disabled={busy || !library.rosters.length}
+          onClick={() => void task(() => saveRosters(deck, library.rosters, rosterSource.current))}
+        >
+          위원회 파일 저장
         </Button>
         <Button
           disabled={busy || !library.rosters.length}
           onClick={() => void task(() => saveRosters(deck, library.rosters))}
         >
-          위원회 파일 저장
+          다른 폴더에 위원회 저장
         </Button>
       </div>
       <ListView
@@ -1058,7 +1122,7 @@ export function App({ deck }: { deck: Deck }) {
             <Button disabled={busy} appearance="primary" onClick={applyNames}>
               회의 시작 (Ctrl+Enter)
             </Button>
-            <Button onClick={loadFile} disabled={busy}>
+            <Button onClick={() => loadFile()} disabled={busy}>
               파일(.json) 불러오기
             </Button>
           </div>
@@ -1465,10 +1529,13 @@ export function App({ deck }: { deck: Deck }) {
             <Button onClick={() => saveExport(false)} disabled={busy}>
               공개용 파일 저장
             </Button>
+            <Button onClick={() => saveExport(false, true)} disabled={busy}>
+              다른 폴더에 회의록 저장
+            </Button>
             <Button onClick={() => saveExport(true)} disabled={busy}>
               .json 백업 저장
             </Button>
-            <Button onClick={loadFile} disabled={busy}>
+            <Button onClick={() => loadFile()} disabled={busy}>
               파일(.json) 불러오기
             </Button>
           </div>

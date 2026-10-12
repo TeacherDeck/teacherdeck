@@ -10,7 +10,7 @@ function setup() {
   const store = new Map<string, unknown>();
   const host = createMockHost({
     module: { id: "image-compress", version: "0.1.0" },
-    caps: { fs: "1.1.0", storage: "1.0.0" },
+    caps: { fs: "1.4.0", storage: "1.0.0" },
     granted: ["fs", "storage"],
     handlers: {
       "storage.get": (args) => store.get((args as { key: string }).key) ?? null,
@@ -19,7 +19,7 @@ function setup() {
         store.set(key, value);
         return null;
       },
-      "fs.createOutputFolder": () => ({ batchId: "batch", folder: { handle: "output", name: "압축 이미지" } }),
+      "fs.openOutputFolder": () => ({ batchId: "batch", folder: { handle: "output", name: "압축 이미지" } }),
       "fs.closeOutputFolder": () => null,
     },
   });
@@ -120,7 +120,7 @@ describe("image compression", () => {
     expect(output.results).toHaveLength(500);
     expect(write).toHaveBeenCalledTimes(500);
     expect(progress).toHaveBeenCalledTimes(500);
-    expect(host.requests.filter((request) => request.method === "createOutputFolder")).toHaveLength(1);
+    expect(host.requests.filter((request) => request.method === "openOutputFolder")).toHaveLength(1);
     deck.dispose();
   });
   it("cancels an active image before writing and retains previous results", async () => {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-import type { Deck } from "@deck/sdk";
+import type { Deck, FileHandleInfo } from "@deck/sdk";
 import { calendar, counts } from "./planner.ts";
 import { initialState, sanitizeState, saveState, type PlannerState } from "./state.ts";
 import { HOLIDAYS } from "./holidays.ts";
@@ -246,10 +246,19 @@ export function exportLegacy(months: Months): string {
   }
   return JSON.stringify({ months: records, counts: [...totals].map(([name, count]) => ({ name, count })) }, null, 2);
 }
-export async function writeExport(deck: Deck, name: string, text: string): Promise<boolean> {
-  const folder = await deck.fs.pickFolder();
-  if (!folder) return false;
-  const output = await deck.fs.createOutputFolder({ parentHandle: folder.handle, suggestedName: "지도일배정" });
+export async function writeExport(
+  deck: Deck,
+  name: string,
+  text: string,
+  source?: FileHandleInfo,
+  chooseFolder = false,
+): Promise<boolean> {
+  const location =
+    source && !chooseFolder
+      ? { sourceHandle: source.handle }
+      : await deck.fs.pickFolder().then((folder) => (folder ? { parentHandle: folder.handle } : null));
+  if (!location) return false;
+  const output = await deck.fs.openOutputFolder(location);
   try {
     await deck.fs.writeBlob({
       batchId: output.batchId,
@@ -261,9 +270,12 @@ export async function writeExport(deck: Deck, name: string, text: string): Promi
   }
   return true;
 }
-export async function readBackup(deck: Deck): Promise<string | null> {
-  const files = await deck.fs.pickFiles({ multiple: false });
-  const file = files[0];
+export async function readBackup(
+  deck: Deck,
+  provided?: FileHandleInfo,
+  onSource?: (file: FileHandleInfo) => void,
+): Promise<string | null> {
+  const file = provided ?? (await deck.fs.pickFiles({ multiple: false }))[0];
   if (!file) return null;
   const chunks: Uint8Array[] = [];
   let size = 0;
@@ -278,5 +290,7 @@ export async function readBackup(deck: Deck): Promise<string | null> {
     bytes.set(chunk, offset);
     offset += chunk.length;
   }
-  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  onSource?.(file);
+  return text;
 }

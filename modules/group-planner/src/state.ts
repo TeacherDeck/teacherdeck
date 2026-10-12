@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-import type { Deck } from "@deck/sdk";
+import type { Deck, FileHandleInfo } from "@deck/sdk";
 import { decodeState, emptyState, type GroupState } from "./logic.ts";
 import { readChunked, writeChunked, MAX_STATE_BYTES } from "./chunked-storage.ts";
 import { packRecords, unpackRecords } from "./record-packing.ts";
@@ -20,7 +20,12 @@ export async function saveState(
     validatePrevious: (value) => decodeState(unpackRecords(value)),
   });
 }
-export async function writeBackup(deck: Pick<Deck, "fs">, state: GroupState): Promise<boolean> {
+export async function writeBackup(
+  deck: Pick<Deck, "fs">,
+  state: GroupState,
+  source?: FileHandleInfo,
+  chooseFolder = false,
+): Promise<boolean> {
   const valid = decodeState(state),
     text = JSON.stringify(valid);
   if (
@@ -28,9 +33,12 @@ export async function writeBackup(deck: Pick<Deck, "fs">, state: GroupState): Pr
     new TextEncoder().encode(JSON.stringify(packRecords(valid))).length > MAX_STATE_BYTES
   )
     throw new Error("기록이 보관 한도를 넘어요.");
-  const parent = await deck.fs.pickFolder();
-  if (!parent) return false;
-  const batch = await deck.fs.createOutputFolder({ parentHandle: parent.handle, suggestedName: "모둠편성기록" });
+  const location =
+    source && !chooseFolder
+      ? { sourceHandle: source.handle }
+      : await deck.fs.pickFolder().then((folder) => (folder ? { parentHandle: folder.handle } : null));
+  if (!location) return false;
+  const batch = await deck.fs.openOutputFolder(location);
   try {
     await deck.fs.writeBlob({
       batchId: batch.batchId,
@@ -42,9 +50,12 @@ export async function writeBackup(deck: Pick<Deck, "fs">, state: GroupState): Pr
   }
   return true;
 }
-export async function readBackup(deck: Pick<Deck, "fs">): Promise<GroupState | null> {
-  const files = await deck.fs.pickFiles({ multiple: false }),
-    file = files[0];
+export async function readBackup(
+  deck: Pick<Deck, "fs">,
+  provided?: FileHandleInfo,
+  onSource?: (file: FileHandleInfo) => void,
+): Promise<GroupState | null> {
+  const file = provided ?? (await deck.fs.pickFiles({ multiple: false }))[0];
   if (!file) return null;
   if (file.size > MAX_STATE_BYTES * 2) throw new Error("기록 파일은 4MiB 이하만 읽을 수 있어요.");
   const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -58,5 +69,6 @@ export async function readBackup(deck: Pick<Deck, "fs">): Promise<GroupState | n
   const valid = decodeState(JSON.parse(text + decoder.decode()));
   if (new TextEncoder().encode(JSON.stringify(packRecords(valid))).length > MAX_STATE_BYTES)
     throw new Error("가져온 기록이 저장 한도를 넘어요.");
+  onSource?.(file);
   return valid;
 }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-import type { Deck } from "@deck/sdk";
+import type { Deck, FileHandleInfo } from "@deck/sdk";
 import { decodeState, emptyState, type SeatState, type Snapshot } from "./logic.ts";
 export const STATE_KEY = "seat-state.v1";
 export class AmbiguousStorageWrite extends Error {}
@@ -125,9 +125,12 @@ async function writeState(deck: Pick<Deck, "storage">, value: SeatState): Promis
 export function saveState(deck: Pick<Deck, "storage">, value: SeatState): Promise<void> {
   return serial(deck.storage, () => writeState(deck, value));
 }
-async function readText(deck: Pick<Deck, "fs">): Promise<string | null> {
-  const files = await deck.fs.pickFiles({ multiple: false });
-  const file = files[0];
+async function readText(
+  deck: Pick<Deck, "fs">,
+  provided?: FileHandleInfo,
+  onSource?: (file: FileHandleInfo) => void,
+): Promise<string | null> {
+  const file = provided ?? (await deck.fs.pickFiles({ multiple: false }))[0];
   if (!file) return null;
   if (file.size > 5000000) throw new Error("파일은 5MB 이하로 선택해 주세요.");
   const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -138,12 +141,24 @@ async function readText(deck: Pick<Deck, "fs">): Promise<string | null> {
     if (size > 5000000) throw new Error("파일은 5MB 이하로 선택해 주세요.");
     result += decoder.decode(bytes, { stream: true });
   }
-  return result + decoder.decode();
+  const text = result + decoder.decode();
+  onSource?.(file);
+  return text;
 }
 export const readRoster = readText;
-export async function readBackup(deck: Pick<Deck, "fs">): Promise<SeatState | null> {
-  const text = await readText(deck);
-  return text === null ? null : decodeState(JSON.parse(text));
+export async function readBackup(
+  deck: Pick<Deck, "fs">,
+  provided?: FileHandleInfo,
+  onSource?: (file: FileHandleInfo) => void,
+): Promise<SeatState | null> {
+  let source: FileHandleInfo | undefined;
+  const text = await readText(deck, provided, (file) => {
+    source = file;
+  });
+  if (text === null) return null;
+  const state = decodeState(JSON.parse(text));
+  if (source) onSource?.(source);
+  return state;
 }
 export function publicText(snapshot: Snapshot): string {
   return [
@@ -161,10 +176,15 @@ export async function exportFile(
   deck: Pick<Deck, "fs">,
   value: SeatState,
   snapshot: Snapshot | null = null,
+  source?: FileHandleInfo,
+  chooseFolder = false,
 ): Promise<boolean> {
-  const parent = await deck.fs.pickFolder();
-  if (!parent) return false;
-  const batch = await deck.fs.createOutputFolder({ parentHandle: parent.handle, suggestedName: "자리배치" });
+  const location =
+    source && !chooseFolder
+      ? { sourceHandle: source.handle }
+      : await deck.fs.pickFolder().then((folder) => (folder ? { parentHandle: folder.handle } : null));
+  if (!location) return false;
+  const batch = await deck.fs.openOutputFolder(location);
   try {
     await deck.fs.writeBlob({
       batchId: batch.batchId,

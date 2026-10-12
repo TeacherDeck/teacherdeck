@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-import type { Deck } from "@deck/sdk";
+import type { Deck, FileHandleInfo } from "@deck/sdk";
 import {
   Body,
   BodyStrong,
@@ -76,6 +76,8 @@ export function App({ deck }: { deck: Deck }) {
   const [preview, setPreview] = useState<Document | null>(null),
     [previewOpen, setPreviewOpen] = useState(false),
     [addToList, setAddToList] = useState(true);
+  const sourceFile = useRef<FileHandleInfo | undefined>(undefined);
+  const pendingSource = useRef<FileHandleInfo | undefined>(undefined);
   const raw = useRef<unknown>(null),
     lock = useRef(false),
     active = useRef(true);
@@ -185,6 +187,40 @@ export function App({ deck }: { deck: Deck }) {
     }
     setDraft({ ...item });
   }
+  const importFile = (file?: FileHandleInfo) =>
+    task(async () => {
+      let sourceName = "";
+      pendingSource.current = undefined;
+      const next = await pickBackup(deck, file, (selected) => {
+        pendingSource.current = selected;
+        sourceName = selected.name;
+      });
+      if (next && active.current) {
+        setPreview(next);
+        setAddToList(!blocked);
+        setPreviewOpen(true);
+        setMessage(`${sourceName || "백업 파일"}을 읽었어요. 내용을 확인한 뒤 복원해 주세요.`);
+      }
+    });
+  const dropped = useRef({ importFile, ready, previewOpen });
+  dropped.current = { importFile, ready, previewOpen };
+  useEffect(
+    () =>
+      deck.on("fs.dropped", ({ files }) => {
+        const file = files[0];
+        if (lock.current || !dropped.current.ready || dropped.current.previewOpen) {
+          setMessage("현재 작업을 마친 뒤 백업 파일을 다시 놓아 주세요.");
+          return;
+        }
+        if (files.length !== 1 || !file || file?.ext.toLowerCase() !== "json") {
+          setMessage("JSON 백업 파일을 한 번에 1개씩 놓아 주세요.");
+          return;
+        }
+        setMessage(`${file.name}을 받았어요. 백업 내용을 읽고 있어요.`);
+        void dropped.current.importFile(file);
+      }),
+    [deck],
+  );
   const shown = visibleItems(document, query, archived),
     currentPage = Math.min(page, Math.max(0, Math.ceil(shown.length / 20) - 1)),
     editing = document.items.some((item) => item.id === draft.id);
@@ -205,7 +241,7 @@ export function App({ deck }: { deck: Deck }) {
             disabled={busy || raw.current === null}
             onClick={() =>
               void task(async () => {
-                if (await exportBackup(deck, raw.current)) setMessage("원자료 사본을 새 폴더에 저장했어요.");
+                if (await exportBackup(deck, raw.current)) setMessage("원자료 사본을 저장 폴더에 저장했어요.");
               })
             }
           >
@@ -298,8 +334,8 @@ export function App({ deck }: { deck: Deck }) {
                 disabled={disabled}
                 onClick={() =>
                   void task(async () => {
-                    if (await exportBackup(deck, { ...document, items: [item] }))
-                      setMessage("선택한 항목을 새 폴더에 저장했어요.");
+                    if (await exportBackup(deck, { ...document, items: [item] }, sourceFile.current))
+                      setMessage("선택한 항목을 저장 폴더에 저장했어요.");
                   })
                 }
               >
@@ -341,24 +377,28 @@ export function App({ deck }: { deck: Deck }) {
             disabled={disabled}
             onClick={() =>
               void task(async () => {
-                if (await exportBackup(deck, document)) setMessage("백업을 새 폴더에 저장했어요.");
+                if (await exportBackup(deck, document, sourceFile.current))
+                  setMessage("백업을 저장 폴더에 저장했어요.");
               })
             }
           >
             JSON 백업 저장
           </Button>
           <Button
-            disabled={!ready || busy}
+            disabled={disabled}
             onClick={() =>
               void task(async () => {
-                const next = await pickBackup(deck);
-                if (next && active.current) {
-                  setPreview(next);
-                  setAddToList(!blocked);
-                  setPreviewOpen(true);
-                }
+                if (await exportBackup(deck, document, undefined, true)) setMessage("선택한 폴더에 백업을 저장했어요.");
               })
             }
+          >
+            다른 폴더에 백업 저장
+          </Button>
+          <Button
+            disabled={!ready || busy}
+            onClick={() => {
+              void importFile();
+            }}
           >
             JSON 백업 가져오기
           </Button>
@@ -394,7 +434,7 @@ export function App({ deck }: { deck: Deck }) {
               onClick={() =>
                 void task(async () => {
                   const value = await deck.storage.get(recoveryKey);
-                  if (await exportBackup(deck, value)) setMessage("이전 자료 사본을 새 폴더에 저장했어요.");
+                  if (await exportBackup(deck, value)) setMessage("이전 자료 사본을 저장 폴더에 저장했어요.");
                 })
               }
             >
@@ -405,6 +445,7 @@ export function App({ deck }: { deck: Deck }) {
               onClick={() =>
                 void task(async () => {
                   const value = readDocument(await deck.storage.get(recoveryKey));
+                  pendingSource.current = undefined;
                   setPreview(value);
                   setAddToList(false);
                   setPreviewOpen(true);
@@ -423,11 +464,14 @@ export function App({ deck }: { deck: Deck }) {
         closeButtonText="취소"
         defaultButton="close"
         onClose={(result) => {
+          const importedSource = pendingSource.current;
+          pendingSource.current = undefined;
           setPreviewOpen(false);
           if (result === "primary" && preview)
             void task(async () => {
               const next = addToList ? mergeDocuments(document, preview) : preview;
               await replaceDocument(deck, next);
+              sourceFile.current = importedSource;
               if (active.current) {
                 setDocument(next);
                 raw.current = next;
@@ -438,6 +482,7 @@ export function App({ deck }: { deck: Deck }) {
             });
         }}
       >
+        <Body>{pendingSource.current?.name ?? "백업 파일"}</Body>
         <Body>
           {preview?.items.length ?? 0}개 · 보관 {preview?.items.filter((item) => item.archived).length ?? 0}개예요.
         </Body>

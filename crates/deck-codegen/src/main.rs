@@ -18,8 +18,8 @@ use deck_core::caps::clipboard::{
 use deck_core::caps::file_ops::*;
 use deck_core::caps::fs::{
     BatchIdArgs, BeginWriteArgs, CloseReadArgs, CreateOutputFolderArgs, DroppedFiles, FileFilter,
-    FileHandleInfo, FileRead, FileWrite, FolderHandleInfo, HandleArgs, OutputBatch, PickFilesArgs,
-    WriteChunkArgs, WriteChunkResult, WriteIdArgs,
+    FileHandleInfo, FileRead, FileWrite, FolderHandleInfo, HandleArgs, OpenOutputFolderArgs,
+    OutputBatch, PickFilesArgs, WriteChunkArgs, WriteChunkResult, WriteIdArgs,
 };
 use deck_core::caps::fs::{
     DestinationArgs, DestinationGrant, DestinationStatusArgs, PickDestinationArgs,
@@ -326,6 +326,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         ts::<CloseReadArgs>(SDK_DIR, &cfg)?,
         ts::<FileRead>(SDK_DIR, &cfg)?,
         ts::<CreateOutputFolderArgs>(SDK_DIR, &cfg)?,
+        ts::<OpenOutputFolderArgs>(SDK_DIR, &cfg)?,
         ts::<OutputBatch>(SDK_DIR, &cfg)?,
         ts::<BeginWriteArgs>(SDK_DIR, &cfg)?,
         ts::<FileWrite>(SDK_DIR, &cfg)?,

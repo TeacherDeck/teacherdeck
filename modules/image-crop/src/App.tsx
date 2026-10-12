@@ -74,6 +74,8 @@ export function App({ deck }: { deck: Deck }) {
   const [format, setFormat] = useState<"png" | "jpeg">("png");
   const [advance, setAdvance] = useState(true);
   const destination = useRef<OutputSession | null>(null);
+  const [parent, setParent] = useState<FolderHandleInfo | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<FileHandleInfo[]>([]);
   const [saveStatuses, setSaveStatuses] = useState<Record<string, SaveStatus>>({});
   const [folder, setFolder] = useState<FolderHandleInfo | null>(null);
   const [done, setDone] = useState(0);
@@ -157,6 +159,10 @@ export function App({ deck }: { deck: Deck }) {
   useEffect(
     () =>
       deck.on("fs.dropped", ({ files }) => {
+        if (!files.length) {
+          setMessage("폴더나 읽을 수 없는 파일은 추가하지 않았어요. 지원하는 파일을 놓아주세요.");
+          return;
+        }
         void addFiles(files);
       }),
     [deck],
@@ -207,7 +213,11 @@ export function App({ deck }: { deck: Deck }) {
         !queued.current.has(file.handle),
     );
     if (!incoming.length) {
-      setMessage("JPG·PNG·WebP 정지 이미지를 추가해 주세요.");
+      setMessage(
+        files.every(accepted)
+          ? "이미 추가한 사진이에요. 입력 목록에서 확인해 주세요."
+          : "JPG·PNG·WebP 정지 이미지를 추가해 주세요.",
+      );
       return;
     }
     if (new Set([...admitted.current, ...incoming.map((f) => f.handle)]).size > 1000) {
@@ -218,6 +228,8 @@ export function App({ deck }: { deck: Deck }) {
       queued.current.set(file.handle, file);
       admitted.current.add(file.handle);
     }
+    setPendingFiles((current) => [...new Map([...current, ...incoming].map((file) => [file.handle, file])).values()]);
+    setMessage(`${incoming.length}개 사진을 입력했어요. 사진을 읽는 중이에요.`);
     if (locked.current) return;
     locked.current = true;
     setBusy(true);
@@ -271,6 +283,7 @@ export function App({ deck }: { deck: Deck }) {
           setFailed((all) => [...new Map([...all, file].map((f) => [f.handle, f])).values()]);
         }
         readingHandle.current = null;
+        setPendingFiles((current) => current.filter((input) => input.handle !== file.handle));
         setDone(++attempted);
         setTotal((n) => Math.max(n, attempted + queued.current.size));
       }
@@ -284,6 +297,7 @@ export function App({ deck }: { deck: Deck }) {
         setFailed((all) => [...new Map([...all, ...pending].map((f) => [f.handle, f])).values()]);
       }
       locked.current = false;
+      setPendingFiles([]);
       readingHandle.current = null;
       setBusy(false);
       controller.current = null;
@@ -330,6 +344,28 @@ export function App({ deck }: { deck: Deck }) {
     );
     setMessage("회전·반전·비율과 사진 안의 상대적인 자르기 범위를 모두 적용했어요. 사진을 하나씩 확인해 주세요.");
   }
+  async function chooseDestination() {
+    if (locked.current) return;
+    locked.current = true;
+    setBusy(true);
+    try {
+      const picked = await deck.fs.pickFolder();
+      if (picked) {
+        resetDestination();
+        setParent(picked);
+      }
+    } catch {
+      setMessage("폴더를 선택하지 못했어요. 다시 선택해 주세요.");
+    } finally {
+      locked.current = false;
+      setBusy(false);
+      if (queued.current.size) {
+        const pending = [...queued.current.values()];
+        queued.current.clear();
+        void addFiles(pending);
+      }
+    }
+  }
   async function save(all = false, retry = false) {
     if (locked.current || !current) return;
     locked.current = true;
@@ -346,7 +382,7 @@ export function App({ deck }: { deck: Deck }) {
       setBusy(false);
       return;
     }
-    destination.current ??= new OutputSession(deck, "잘라낸 이미지");
+    destination.current ??= new OutputSession(deck, parent?.handle);
     setTotal(selected.length);
     setDone(0);
     try {
@@ -359,16 +395,17 @@ export function App({ deck }: { deck: Deck }) {
           const failed = new Set(result.failed);
           for (const item of selected) {
             if (!saved.has(item.file.handle) && !failed.has(item.file.handle) && previous[item.file.handle]) continue;
+            const savedFolder = result.folders?.[item.file.handle];
             next[item.file.handle] = {
               file: item.file,
               state: saved.has(item.file.handle) ? "saved" : failed.has(item.file.handle) ? "failed" : "pending",
-              folder: result.folder,
+              ...(savedFolder ? { folder: savedFolder } : {}),
             };
           }
           return next;
         });
         setMessage(
-          `${result.saved.length}개 저장했어요.${result.failed.length ? ` ${result.failed.length}개는 저장하지 못했어요. 현재 편집은 유지해요.` : ""}${result.cancelled ? " 취소했어요. 저장된 결과는 새 폴더에 남아요." : ""}`,
+          `${result.saved.length}개 저장했어요.${result.failed.length ? ` ${result.failed.length}개는 저장하지 못했어요. 현재 편집은 유지해요.` : ""}${result.cancelled ? " 취소했어요. 저장된 결과는 각 저장 위치에 남아요." : ""}`,
         );
         if (result.destinationExpired) {
           resetDestination();
@@ -403,6 +440,32 @@ export function App({ deck }: { deck: Deck }) {
   return (
     <ToolLayout title="이미지 자르기" description="사진 위를 끌어 영역을 고르고, 회전·반전해 새 파일로 저장해요.">
       <ToolLayout.Section step="input" title="사진 추가">
+        <div className={s.actions}>
+          <Button disabled={busy} onClick={() => void chooseDestination()}>
+            저장 폴더 선택
+          </Button>
+          <Button
+            disabled={busy || !parent}
+            onClick={() => {
+              resetDestination();
+              setParent(null);
+            }}
+          >
+            원본 폴더에 저장
+          </Button>
+          <Caption>{parent ? `저장 위치: ${parent.name}` : "원본 파일과 같은 폴더에 저장해요."}</Caption>
+        </div>
+        {pendingFiles.length > 0 && (
+          <div>
+            <Caption aria-live="polite">입력한 파일 {pendingFiles.length}개 · 읽는 중</Caption>
+            <ListView
+              header={`입력한 파일 ${pendingFiles.length}개 · 읽는 중`}
+              items={pendingFiles}
+              getKey={(file) => file.handle}
+              renderItem={(file) => <Body>{file.name} · 파일 입력됨</Body>}
+            />
+          </div>
+        )}
         <div className={s.actions}>
           <Button
             appearance={items.length ? "secondary" : "primary"}
@@ -772,18 +835,10 @@ export function App({ deck }: { deck: Deck }) {
           onChange={setAdvance}
         />
         <Caption secondary>
-          처음 저장할 때만 폴더를 선택해요. 같은 작업은 한 결과 폴더에 모으고, 같은 사진을 다시 저장하면 새 이름을
-          붙여요. 원본은 수정하지 않아요.
+          각 원본과 같은 폴더에 저장해요. 저장 폴더를 따로 선택하면 그 폴더에 직접 저장해요. 같은 사진을 다시 저장하면
+          새 이름을 붙여요. 원본은 수정하지 않아요.
         </Caption>
-        <Button
-          disabled={busy || !folder}
-          onClick={() => {
-            resetDestination();
-            setMessage("다음 저장 때 새 저장 폴더를 선택해요. 이전 결과는 그대로 유지해요.");
-          }}
-        >
-          다음 저장 폴더 변경
-        </Button>
+
         {busy && <ProgressBar header="처리 진행" value={total ? (done / total) * 100 : 0} />}
       </ToolLayout.Section>
       <ToolLayout.Section step="result" title="처리 결과">

@@ -168,7 +168,7 @@ export async function compress(
 export async function runBatch(
   deck: Deck,
   files: readonly FileHandleInfo[],
-  parentHandle: string,
+  parentHandle: string | null,
   options: Options,
   signal: AbortSignal,
   progress: (results: Result[], done: number, total: number) => void,
@@ -176,40 +176,40 @@ export async function runBatch(
 ): Promise<{ results: Result[]; folder: FolderHandleInfo | null }> {
   validate(options);
   if (signal.aborted) return { results: [], folder: null };
-  const batch = await deck.fs.createOutputFolder({ parentHandle, suggestedName: "압축 PDF" });
   const results: Result[] = [];
-  try {
-    for (const file of files) {
+  let folder: FolderHandleInfo | null = null;
+  for (const file of files) {
+    if (signal.aborted) break;
+    let batch: Awaited<ReturnType<Deck["fs"]["openOutputFolder"]>> | undefined;
+    try {
+      const original = await readBytes(deck, file, signal);
+      const compressed = await encoder(original, options, signal, (done, total) => progress([...results], done, total));
+      const chosen = choose(original, compressed);
       if (signal.aborted) break;
-      try {
-        const original = await readBytes(deck, file, signal);
-        const compressed = await encoder(original, options, signal, (done, total) =>
-          progress([...results], done, total),
-        );
-        const chosen = choose(original, compressed);
-        const saved = await deck.fs.writeBlob(
-          {
-            batchId: batch.batchId,
-            suggestedName: outputName(file.name),
-            blob: new Blob([new Uint8Array(chosen.bytes)], { type: "application/pdf" }),
-          },
-          { signal },
-        );
-        results.push({
-          file,
-          status: chosen.keptOriginal ? "original" : "compressed",
-          outputSize: saved.size,
-          saved,
-          folder: batch.folder,
-        });
-      } catch {
-        if (signal.aborted) break;
-        results.push({ file, status: "failed", folder: batch.folder });
-      }
-      progress([...results], 0, 0);
+      batch = await deck.fs.openOutputFolder(parentHandle ? { parentHandle } : { sourceHandle: file.handle });
+      folder = batch.folder;
+      const saved = await deck.fs.writeBlob(
+        {
+          batchId: batch.batchId,
+          suggestedName: outputName(file.name),
+          blob: new Blob([new Uint8Array(chosen.bytes)], { type: "application/pdf" }),
+        },
+        { signal },
+      );
+      results.push({
+        file,
+        status: chosen.keptOriginal ? "original" : "compressed",
+        outputSize: saved.size,
+        saved,
+        folder: batch.folder,
+      });
+    } catch {
+      if (signal.aborted) break;
+      results.push({ file, status: "failed", ...(batch ? { folder: batch.folder } : {}) });
+    } finally {
+      if (batch) await deck.fs.closeOutputFolder({ batchId: batch.batchId }).catch(() => undefined);
     }
-  } finally {
-    await deck.fs.closeOutputFolder({ batchId: batch.batchId }).catch(() => undefined);
+    progress([...results], 0, 0);
   }
-  return { results, folder: batch.folder };
+  return { results, folder };
 }

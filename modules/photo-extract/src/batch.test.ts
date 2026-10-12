@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-import { connect } from "@deck/sdk";
+import { connect, DeckCallError } from "@deck/sdk";
 import { createMockHost, type MockHandler } from "@deck/sdk/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OutputSession } from "./output-session.ts";
@@ -12,11 +12,11 @@ async function setup(handlers: Record<string, MockHandler> = {}) {
   const writes: number[][] = [];
   const host = createMockHost({
     module: { id: "photo-extract", version: "0.1.0" },
-    caps: { fs: "1.1.0" },
+    caps: { fs: "1.4.0" },
     granted: ["fs"],
     handlers: {
       "fs.pickFolder": () => ({ handle: "parent-1", name: "합성 폴더" }),
-      "fs.createOutputFolder": () => ({ batchId: "batch-1", folder: { handle: "folder-1", name: "합성 결과" } }),
+      "fs.openOutputFolder": () => ({ batchId: "batch-1", folder: { handle: "folder-1", name: "합성 결과" } }),
       "fs.beginWrite": () => ({ writeId: "write-1", chunkBytes: 65536 }),
       "fs.writeChunk": (args) => {
         const row = args as { data: number[]; offset: number };
@@ -41,6 +41,7 @@ async function setup(handlers: Record<string, MockHandler> = {}) {
 }
 const photo = (i: number): PlannedPhoto => ({
   id: `p-${i}`,
+  sourceHandle: "source-1",
   key: `xl/media/p${i}.jpeg`,
   bytes: fakeJpeg(i),
   extension: "jpg",
@@ -51,6 +52,34 @@ const photo = (i: number): PlannedPhoto => ({
 });
 afterEach(() => vi.unstubAllGlobals());
 describe("SDK-only photo output", () => {
+  it("saves photos to their own source parents with one open grant at a time", async () => {
+    let count = 0;
+    const { deck, host } = await setup({
+      "fs.openOutputFolder": (args) => ({
+        batchId: `batch-${++count}`,
+        folder: { handle: `folder-${count}`, name: (args as { sourceHandle: string }).sourceHandle },
+      }),
+    });
+    const result = await savePhotos(
+      deck,
+      [
+        { ...photo(1), sourceHandle: "document-a" },
+        { ...photo(2), sourceHandle: "document-b" },
+      ],
+      new AbortController().signal,
+    );
+    expect(host.requests.filter((r) => r.method === "openOutputFolder").map((r) => r.args)).toEqual([
+      { sourceHandle: "document-a" },
+      { sourceHandle: "document-b" },
+    ]);
+    expect(
+      host.requests.filter((r) => ["openOutputFolder", "closeOutputFolder"].includes(r.method)).map((r) => r.method),
+    ).toEqual(["openOutputFolder", "closeOutputFolder", "openOutputFolder", "closeOutputFolder"]);
+    expect(result?.folders?.["p-1"]?.name).toBe("document-a");
+    expect(result?.folders?.["p-2"]?.name).toBe("document-b");
+    expect(host.requests.some((r) => ["pickFiles", "pickFolder", "createOutputFolder"].includes(r.method))).toBe(false);
+    deck.dispose();
+  });
   it("writes every photo unchanged into a new output batch and closes it", async () => {
     const { deck, host, writes } = await setup();
     const result = await savePhotos(deck, [photo(1), photo(2)], new AbortController().signal);
@@ -65,11 +94,17 @@ describe("SDK-only photo output", () => {
     expect(host.requests.some((r) => /delete|overwrite/i.test(r.method))).toBe(false);
     deck.dispose();
   });
-  it("folder-picker cancellation creates no output and keeps the source data", async () => {
-    const { deck, host } = await setup({ "fs.pickFolder": () => null });
+  it("an unavailable source parent reports failure without opening a picker or altering source bytes", async () => {
+    const { deck, host } = await setup({
+      "fs.openOutputFolder": () => {
+        throw new DeckCallError("NOT_FOUND", "합성 원본 폴더 없음");
+      },
+    });
     const original = photo(1);
-    expect(await savePhotos(deck, [original], new AbortController().signal)).toBeNull();
-    expect(host.requests.some((r) => r.method === "createOutputFolder")).toBe(false);
+    expect((await savePhotos(deck, [original], new AbortController().signal))?.failed).toEqual([original.id]);
+    expect(
+      host.requests.some((r) => ["createOutputFolder", "pickFolder", "pickFiles", "beginWrite"].includes(r.method)),
+    ).toBe(false);
     expect(original.bytes).toEqual(fakeJpeg(1));
     deck.dispose();
   });
@@ -140,15 +175,15 @@ describe("photo retry output session", () => {
         return { writeId: "write-2", chunkBytes: 65536 };
       },
     });
-    const session = new OutputSession(deck, "명렬표 사진");
+    const session = new OutputSession(deck);
     const first = await savePhotos(deck, [photo(1), photo(2)], new AbortController().signal, () => undefined, session);
     expect(first?.failed).toEqual(["p-1"]);
     expect(first?.saved).toEqual(["p-2"]);
     const retried = await savePhotos(deck, [photo(1)], new AbortController().signal, () => undefined, session);
     expect(retried?.saved).toEqual(["p-1"]);
     expect(retried?.folder).toEqual(first?.folder);
-    expect(host.requests.filter((request) => request.method === "pickFolder")).toHaveLength(1);
-    expect(host.requests.filter((request) => request.method === "createOutputFolder")).toHaveLength(1);
+    expect(host.requests.filter((request) => request.method === "pickFolder")).toHaveLength(0);
+    expect(host.requests.filter((request) => request.method === "openOutputFolder")).toHaveLength(1);
     await session.close();
     expect(host.requests.filter((request) => request.method === "closeOutputFolder")).toHaveLength(1);
     deck.dispose();

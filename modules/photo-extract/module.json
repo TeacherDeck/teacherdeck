@@ -4,11 +4,17 @@
   "id": "photo-extract",
   "name": "명렬표 사진 꺼내기",
   "description": "XLSX 사진명렬표와 PDF 사진 출석부에서 사진을 꺼내 학번과 이름으로 저장해요.",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "category": "image",
   "icon": "icon.svg",
   "entry": "index.html",
-  "authors": [{ "name": "rochelobeJYJ" }],
-  "requires": { "fs": "^1.1" },
+  "authors": [
+    {
+      "name": "rochelobeJYJ"
+    }
+  ],
+  "requires": {
+    "fs": "^1.4.0"
+  },
   "optional": {}
 }

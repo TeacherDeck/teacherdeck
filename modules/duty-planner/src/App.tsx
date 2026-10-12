@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-import type { Deck } from "@deck/sdk";
+import type { Deck, FileHandleInfo } from "@deck/sdk";
 import {
   Body,
   BodyStrong,
@@ -114,6 +114,10 @@ export function App({ deck }: { deck: Deck }) {
   const [state, setState] = useState<PlannerState>(initialState);
   const [months, setMonths] = useState<Months>({});
   const [backupText, setBackupText] = useState("");
+  const sourceFile = useRef<FileHandleInfo | undefined>(undefined);
+  const pendingSource = useRef<FileHandleInfo | undefined>(undefined);
+  const readingFile = useRef(false);
+  const [chooseExportFolder, setChooseExportFolder] = useState(false);
   const [legacyYear, setLegacyYear] = useState<number | null>(null);
   const [restoreOpen, setRestoreOpen] = useState(false);
   const [restorePreview, setRestorePreview] = useState<{ months: Months; legacy: boolean } | null>(null);
@@ -234,7 +238,7 @@ export function App({ deck }: { deck: Deck }) {
       setBusy(false);
     }
   }
-  async function restoreConfirmed(preview: { months: Months; legacy: boolean }) {
+  async function restoreConfirmed(preview: { months: Months; legacy: boolean }, importedSource?: FileHandleInfo) {
     const first = Object.values(preview.months)[0];
     if (!first || saving.current) return;
     saving.current = true;
@@ -242,6 +246,7 @@ export function App({ deck }: { deck: Deck }) {
     try {
       if (storageBlocked) await replaceLedger(deck, preview.months, monthKey(first));
       setMonths(preview.months);
+      sourceFile.current = importedSource;
       setState(first);
       setReplacementPending(!storageBlocked);
       setRoster(first.input.teachers.map((t) => `${t.name}\t${t.past}`).join("\n"));
@@ -271,11 +276,51 @@ export function App({ deck }: { deck: Deck }) {
   }
   async function exportFile(name: string, text: string) {
     try {
-      if (await writeExport(deck, name, text)) setMessage("새 결과 폴더에 저장했어요.");
+      if (await writeExport(deck, name, text, sourceFile.current, chooseExportFolder))
+        setMessage("저장 폴더에 새 파일로 저장했어요.");
     } catch {
       setMessage("파일을 저장하지 못했어요. 다시 저장해 주세요.");
     }
   }
+  const importFile = async (file?: FileHandleInfo) => {
+    if (readingFile.current || saving.current || busy || !loaded || restoreOpen) {
+      setMessage("현재 작업을 마친 뒤 백업 파일을 다시 놓아 주세요.");
+      return;
+    }
+    readingFile.current = true;
+    setBusy(true);
+    try {
+      const text = await readBackup(deck, file, (selected) => {
+        pendingSource.current = selected;
+      });
+      if (text !== null) {
+        setBackupText(text);
+        setMessage(
+          `${pendingSource.current?.name ?? "백업 파일"}을 읽었어요. JSON 백업 복원에서 내용을 확인해 주세요.`,
+        );
+      }
+    } catch {
+      setMessage("백업을 읽지 못했어요. 5MiB 이하 UTF-8 JSON 파일을 선택해 주세요.");
+    } finally {
+      readingFile.current = false;
+      setBusy(false);
+    }
+  };
+  const dropped = useRef(importFile);
+  dropped.current = importFile;
+  useEffect(
+    () =>
+      deck.on("fs.dropped", ({ files }) => {
+        const file = files[0];
+        if (files.length !== 1 || !file || file?.ext.toLowerCase() !== "json") {
+          setMessage("JSON 백업 파일을 한 번에 1개씩 놓아 주세요.");
+          return;
+        }
+        setMessage(`${file.name}을 받았어요. 백업을 읽고 있어요.`);
+        void dropped.current(file);
+      }),
+    [deck],
+  );
   function updateInput(patch: Partial<PlanInput>) {
     const next = changeConditions(state, patch, HOLIDAYS);
     if (next.state.detailed && patch.teachers) {
@@ -1000,10 +1045,12 @@ export function App({ deck }: { deck: Deck }) {
         closeButtonText="취소"
         defaultButton="close"
         onClose={(result) => {
+          const importedSource = pendingSource.current;
           setRestoreOpen(false);
-          if (result === "primary" && restorePreview) void restoreConfirmed(restorePreview);
+          if (result === "primary" && restorePreview) void restoreConfirmed(restorePreview, importedSource);
         }}
       >
+        <Body>{pendingSource.current?.name ?? "붙여 넣은 백업"}</Body>
         <Body>{Object.keys(restorePreview?.months ?? {}).length}개월의 자료로 현재 작업을 바꿔요.</Body>
         {restorePreview?.legacy && (
           <Body>
@@ -1025,6 +1072,12 @@ export function App({ deck }: { deck: Deck }) {
         onChange={(detailed) => setState((prev) => ({ ...prev, detailed }))}
       />
       <SettingsExpander header="월 마감 · 백업 · 내보내기">
+        <CheckBox
+          content="내보낼 때 다른 폴더 선택"
+          checked={chooseExportFolder}
+          onChange={setChooseExportFolder}
+          disabled={busy}
+        />
         <div className={s.row}>
           <Button
             disabled={busy || storageBlocked || !!state.closed}
@@ -1055,13 +1108,10 @@ export function App({ deck }: { deck: Deck }) {
             기존 형식 JSON 저장
           </Button>
           <Button
-            onClick={() =>
-              void readBackup(deck)
-                .then((text) => {
-                  if (text !== null) setBackupText(text);
-                })
-                .catch(() => setMessage("백업을 읽지 못했어요. 5MiB 이하 UTF-8 JSON 파일을 선택해 주세요."))
-            }
+            disabled={busy}
+            onClick={() => {
+              void importFile();
+            }}
           >
             백업 파일 열기
           </Button>
@@ -1070,7 +1120,16 @@ export function App({ deck }: { deck: Deck }) {
           <InfoBar message="마감한 달이에요. 수행 기록을 수정하려면 마감 수정 열기를 누르고 수정 후 다시 저장·마감해 주세요." />
         )}
         <SettingsExpander header="JSON 백업 복원">
-          <TextBox header="복원할 JSON" multiline value={backupText} onChange={setBackupText} disabled={busy} />
+          <TextBox
+            header="복원할 JSON"
+            multiline
+            value={backupText}
+            onChange={(value) => {
+              pendingSource.current = undefined;
+              setBackupText(value);
+            }}
+            disabled={busy}
+          />
           <NumberBox
             header="기존 형식의 연도"
             value={legacyYear ?? input.year}
