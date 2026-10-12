@@ -63,7 +63,10 @@ GPLv3의 Appropriate Legal Notices를 겸한다. 다음을 모두 보여 준다.
 - 앱 이름·버전, 저작권, 무보증 고지, LICENSE 전문 보기
 - 제7조(b) 저자 표기(`LICENSE-ADDITIONAL-TERMS`의 문구 그대로)
 - 모듈별 저자(매니페스트 `authors` 집계)
-- 서드파티 라이선스 목록(빌드 시 cargo-about과 npm 라이선스 수집으로 `generated/third-party.json` 생성)
+- 서드파티 라이선스를 묶음별로 보여 준다([ADR-0030](../adr/0030-module-license-notices.md)).
+  - "앱 공통": 셸 npm 의존성과 호스트 Rust 크레이트(빌드 시 `generated/third-party.json` 생성)
+  - 도구별 묶음: 동봉 도구의 실행 의존성, 자산, 도구 전용 실행 환경(`generated/module-notices.json` 생성). 해시 고정 원문이 있는 구성 요소는 원문 전문을 구성 요소 이름으로 펼쳐 보여 준다.
+  - 묶음마다 구성 요소 수와 라이선스 요약을 설명에 쓴다. 파일 경로를 펼침 제목으로 쓰지 않는다.
 
 이 화면의 저자 표기를 지우거나 약화하지 않는다(GEN-007).
 
