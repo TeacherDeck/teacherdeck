@@ -4,7 +4,7 @@
 import { connect } from "@deck/sdk";
 import { createMockHost } from "@deck/sdk/testing";
 import { DeckProvider } from "@deck/ui";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadLedger } from "./ledger.ts";
 import { ACTIVE_LEDGER } from "./ledger.ts";
@@ -51,9 +51,13 @@ it("keeps the basic workflow, adds two exam rooms, assigns and atomically saves 
   fireEvent.click(editor.getByLabelText("세부 조건을 바꿀 교사", { selector: "[role=combobox]" }));
   fireEvent.click(within(await screen.findByRole("listbox")).getByRole("option", { name: "합성교사B" }));
   fireEvent.click(editor.getByLabelText("이 업무에 고정", { selector: "input" }));
-  fireEvent.click(editor.getByRole("button", { name: "세부 배정" }));
+  await act(async () => {
+    fireEvent.click(editor.getByRole("button", { name: "세부 배정" }));
+  });
   await editor.findByText("조건을 지켜 세부 업무를 배정했어요. 실제 수행 기록은 바뀌지 않아요.");
-  fireEvent.click(within(screen.getByRole("region", { name: "이번 달 배정" })).getByRole("button", { name: "저장" }));
+  await act(async () => {
+    fireEvent.click(within(screen.getByRole("region", { name: "이번 달 배정" })).getByRole("button", { name: "저장" }));
+  });
   await screen.findByText("이 PC에 명단·조건·배정표를 저장했어요.");
   const saved = required(await loadLedger(deck)).current;
   expect(saved.assignments).toEqual(state.assignments);
@@ -79,14 +83,20 @@ it("retains the last detailed results on an impossible allocation and protects r
     actual: { j1: ["A"] },
   };
   const { deck } = await open(state);
-  fireEvent.click(screen.getByRole("button", { name: "세부 편성 · 시험감독·야자·다른 업무" }));
-  fireEvent.click(screen.getByRole("button", { name: "세부 배정" }));
+  fireEvent.click(labeledControl("세부 편성 · 시험감독·야자·다른 업무", "button"));
+  const editor = within(screen.getByRole("group", { name: "세부 편성 · 시험감독·야자·다른 업무" }));
+  await act(async () => {
+    fireEvent.click(editor.getByRole("button", { name: "세부 배정" }));
+  });
   await screen.findByText(/교사 조건을 지키면서 세부 인원을 채울 수 없어요/);
-  fireEvent.click(screen.getByRole("button", { name: "여러 명 붙여넣기" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "교사 명단" }), { target: { value: "합성교사B" } });
-  fireEvent.click(screen.getByRole("button", { name: "명단 적용" }));
+  const roster = within(screen.getByRole("region", { name: "교사 명단과 배정 횟수" }));
+  fireEvent.click(roster.getByRole("button", { name: "여러 명 붙여넣기" }));
+  fireEvent.change(roster.getByRole("textbox", { name: "교사 명단" }), { target: { value: "합성교사B" } });
+  fireEvent.click(roster.getByRole("button", { name: "명단 적용" }));
   await screen.findByText(/세부 편성의 고정·직접 배정·실제 기록이 있는 교사를 빼려면/);
-  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  await act(async () => {
+    fireEvent.click(within(screen.getByRole("region", { name: "이번 달 배정" })).getByRole("button", { name: "저장" }));
+  });
   await screen.findByText("이 PC에 명단·조건·배정표를 저장했어요.");
   expect(required(await loadLedger(deck)).current.detailed).toEqual(state.detailed);
   deck.dispose();
@@ -146,11 +156,13 @@ async function open(saved: unknown = null, expandRoster = true) {
     },
   });
   const deck = await connect({ window: host.window });
-  render(
-    <DeckProvider>
-      <App deck={deck} />
-    </DeckProvider>,
-  );
+  await act(async () => {
+    render(
+      <DeckProvider>
+        <App deck={deck} />
+      </DeckProvider>,
+    );
+  });
   await screen.findByRole("heading", { name: "지도일배정기" });
   const rosterToggle = screen.getByLabelText("명단 준비", { selector: "button" });
   if (expandRoster && rosterToggle.getAttribute("aria-expanded") === "false") fireEvent.click(rosterToggle);
@@ -293,16 +305,22 @@ describe("planner user flow", () => {
     const state = initialState(new Date(2026, 9, 1));
     state.input.teachers = [{ id: "A", name: "교사A", past: 0, fixed: [], excluded: [], weekdays: [] }];
     const { deck } = await open(state);
-    fireEvent.click(screen.getByRole("button", { name: /교사A · 과거/ }));
-    fireEvent.click(screen.getByRole("button", { name: "6일 배정 편집" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "6일에 교사A 고정" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "6일에 교사A 제외" }));
+    const actions = within(screen.getByRole("region", { name: "이번 달 배정" }));
+    const roster = within(screen.getByRole("region", { name: "교사 명단과 배정 횟수" }));
+    fireEvent.click(roster.getByRole("button", { name: /교사A · 과거/ }));
+    fireEvent.click(labeledControl("6일 배정 편집", "button"));
+    const fixed: HTMLInputElement = labeledControl("6일에 교사A 고정", "checkbox");
+    const excluded: HTMLInputElement = labeledControl("6일에 교사A 제외", "checkbox");
+    fireEvent.click(fixed);
+    fireEvent.click(excluded);
+    expect(fixed.checked).toBe(true);
+    expect(excluded.checked).toBe(true);
     expect(screen.queryByRole("button", { name: "교사 조건 적용" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "배정" }));
+    fireEvent.click(actions.getByRole("button", { name: "배정" }));
     await screen.findByText("6일 교사 제외 조건과 고정·직접 배정이 겹쳐요. 조건을 조정해 주세요.");
-    fireEvent.click(screen.getByRole("button", { name: "7일 배정 편집" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "이 날짜는 지도하지 않아요" }));
-    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    fireEvent.click(labeledControl("7일 배정 편집", "button"));
+    fireEvent.click(labeledControl("이 날짜는 지도하지 않아요", "checkbox"));
+    fireEvent.click(actions.getByRole("button", { name: "저장" }));
     await screen.findByText("이 PC에 명단·조건·배정표를 저장했어요.");
     const saved = required(await loadLedger(deck)).current;
     expect(saved.input.excluded).toEqual([7]);
@@ -435,6 +453,10 @@ it("opens narrow-window date editing in a dialog at the selected calendar date a
   date.focus();
   fireEvent.click(date);
   const dialog = await screen.findByRole("dialog", { name: "10월 6일 배정 편집" });
+  // jsdom has no layout or pointer focus. Model a browser's focus only after
+  // Tabster has registered the surface, as in the shared ContentDialog tests.
+  await waitFor(() => expect(dialog.querySelector("[data-tabster-dummy]")).toBeTruthy());
+  required(dialog.querySelector<HTMLButtonElement>("button")).focus();
   expect(within(dialog).getByRole("textbox", { name: "날짜 메모" })).toBeTruthy();
   fireEvent.click(within(dialog).getByRole("button", { name: "닫기" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -495,6 +517,17 @@ it("shows condition conflicts inside the narrow date dialog and removes invalid 
   deck.dispose();
 });
 
+function labeledControl(name: string, role: "button"): HTMLButtonElement;
+function labeledControl(name: string, role: "checkbox"): HTMLInputElement;
+function labeledControl(name: string, role: "button" | "checkbox"): HTMLElement {
+  const candidate = screen.getByLabelText(name, {
+    selector: role === "button" ? "button" : "input[type=checkbox]",
+  });
+  // Narrow the role search, then verify the same control's accessible name and role.
+  const control = within(required(candidate.parentElement)).getByRole(role, { name });
+  expect(control).toBe(candidate);
+  return control;
+}
 function required<T>(value: T | null | undefined): T {
   if (value === null || value === undefined) throw new Error("SYNTHETIC_FIXTURE_MISSING");
   return value;
@@ -549,11 +582,15 @@ it("preserves actual editor holes, rejects duplicates and saves every performer 
   await chooseActual(1, "합성교사A");
   await chooseActual(1, "교사를 선택해 주세요");
   expect(screen.getByLabelText("2번째 실제 수행자", { selector: "[role=combobox]" }).textContent).toBe("합성교사B");
-  fireEvent.click(save);
+  await act(async () => {
+    fireEvent.click(save);
+  });
   await screen.findByText("이 PC에 명단·조건·배정표를 저장했어요.");
   expect(required(await loadLedger(f.deck)).current.actual?.["1"]).toEqual(["B"]);
   await chooseActual(1, "합성교사C");
-  fireEvent.click(save);
+  await act(async () => {
+    fireEvent.click(save);
+  });
   await screen.findByText("이 PC에 명단·조건·배정표를 저장했어요.");
   const saved = required(await loadLedger(f.deck)).current;
   expect(saved.actual?.["1"]).toEqual(["C", "B"]);
@@ -575,15 +612,19 @@ it("retains actual slot drafts across dates, months, failed saving and month clo
   fireEvent.blur(month);
   expect(screen.getByLabelText("2번째 실제 수행자", { selector: "[role=combobox]" }).textContent).toBe("합성교사B");
   f.fail(ACTIVE_LEDGER);
-  fireEvent.click(save);
+  await act(async () => {
+    fireEvent.click(save);
+  });
   await screen.findByText("저장하지 못했어요. 다시 저장해 주세요.");
   expect(screen.getByLabelText("2번째 실제 수행자", { selector: "[role=combobox]" }).textContent).toBe("합성교사B");
   await chooseActual(1, "합성교사A");
   f.fail("");
   fireEvent.click(screen.getByLabelText("월 마감 · 백업 · 내보내기", { selector: "button" }));
-  fireEvent.click(
-    within(screen.getByRole("group", { name: "월 마감 · 백업 · 내보내기" })).getByRole("button", { name: "월 마감" }),
-  );
+  await act(async () => {
+    fireEvent.click(
+      within(screen.getByRole("group", { name: "월 마감 · 백업 · 내보내기" })).getByRole("button", { name: "월 마감" }),
+    );
+  });
   await screen.findByText("실제 수행 횟수로 월을 마감했어요.");
   const saved = required(await loadLedger(f.deck)).current;
   expect(saved.actual?.["1"]).toEqual(["A", "B"]);
@@ -609,7 +650,9 @@ it("replaces stale actual slot drafts when recording assignments or restoring a 
   const restored = actualFixture();
   restored.actual = { "6": ["B"] };
   const dialog = await previewBackup(encodeBackup({ "2026-10": restored }));
-  fireEvent.click(within(dialog).getByRole("button", { name: "확인하고 복원" }));
+  await act(async () => {
+    fireEvent.click(within(dialog).getByRole("button", { name: "확인하고 복원" }));
+  });
   await screen.findByText("백업을 화면에 복원했어요. 내용을 확인하고 저장해 주세요.");
   await waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
   expect(screen.getByLabelText("1번째 실제 수행자", { selector: "[role=combobox]" }).textContent).toBe("합성교사B");
@@ -617,7 +660,9 @@ it("replaces stale actual slot drafts when recording assignments or restoring a 
     "교사를 선택해 주세요",
   );
   await chooseActual(2, "합성교사A");
-  fireEvent.click(save);
+  await act(async () => {
+    fireEvent.click(save);
+  });
   await screen.findByText("이 PC에 명단·조건·배정표를 저장했어요.");
   expect(required(await loadLedger(f.deck)).current.actual?.["6"]).toEqual(["B", "A"]);
   f.deck.dispose();

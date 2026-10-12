@@ -9,10 +9,249 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, expect, it, vi } from "vitest";
 import { App } from "./App.tsx";
 import { runBatch } from "./batch.ts";
+import { DEFAULT_OPTIONS, type Options } from "./logic.ts";
 vi.mock("./batch.ts", async (original) => ({ ...(await original<typeof import("./batch.ts")>()), runBatch: vi.fn() }));
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
+
+async function settingsHarness(
+  getOptions: () => unknown,
+  pickFolder = vi.fn<() => FolderHandleInfo | null | Promise<FolderHandleInfo | null>>(() => ({
+    handle: "parent",
+    name: "합성 저장 폴더",
+  })),
+) {
+  const file = { handle: "synthetic", name: "합성 문서.pdf", ext: "pdf", size: 100, modifiedAt: 0 };
+  const saveOptions = vi.fn(() => null);
+  const host = createMockHost({
+    module: { id: "pdf-compress", version: "0.1.0" },
+    caps: { fs: "1.1.0", storage: "1.0.0" },
+    granted: ["fs", "storage"],
+    handlers: {
+      "storage.get": getOptions,
+      "storage.set": saveOptions,
+      "fs.pickFiles": () => [file],
+      "fs.pickFolder": pickFolder,
+    },
+  });
+  const deck = await connect({ window: host.window });
+  vi.mocked(runBatch).mockResolvedValue({ folder: null, results: [] });
+  const view = render(
+    <DeckProvider>
+      <App deck={deck} />
+    </DeckProvider>,
+  );
+  return { file, host, deck, view, pickFolder, saveOptions };
+}
+
+it("keeps a user's quality choice when stored options arrive after an early drop", async () => {
+  const stored = deferred<Options>();
+  const { file, host, deck, view, pickFolder } = await settingsHarness(() => stored.promise);
+  try {
+    fireEvent.click(screen.getByText("압축 방식·화질"));
+    const quality = screen.getByRole("spinbutton", { name: "사진 품질 (%)" });
+    await act(async () => {
+      fireEvent.change(quality, { target: { value: "100" } });
+      fireEvent.blur(quality);
+      host.emit("fs.dropped", { files: [file] });
+      await host.flush();
+    });
+    expect(runBatch).not.toHaveBeenCalled();
+    expect(pickFolder).not.toHaveBeenCalled();
+    expect(screen.getAllByText(/^합성 문서\.pdf ·/)).toHaveLength(1);
+    await act(async () => {
+      stored.resolve({ mode: "preserve", dpi: 120, quality: 30 });
+      await host.flush();
+    });
+    await waitFor(() => expect(runBatch).toHaveBeenCalledOnce());
+    expect(screen.getByRole("spinbutton", { name: "사진 품질 (%)" }).getAttribute("value")).toBe("100");
+    expect(vi.mocked(runBatch).mock.calls[0]?.[1]).toEqual([file]);
+    expect(vi.mocked(runBatch).mock.calls[0]?.[3].quality).toBe(100);
+    expect(pickFolder).toHaveBeenCalledOnce();
+  } finally {
+    view.unmount();
+    deck.dispose();
+  }
+});
+
+it("waits for saved settings before automatically processing an early file selection", async () => {
+  const stored = deferred<Options>();
+  const { file, host, deck, view, pickFolder, saveOptions } = await settingsHarness(() => stored.promise);
+  try {
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^PDF 추가$/ }));
+      await host.flush();
+    });
+    expect(runBatch).not.toHaveBeenCalled();
+    expect(pickFolder).not.toHaveBeenCalled();
+    expect(saveOptions).not.toHaveBeenCalled();
+    expect(screen.getAllByText(/^합성 문서\.pdf ·/)).toHaveLength(1);
+    await act(async () => {
+      stored.resolve({ mode: "raster", dpi: 90, quality: 30 });
+      await host.flush();
+    });
+    await waitFor(() => expect(runBatch).toHaveBeenCalledOnce());
+    expect(vi.mocked(runBatch).mock.calls[0]?.[1]).toEqual([file]);
+    expect(vi.mocked(runBatch).mock.calls[0]?.[3]).toEqual({ mode: "preserve", dpi: 90, quality: 30 });
+    expect(saveOptions).toHaveBeenCalledWith({
+      key: "pdf-compression",
+      value: { mode: "preserve", dpi: 90, quality: 30 },
+    });
+  } finally {
+    view.unmount();
+    deck.dispose();
+  }
+});
+
+it("waits for initialization when pending files are compressed manually", async () => {
+  const stored = deferred<Options>();
+  const { file, host, deck, view } = await settingsHarness(() => stored.promise);
+  try {
+    fireEvent.click(screen.getByRole("checkbox", { name: "파일을 추가하면 바로 압축" }));
+    await act(async () => {
+      host.emit("fs.dropped", { files: [file] });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "미처리 파일 압축" }));
+    expect(runBatch).not.toHaveBeenCalled();
+    await act(async () => {
+      stored.resolve({ mode: "preserve", dpi: 200, quality: 45 });
+      await host.flush();
+    });
+    await waitFor(() => expect(runBatch).toHaveBeenCalledOnce());
+    expect(vi.mocked(runBatch).mock.calls[0]?.[3]).toEqual({ mode: "preserve", dpi: 200, quality: 45 });
+  } finally {
+    view.unmount();
+    deck.dispose();
+  }
+});
+
+it("processes an early drop with defaults when loading settings fails", async () => {
+  const stored = deferred<Options>();
+  const { file, host, deck, view } = await settingsHarness(() => stored.promise);
+  try {
+    await act(async () => {
+      host.emit("fs.dropped", { files: [file] });
+      await host.flush();
+    });
+    expect(runBatch).not.toHaveBeenCalled();
+    await act(async () => {
+      stored.reject(new Error("SYNTHETIC_STORAGE_FAILURE"));
+      await host.flush();
+    });
+    await waitFor(() => expect(runBatch).toHaveBeenCalledOnce());
+    expect(vi.mocked(runBatch).mock.calls[0]?.[1]).toEqual([file]);
+    expect(vi.mocked(runBatch).mock.calls[0]?.[3]).toEqual(DEFAULT_OPTIONS);
+  } finally {
+    view.unmount();
+    deck.dispose();
+  }
+});
+
+it("does not choose a folder or process queued files after unmounting during settings restoration", async () => {
+  const stored = deferred<Options>();
+  const { file, host, deck, view, pickFolder, saveOptions } = await settingsHarness(() => stored.promise);
+  try {
+    await act(async () => {
+      host.emit("fs.dropped", { files: [file] });
+      await host.flush();
+    });
+    view.unmount();
+    await act(async () => {
+      stored.resolve({ mode: "preserve", dpi: 120, quality: 30 });
+      await host.flush();
+      host.emit("fs.dropped", { files: [file] });
+    });
+    expect(pickFolder).not.toHaveBeenCalled();
+    expect(saveOptions).not.toHaveBeenCalled();
+    expect(runBatch).not.toHaveBeenCalled();
+  } finally {
+    deck.dispose();
+  }
+});
+
+it("falls back after the SDK timeout instead of leaving an early drop waiting forever", async () => {
+  vi.useFakeTimers();
+  const stored = deferred<Options>();
+  const { file, host, deck, view, pickFolder } = await settingsHarness(() => stored.promise);
+  try {
+    await act(async () => {
+      host.emit("fs.dropped", { files: [file] });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(runBatch).not.toHaveBeenCalled();
+    expect(pickFolder).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(runBatch).toHaveBeenCalledOnce();
+    expect(vi.mocked(runBatch).mock.calls[0]?.[3]).toEqual(DEFAULT_OPTIONS);
+    expect(screen.getByRole("button", { name: "취소" }).hasAttribute("disabled")).toBe(true);
+  } finally {
+    view.unmount();
+    deck.dispose();
+  }
+});
+
+it("cancels a run waiting for settings immediately and retains the file for a manual retry", async () => {
+  const stored = deferred<Options>();
+  const { file, host, deck, view, pickFolder } = await settingsHarness(() => stored.promise);
+  try {
+    await act(async () => {
+      host.emit("fs.dropped", { files: [file] });
+      await host.flush();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "취소" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "취소" }).hasAttribute("disabled")).toBe(true));
+    expect(screen.getAllByText(/^합성 문서\.pdf ·/)).toHaveLength(1);
+    expect(pickFolder).not.toHaveBeenCalled();
+    await act(async () => {
+      stored.resolve({ mode: "preserve", dpi: 120, quality: 30 });
+      await host.flush();
+    });
+    expect(runBatch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "미처리 파일 압축" }));
+    await waitFor(() => expect(runBatch).toHaveBeenCalledOnce());
+    expect(vi.mocked(runBatch).mock.calls[0]?.[1]).toEqual([file]);
+    expect(vi.mocked(runBatch).mock.calls[0]?.[3].quality).toBe(30);
+  } finally {
+    view.unmount();
+    deck.dispose();
+  }
+});
+
+it("does not start compression if the folder dialog resolves after unmounting", async () => {
+  const destination = deferred<FolderHandleInfo>();
+  const pickFolder = vi.fn(() => destination.promise);
+  const { file, host, deck, view, saveOptions } = await settingsHarness(() => null, pickFolder);
+  try {
+    await act(async () => {
+      host.emit("fs.dropped", { files: [file] });
+      await host.flush();
+    });
+    expect(pickFolder).toHaveBeenCalledOnce();
+    view.unmount();
+    await act(async () => {
+      destination.resolve({ handle: "parent", name: "합성 저장 폴더" });
+      await host.flush();
+    });
+    expect(saveOptions).not.toHaveBeenCalled();
+    expect(runBatch).not.toHaveBeenCalled();
+  } finally {
+    deck.dispose();
+  }
 });
 it("compresses selected and dropped PDFs automatically in preserving mode and asks for the folder once", async () => {
   const first = { handle: "a", name: "합성 첫문서.pdf", ext: "pdf", size: 4, modifiedAt: 0 };

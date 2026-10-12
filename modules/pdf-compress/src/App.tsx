@@ -19,7 +19,7 @@ import {
 } from "@deck/ui";
 import { useEffect, useRef, useState } from "react";
 import { loadOptions, runBatch, type Result } from "./batch.ts";
-import { DEFAULT_OPTIONS } from "./logic.ts";
+import { DEFAULT_OPTIONS, type Options } from "./logic.ts";
 const useStyles = makeStyles({
   actions: { display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalM },
   list: { maxHeight: "35vh", overflowY: "auto" },
@@ -31,6 +31,9 @@ export function App({ deck }: { deck: Deck }) {
   const reserved = useRef<FileHandleInfo[]>([]);
   const [results, setResults] = useState<Result[]>([]);
   const [options, setOptions] = useState(DEFAULT_OPTIONS);
+  const optionsRef = useRef(DEFAULT_OPTIONS);
+  const optionsChanged = useRef(false);
+  const optionsReady = useRef<Promise<void>>(Promise.resolve());
   const [ack, setAck] = useState(false);
   const [auto, setAuto] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -44,8 +47,12 @@ export function App({ deck }: { deck: Deck }) {
   const [folder, setFolder] = useState<FolderHandleInfo | null>(null);
   useEffect(() => {
     let active = true;
-    void loadOptions(deck).then((value) => {
-      if (active) setOptions({ ...value, mode: "preserve" });
+    optionsChanged.current = false;
+    optionsReady.current = loadOptions(deck).then((value) => {
+      if (active && !optionsChanged.current) {
+        optionsRef.current = { ...value, mode: "preserve" };
+        setOptions(optionsRef.current);
+      }
     });
     return () => {
       active = false;
@@ -53,6 +60,12 @@ export function App({ deck }: { deck: Deck }) {
     };
   }, [deck]);
   useEffect(() => deck.on("fs.dropped", ({ files: incoming }) => add(incoming)), [deck, options, auto, ack]);
+  function changeOptions(value: Options) {
+    // A delayed restore must not replace an explicit choice, even before React commits.
+    optionsChanged.current = true;
+    optionsRef.current = value;
+    setOptions(value);
+  }
   function rememberParent(value: FolderHandleInfo) {
     // Native events can arrive after a batch finishes but before React commits a new
     // render/effect. The next run must already know the successfully chosen folder.
@@ -89,7 +102,7 @@ export function App({ deck }: { deck: Deck }) {
     reserved.current = [...reserved.current, ...accepted];
     setFiles(reserved.current);
     if (accepted.length !== incoming.length) setMessage("PDF 파일만 추가해요. 이미 추가한 파일은 유지해요.");
-    if (auto && accepted.length && (options.mode !== "raster" || ack)) void run(accepted);
+    if (auto && accepted.length && (optionsRef.current.mode !== "raster" || ack)) void run(accepted);
   }
   async function pick() {
     try {
@@ -103,7 +116,7 @@ export function App({ deck }: { deck: Deck }) {
       (f) => !results.some((r) => r.file.handle === f.handle && r.status !== "failed"),
     ),
   ) {
-    if (lock.current || !selected.length || (options.mode === "raster" && !ack)) return;
+    if (lock.current || !selected.length || (optionsRef.current.mode === "raster" && !ack)) return;
     lock.current = true;
     setBusy(true);
     const abort = new AbortController();
@@ -112,18 +125,30 @@ export function App({ deck }: { deck: Deck }) {
     setPageDone(0);
     setPageTotal(0);
     try {
+      // Keep accepted files reserved while restoring settings. Snapshot after the
+      // restore, so this run uses the stored settings or the user's newer choice.
+      await new Promise<void>((resolve) => {
+        const finish = () => {
+          abort.signal.removeEventListener("abort", finish);
+          resolve();
+        };
+        abort.signal.addEventListener("abort", finish, { once: true });
+        void optionsReady.current.then(finish);
+      });
+      if (abort.signal.aborted) return;
+      const runOptions = optionsRef.current;
       let destination = parentRef.current;
       if (!destination) destination = await deck.fs.pickFolder();
-      if (!destination) return;
+      if (!destination || abort.signal.aborted) return;
       rememberParent(destination);
-      void deck.storage.set("pdf-compression", options).catch(() => undefined);
+      void deck.storage.set("pdf-compression", runOptions).catch(() => undefined);
       const merge = (incoming: Result[]) =>
         setResults((old) => [...new Map([...old, ...incoming].map((r) => [r.file.handle, r])).values()]);
       const output = await runBatch(
         deck,
         selected,
         destination.handle,
-        options,
+        runOptions,
         abort.signal,
         (incoming, done, total) => {
           merge(incoming);
@@ -218,7 +243,7 @@ export function App({ deck }: { deck: Deck }) {
             ]}
             onChange={(mode) => {
               if (mode === "preserve" || mode === "raster") {
-                setOptions({ ...options, mode });
+                changeOptions({ ...optionsRef.current, mode });
                 setAck(false);
               }
             }}
@@ -231,7 +256,7 @@ export function App({ deck }: { deck: Deck }) {
                 min={72}
                 max={300}
                 disabled={busy}
-                onChange={(dpi) => setOptions({ ...options, dpi })}
+                onChange={(dpi) => changeOptions({ ...optionsRef.current, dpi })}
               />
             )}
             <NumberBox
@@ -240,7 +265,7 @@ export function App({ deck }: { deck: Deck }) {
               min={30}
               max={100}
               disabled={busy}
-              onChange={(quality) => setOptions({ ...options, quality })}
+              onChange={(quality) => changeOptions({ ...optionsRef.current, quality })}
             />
           </div>
           <Caption>
