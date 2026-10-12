@@ -5,9 +5,11 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["**/*.test.{ts,tsx}"],
-    // Bound concurrent DOM suites so Fluent rendering does not oversubscribe school-PC/CI memory and CPUs.
+    // Run one worker so parallel Fluent DOM memory costs do not affect the existing 5-second test limit.
     // Keep every suite and its existing timeout/assertions unchanged.
-    maxWorkers: 2,
+    maxWorkers: 1,
+    // Keep file progress visible in local, CI, and agent runs.
+    reporters: ["default"],
     // Violation samples are inputs for checker self-tests, never test suites themselves.
     exclude: ["**/node_modules/**", "**/dist/**", "**/target/**", "tools/checks/__tests__/violations/**"],
   },

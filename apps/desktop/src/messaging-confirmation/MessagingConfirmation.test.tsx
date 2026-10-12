@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { DeckProvider } from "@deck/ui";
 import type { MessagingApprovalRequest } from "@deck/sdk";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -32,18 +32,21 @@ function request(count = 1): MessagingApprovalRequest {
     })),
   };
 }
-function mount(item: MessagingApprovalRequest) {
+async function mount(item: MessagingApprovalRequest) {
   const host: MessagingConfirmationHost = { pending: vi.fn(async () => [item]), resolve: vi.fn(async () => {}) };
-  render(
-    <DeckProvider>
-      <MessagingConfirmation host={host} />
-    </DeckProvider>,
-  );
+  // Complete the initial host poll and dialog mount before querying its real controls.
+  await act(async () => {
+    render(
+      <DeckProvider>
+        <MessagingConfirmation host={host} />
+      </DeckProvider>,
+    );
+  });
   return host;
 }
 describe("trusted registration review", () => {
   it("shows all fields and sends one approval only after explicit acknowledgement", async () => {
-    const host = mount(request());
+    const host = await mount(request());
     const dialog = await screen.findByRole("dialog", { name: "합성 메시지 예약 등록 확인" });
     const section = within(dialog).getByRole("region", { name: "예약 메시지 1" });
     expect(within(section).getByText(/제목 없음/)).toBeTruthy();
@@ -64,7 +67,7 @@ describe("trusted registration review", () => {
     const first = item.preview[0];
     if (!first) throw new Error("synthetic fixture missing");
     first.retryLocked = true;
-    const host = mount(item);
+    const host = await mount(item);
     const dialog = await screen.findByRole("dialog", { name: "합성 메시지 예약 등록 확인" });
     fireEvent.click(within(dialog).getByRole("checkbox"));
     expect(within(dialog).queryByRole("button", { name: "1건 예약 등록" })).toBeNull();
@@ -74,7 +77,7 @@ describe("trusted registration review", () => {
     );
   });
   it("keeps 500 full previews searchable with a bounded visible list", async () => {
-    const host = mount(request(500));
+    const host = await mount(request(500));
     const dialog = await screen.findByRole("dialog", { name: "합성 메시지 예약 등록 확인" });
     expect(within(dialog).getAllByRole("region").length).toBe(10);
     const input = within(dialog).getByRole("textbox", { name: "수신자·내용·시각·첨부 찾기" });
@@ -88,7 +91,7 @@ describe("trusted registration review", () => {
   it("does not open an expired host request", async () => {
     const item = request();
     item.expiresAt = new Date(Date.now() - 1).toISOString();
-    const host = mount(item);
+    const host = await mount(item);
     await waitFor(() => expect(host.pending).toHaveBeenCalled());
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(host.resolve).not.toHaveBeenCalled();

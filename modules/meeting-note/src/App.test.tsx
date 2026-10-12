@@ -45,6 +45,10 @@ async function setup(
       <App deck={deck} />
     </DeckProvider>,
   );
+  // Finish initial mock storage replies before role queries traverse the populated UI.
+  await act(async () => {
+    await Promise.resolve();
+  });
   return { deck, host, view, store };
 }
 const seeded = () => ({ ...emptyMeeting(), speakers: ["가상 화자 A", "가상 화자 B"], selected: "가상 화자 A" });
