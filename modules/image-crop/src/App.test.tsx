@@ -99,34 +99,31 @@ describe("image crop editing flow", () => {
       cancelled: false,
     });
     const { deck } = await setup();
+    // These toolbar nodes remain mounted while preview work toggles their disabled state.
+    const undo = screen.getByRole("button", { name: "편집 되돌리기" });
+    const redo = screen.getByRole("button", { name: "편집 다시 적용" });
+    const save = screen.getByRole("button", { name: "현재 사진 저장" });
     fireEvent.click(screen.getByRole("button", { name: "크기·밝기·대비" }));
-    fireEvent.change(screen.getByRole("spinbutton", { name: "저장 너비 (px)" }), { target: { value: "50" } });
-    fireEvent.blur(screen.getByRole("spinbutton", { name: "저장 너비 (px)" }));
-    fireEvent.change(screen.getByRole("spinbutton", { name: "밝기 (%)" }), { target: { value: "120" } });
-    fireEvent.blur(screen.getByRole("spinbutton", { name: "밝기 (%)" }));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "편집 되돌리기" }).hasAttribute("disabled")).toBe(false),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "편집 되돌리기" }));
-    expect((screen.getByRole("spinbutton", { name: "밝기 (%)" }) as HTMLInputElement).value).toBe("100");
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "편집 다시 적용" }).hasAttribute("disabled")).toBe(false),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "편집 다시 적용" }));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "현재 사진 저장" }).hasAttribute("disabled")).toBe(false),
-    );
+    const width = screen.getByLabelText("저장 너비 (px)");
+    const brightness = screen.getByLabelText("밝기 (%)") as HTMLInputElement;
+    fireEvent.change(width, { target: { value: "50" } });
+    fireEvent.blur(width);
+    fireEvent.change(brightness, { target: { value: "120" } });
+    fireEvent.blur(brightness);
+    await waitFor(() => expect(undo.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(undo);
+    expect(brightness.value).toBe("100");
+    await waitFor(() => expect(redo.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(redo);
+    await waitFor(() => expect(save.hasAttribute("disabled")).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "텍스트·사각형 표시" }));
     fireEvent.click(screen.getByRole("combobox", { name: "표시 종류" }));
     fireEvent.click(screen.getByRole("option", { name: "한 줄 텍스트" }));
-    await waitFor(() =>
-      expect(screen.getByRole("textbox", { name: "사진에 넣을 텍스트" }).hasAttribute("disabled")).toBe(false),
-    );
-    fireEvent.change(screen.getByRole("textbox", { name: "사진에 넣을 텍스트" }), { target: { value: "합성 주석" } });
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "현재 사진 저장" }).hasAttribute("disabled")).toBe(false),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "현재 사진 저장" }));
+    const annotation = screen.getByLabelText("사진에 넣을 텍스트");
+    await waitFor(() => expect(annotation.hasAttribute("disabled")).toBe(false));
+    fireEvent.change(annotation, { target: { value: "합성 주석" } });
+    await waitFor(() => expect(save.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(save);
     await waitFor(() => expect(saveCrops).toHaveBeenCalledOnce());
     expect(vi.mocked(saveCrops).mock.calls[0]?.[1][0]?.edit).toMatchObject({
       outputWidth: 50,
@@ -134,7 +131,7 @@ describe("image crop editing flow", () => {
       annotation: { kind: "text", text: "합성 주석" },
     });
     await screen.findByText("2/2");
-    expect(screen.getByRole("button", { name: "편집 되돌리기" }).hasAttribute("disabled")).toBe(true);
+    expect(undo.hasAttribute("disabled")).toBe(true);
     deck.dispose();
   });
   it("admits 500 images while keeping sequential editing available", async () => {

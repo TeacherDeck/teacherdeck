@@ -73,6 +73,8 @@ export const host = {
   listModules: () => invoke<ModuleEntry[]>("list_modules"),
   /** Marks the shown module (null = none) and returns its granted caps. */
   moduleActivated: (moduleId: string | null) => invoke<string[]>("module_activated", { moduleId }),
+  /** Handshake grant lookup never changes the foreground module. */
+  moduleGranted: (moduleId: string) => invoke<string[]>("module_activated", { moduleId, activate: false }),
   moduleVisibility: (moduleId: string, visible: boolean) =>
     invoke("module_visibility", { moduleId, visible }).then(() => undefined),
   moduleUnloaded: (moduleId: string) => invoke("module_unloaded", { moduleId }).then(() => undefined),

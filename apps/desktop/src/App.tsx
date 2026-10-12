@@ -223,6 +223,8 @@ export function App() {
   const themeRef = useRef(themePayload);
   themeRef.current = themePayload;
   const keepAlive = useRef(new KeepAliveSet());
+  const activeModuleRef = useRef<string | null>(null);
+  const activationQueue = useRef(Promise.resolve());
   const modulesRef = useRef(modules);
   modulesRef.current = modules;
   const [motionPref, setMotionPref] = useState(loadMotionPreference);
@@ -263,7 +265,7 @@ export function App() {
       new ModuleBridge({
         init: async (moduleId): Promise<InitPayload> => {
           const entry = modulesRef.current.find((m) => m.resolution.id === moduleId);
-          const granted = await host.moduleActivated(moduleId);
+          const granted = await host.moduleGranted(moduleId);
           return {
             module: { id: moduleId, version: entry?.resolution.picked?.version ?? "0.0.0" },
             host: { app: info?.appVersion ?? "0.0.0", caps: info?.caps ?? {} },
@@ -287,7 +289,9 @@ export function App() {
   useEffect(() => bridge.broadcast("theme.changed", themePayload), [bridge, themePayload]);
 
   useEffect(() => {
-    const unlisten = host.onFsDropped((e) => bridge.sendEvent(e.moduleId, "fs.dropped", e.payload));
+    const unlisten = host.onFsDropped((e) => {
+      if (e.moduleId === activeModuleRef.current) bridge.sendEvent(e.moduleId, "fs.dropped", e.payload);
+    });
     return () => void unlisten.then((fn) => fn());
   }, [bridge]);
 
@@ -295,6 +299,7 @@ export function App() {
   const show = useCallback(
     (next: Page) => {
       const activeId = next.kind === "module" ? next.id : null;
+      activeModuleRef.current = activeId;
       const keep = (id: string) =>
         modulesRef.current.find((m) => m.resolution.id === id)?.manifest?.ui?.keepAlive === true;
       const before = page.kind === "module" ? page.id : null;
@@ -308,7 +313,11 @@ export function App() {
         void host.moduleVisibility(activeId, true);
       }
       for (const id of evicted) void host.moduleUnloaded(id);
-      void host.moduleActivated(activeId);
+      // Serialize native foreground updates so an older IPC completion cannot win navigation.
+      activationQueue.current = activationQueue.current
+        .then(() => host.moduleActivated(activeId))
+        .then(() => undefined)
+        .catch(() => undefined);
       setMounted(nextMounted);
       setPage(next);
     },

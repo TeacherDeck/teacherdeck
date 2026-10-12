@@ -894,7 +894,7 @@ dependencies = [
 
 [[package]]
 name = "deck-codegen"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "deck-core",
  "schemars 1.2.2",
@@ -905,7 +905,7 @@ dependencies = [
 
 [[package]]
 name = "deck-core"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "quick-xml 0.42.0",
  "schemars 1.2.2",
@@ -4976,7 +4976,7 @@ dependencies = [
 
 [[package]]
 name = "teacherdeck"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "aes-gcm",
  "arboard",
@@ -5013,7 +5013,7 @@ dependencies = [
 
 [[package]]
 name = "teacherdeck-hancom-security"
-version = "0.6.2"
+version = "0.6.3"
 
 [[package]]
 name = "tempfile"

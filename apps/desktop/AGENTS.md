@@ -40,11 +40,13 @@
 
 승인된 학생 화면은 고정 `/presentation` 경로의 `src/Presentation.tsx`다. `host.ts`의 전용 state/close만 사용한다([ADR-0025](../../docs/adr/0025-public-presentation.md), [계약](../../docs/spec/presentation.md)).
 
-- `ui.keepAlive: true` 모듈은 화면을 전환해도 iframe을 숨긴 채 유지한다. 최대 3개이며 LRU로 내린다.
+- `ui.keepAlive: true` 모듈은 화면을 전환해도 iframe을 숨긴 채 유지한다. 활성 keepAlive 도구를 포함해 최대 3개이며 LRU로 내린다.
 - 숨기거나 보일 때 `module.visibility` 이벤트를 보낸다.
 - iframe은 고정 순서로 렌더한다. LRU 순서대로 렌더하면 React가 iframe을 옮기고, 옮겨진 iframe은 브리지가 모르는 새 창으로 다시 로드돼 `init`을 받지 못한다(`App.test.tsx`).
 - 모듈이 숨겨지거나 내려가면 호스트가 창 상태(항상 위, 전체화면)를 되돌린다.
 - 상세: [modules.md 생명주기](../../docs/spec/modules.md#3-생명주기)
+
+BRG-009: 초기화의 권한 조회는 활성 도구를 바꾸지 않으며, 파일 드롭은 현재 표시된 도구에만 전달한다([브리지 명세](../../docs/spec/bridge-protocol.md#4-이벤트-v1)).
 
 ## 작업 체크리스트
 
