@@ -7,17 +7,18 @@
 - `target/release/bundle/nsis/` 및 `target/<빌드 폴더>/release/bundle/nsis/`의 `TeacherDeck_<버전>_<x64|x86|arm64>-setup.exe`. Windows 대상 triple이 포함된 표준 Cargo 출력 경로도 지원한다.
 - 해당 이전 설치 파일과 이름이 정확히 일치하는 `.exe.sig` 서명 파일.
 - `target/deckmod/`의 `<모듈 id>-<버전>.deckmod`. 모듈의 현재 매니페스트 버전 패키지가 실제로 존재하고 비어 있지 않을 때 그보다 낮은 버전만 정리한다.
+- 설치 파일이 있는 각 `release/modules/<모듈 id>/<버전>/`의 이전 `.deckmod`. 현재 카탈로그가 소스 번들과 같고 현재 패키지의 크기·SHA-256이 일치하는 모듈만 정리한다. 현재 버전보다 높은 패키지와 알 수 없는 파일은 보존하며, 패키지를 지운 뒤 비어 있는 버전 폴더도 제거한다.
 
 현재 앱 버전의 설치 파일은 모든 복사본을 보존한다. 아키텍처별 비어 있지 않은 가장 높은 설치 파일 버전과 현재 앱보다 높은 버전도 보존한다. 숫자 세 부분으로 이루어진 정식 버전만 비교하며, 사전 배포 버전이나 알려지지 않은 파일명은 정리하지 않는다.
 
-실행 파일과 native 리소스, release/debug의 모듈 리소스, Rust 캐시, pnpm 실행 환경, 빌드 폴더 전체, 로그 및 검증 자료는 자동 정리 대상에 포함하지 않는다. 소스, 사용자 문서, `.git`도 보존한다. 디렉터리를 재귀 삭제하지 않고, 허용 목록에 들어간 파일만 지운다.
+실행 파일과 native 리소스, debug 모듈 리소스, Rust 캐시, pnpm 실행 환경, 빌드 폴더 전체, 로그 및 검증 자료는 자동 정리 대상에 포함하지 않는다. 소스, 사용자 문서, `.git`도 보존한다. 디렉터리를 재귀 삭제하지 않고, 허용 목록에 들어간 파일과 그 파일만 담았던 빈 버전 폴더를 지운다. 앱 설치 폴더의 이전 패키지는 새 버전 설치와 자산 대조가 성공한 뒤에 정리한다.
 
 ## 수동 미리보기와 적용
 
 수동 실행은 기본적으로 삭제 목록과 바이트 수만 보여 준다. 빌드가 성공한 것을 확인한 뒤 현재 설치 파일을 작업 폴더 내부의 상대 경로로 지정한다.
 
 ```powershell
-node tools/scripts/clean-build-artifacts.ts --successful-build --current-artifact target/review-040/release/bundle/nsis/TeacherDeck_0.6.0_x64-setup.exe
+node tools/scripts/clean-build-artifacts.ts --successful-build --current-artifact target/review-040/release/bundle/nsis/TeacherDeck_0.9.0_x64-setup.exe
 ```
 
 목록을 실제 적용하려면 동일한 명령 끝에 `--apply`를 추가한다. 현재 설치 파일이 없거나 비어 있거나 루트 `package.json`의 앱 버전과 다르면 정리를 중단한다. 성공한 현재 빌드가 없는 상태에서는 적용하지 않는다.
