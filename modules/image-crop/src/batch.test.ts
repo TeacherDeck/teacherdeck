@@ -42,6 +42,78 @@ const renderer: Renderer = async (request) => ({
   imageHeight: 100,
 });
 describe("crop SDK output lifecycle", () => {
+  it("preserves each mixed source format and exact JPEG suffix unless another format is selected", async () => {
+    const png = new Uint8Array(45);
+    png.set([137, 80, 78, 71, 13, 10, 26, 10]);
+    png.set([73, 72, 68, 82], 12);
+    const pngView = new DataView(png.buffer);
+    pngView.setUint32(8, 13);
+    pngView.setUint32(16, 100);
+    pngView.setUint32(20, 80);
+    const jpeg = new Uint8Array([255, 216, 255, 192, 0, 8, 8, 0, 80, 0, 100, 0]);
+    const webp = new Uint8Array(30);
+    webp.set([82, 73, 70, 70, 22, 0, 0, 0, 87, 69, 66, 80, 86, 80, 56, 88, 10]);
+    webp[24] = 99;
+    webp[27] = 79;
+    const sources = [
+      { extension: "jpg", format: "jpeg", bytes: jpeg },
+      { extension: "jpeg", format: "jpeg", bytes: jpeg },
+      { extension: "JPEG", format: "jpeg", bytes: jpeg },
+      { extension: "png", format: "png", bytes: png },
+      { extension: "webp", format: "webp", bytes: webp },
+    ];
+    const items = sources.map((source, index) => ({
+      ...item(`input-${index}`),
+      file: { ...item(`input-${index}`).file, name: `합성${index}.${source.extension}`, ext: source.extension },
+      bytes: source.bytes,
+    }));
+    for (const selection of ["original", "png", "jpeg", "webp"] as const) {
+      const { deck, host } = await setup();
+      const render = vi.fn(renderer);
+      const result = await saveCrops(deck, items, selection, new AbortController().signal, () => undefined, render);
+      expect(result?.failed).toEqual([]);
+      expect(render.mock.calls.map(([request]) => request.format)).toEqual(
+        sources.map((source) => (selection === "original" ? source.format : selection)),
+      );
+      expect(
+        host.requests
+          .filter((request) => request.method === "beginWrite")
+          .map((request) => (request.args as { suggestedName: string }).suggestedName),
+      ).toEqual(
+        sources.map(
+          (source, i) =>
+            `합성${i}_자르기.${selection === "original" ? source.extension : selection === "jpeg" ? "jpg" : selection}`,
+        ),
+      );
+      deck.dispose();
+    }
+  });
+  it("keeps an unsupported source or unavailable encoder out of saved results", async () => {
+    const { deck, host } = await setup();
+    const render = vi.fn(renderer);
+    const result = await saveCrops(
+      deck,
+      [item("unknown")],
+      "original",
+      new AbortController().signal,
+      () => undefined,
+      render,
+    );
+    expect(result?.failed).toEqual(["unknown"]);
+    expect(render).not.toHaveBeenCalled();
+    render.mockRejectedValue(new Error("ENCODER_UNAVAILABLE"));
+    const unavailable = await saveCrops(
+      deck,
+      [item("valid")],
+      "webp",
+      new AbortController().signal,
+      () => undefined,
+      render,
+    );
+    expect(unavailable?.formatUnavailable).toEqual(["valid"]);
+    expect(host.requests.some((request) => request.method === "beginWrite")).toBe(false);
+    deck.dispose();
+  });
   it("supplies the shared font token from the UI thread instead of importing UI inside the Worker", async () => {
     let sent: unknown;
     vi.stubGlobal(

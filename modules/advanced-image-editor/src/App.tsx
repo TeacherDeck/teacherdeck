@@ -60,12 +60,13 @@ import type { EditorOperation } from "./core/preview.ts";
 import {
   exportDocument,
   exportName,
+  exportTarget,
   FileOperationError,
   importDocument,
   OutputSession,
   readInput,
 } from "./files/index.ts";
-import type { ExportFormat, ImportedDocument, ImportOptions } from "./files/index.ts";
+import type { ExportSelection, ImportedDocument, ImportOptions } from "./files/index.ts";
 import { ColorInspector } from "./ColorInspector.tsx";
 import { LayerInspector } from "./LayerInspector.tsx";
 import { ToolSettings } from "./ToolSettings.tsx";
@@ -254,6 +255,8 @@ export function errorText(error: unknown): string {
     return "작업을 취소했어요.";
   if (error instanceof FileOperationError && ["INPUT_LIMIT", "IMAGE_LIMIT", "MEMORY_LIMIT"].includes(error.code))
     return "지원하는 크기를 넘어요. 이미지 크기나 레이어 수를 줄여주세요.";
+  if (error instanceof FileOperationError && error.code === "UNSUPPORTED_EXPORT")
+    return "이 PC에서 선택한 이미지 형식으로 저장할 수 없어요. 다른 내보내기 형식을 선택하세요.";
   return "작업을 마치지 못했어요. 파일 상태를 확인하고 다시 시도하세요.";
 }
 export function App({ deck }: { deck: Deck }) {
@@ -265,6 +268,8 @@ export function App({ deck }: { deck: Deck }) {
   const parentRef = useRef<FolderHandleInfo | null>(null);
   const [parent, setParent] = useState<FolderHandleInfo | null>(null);
   const [inputName, setInputName] = useState("");
+  const inputNameRef = useRef("");
+  const sourceFormat = useRef<ImportedDocument["rasterFormat"]>(undefined);
   const [pendingInputName, setPendingInputName] = useState("");
   const mounted = useRef(true);
   const handle = useRef<string | null>(null);
@@ -304,7 +309,7 @@ export function App({ deck }: { deck: Deck }) {
   const [name, setName] = useState("편집한 이미지");
   const nameRef = useRef(name);
   nameRef.current = name;
-  const [format, setFormat] = useState<ExportFormat>("png");
+  const [format, setFormat] = useState<ExportSelection>("source");
   const [rect, setRect] = useState<Rect>({ x: 0, y: 0, width: 600, height: 400 });
   const [polygon, setPolygon] = useState<Point[]>([]);
   const [corners, setCorners] = useState<Point[]>([]);
@@ -483,12 +488,13 @@ export function App({ deck }: { deck: Deck }) {
   );
   const applyDrafts = useCallback(() => edit("글자·색보정 적용", () => undefined, true), [edit]);
   const save = useCallback(
-    async (target: ExportFormat): Promise<boolean> => {
+    async (selection: ExportSelection): Promise<boolean> => {
       await queue.current;
       if (!handle.current || job.current || drag.current) return false;
+      const target = exportTarget(selection, inputNameRef.current, sourceFormat.current ?? "png");
       const controller = new AbortController();
       job.current = controller;
-      setBusy(target === "deckimage" ? "작업 파일 저장 중" : "이미지 내보내는 중");
+      setBusy(target.format === "deckimage" ? "작업 파일 저장 중" : "이미지 내보내는 중");
       setMessage("");
       let revision: number;
       try {
@@ -497,7 +503,7 @@ export function App({ deck }: { deck: Deck }) {
         suspendPreview();
         const visibleBytes = bitmap.current ? bitmap.current.width * bitmap.current.height * 12 : 0;
         await mark(dirtyRef.current, true);
-        const result = await exportDocument(documentRef.current, target, controller.signal, {
+        const result = await exportDocument(documentRef.current, target.format, controller.signal, {
           reservedBytes: history.current.memoryBytes + visibleBytes,
         });
         const written = await output.current.save(
@@ -507,14 +513,14 @@ export function App({ deck }: { deck: Deck }) {
           sourceHandle.current,
         );
         if (!written) return false;
-        if (target === "deckimage") savedRevision.current = revision;
+        if (target.format === "deckimage") savedRevision.current = revision;
         await mark(hasChanges(), false);
         setMessage(
-          target === "deckimage"
+          target.format === "deckimage"
             ? "작업 파일을 저장했어요. 다시 열어 편집할 수 있어요."
             : "새 파일로 내보냈어요. 편집 상태는 작업 파일로 저장하세요.",
         );
-        return target === "deckimage" && !dirtyRef.current;
+        return target.format === "deckimage" && !dirtyRef.current;
       } catch (e) {
         setMessage(errorText(e));
         return false;
@@ -613,7 +619,9 @@ export function App({ deck }: { deck: Deck }) {
       const converted = imported.warnings.length > 0;
       if (converted) await protect();
       sourceHandle.current = originalHandle;
-      setInputName(originalHandle ? filename : "");
+      sourceFormat.current = imported.rasterFormat;
+      inputNameRef.current = originalHandle ? filename : "";
+      setInputName(inputNameRef.current);
       documentRef.current = imported.document;
       drafts.current.clear();
       history.current.clear();
@@ -1207,8 +1215,15 @@ export function App({ deck }: { deck: Deck }) {
             showHeader={false}
             value={format}
             options={[
+              {
+                value: "source",
+                label: sourceFormat.current
+                  ? `원본 형식 · ${exportTarget("source", inputName, sourceFormat.current).extension.toUpperCase()}`
+                  : "기본 형식 · PNG",
+              },
               { value: "png", label: "PNG · 투명 배경" },
               { value: "jpeg", label: "JPG · 흰 배경" },
+              { value: "webp", label: "WebP · 투명 배경" },
               { value: "psd", label: "PSD · 기본 레이어" },
             ]}
             onChange={setFormat}

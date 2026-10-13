@@ -2,11 +2,16 @@
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import type { Deck, FileHandleInfo, FolderHandleInfo } from "@deck/sdk";
 import { OutputSession } from "./output-session.ts";
-import { MAX_BYTES, outputName, signatureExtension, validateOptions, type Options } from "./image.ts";
-export const DEFAULT_OPTIONS: Options = { quality: 82, maxEdge: 1600, format: "webp" };
-export const SETTINGS_KEY = "compression-options";
+import { MAX_BYTES, outputName, sourceExtension, extensionMime, validateOptions, type Options } from "./image.ts";
+export const DEFAULT_OPTIONS: Options = { quality: 82, maxEdge: 1600, format: "original" };
+export const SETTINGS_KEY = "compression-options-v2";
 export async function loadOptions(deck: Deck): Promise<Options> {
-  const value = await deck.storage.get<Options>(SETTINGS_KEY);
+  let value = await deck.storage.get<Options>(SETTINGS_KEY);
+  if (!value) {
+    // Earlier versions stored WebP without offering a format choice.
+    const legacy = await deck.storage.get<Options>("compression-options");
+    if (legacy) value = { ...legacy, format: "original" };
+  }
   try {
     if (!value) return DEFAULT_OPTIONS;
     validateOptions(value);
@@ -23,11 +28,19 @@ export function supported(file: FileHandleInfo) {
   return ["jpg", "jpeg", "png", "webp"].includes(file.ext.toLowerCase());
 }
 export function chooseOutput(original: Blob, compressed: Blob, name: string, originalExt: string) {
-  if (compressed.size >= original.size)
+  const originalMime = extensionMime(originalExt);
+  if (!["image/png", "image/jpeg", "image/webp"].includes(compressed.type)) throw new Error("ENCODER_UNAVAILABLE");
+  if (compressed.size >= original.size && compressed.type === originalMime)
     return { blob: original, name: outputName(name, originalExt), keptOriginal: true };
+  const extension =
+    compressed.type === originalMime
+      ? originalExt
+      : compressed.type === "image/jpeg"
+        ? "jpg"
+        : compressed.type.slice(6);
   return {
     blob: compressed,
-    name: outputName(name, compressed.type === "image/jpeg" ? "jpg" : "webp"),
+    name: outputName(name, extension),
     keptOriginal: false,
   };
 }
@@ -36,6 +49,7 @@ export interface Result {
   status: "compressed" | "original" | "failed";
   outputSize?: number;
   folder?: FolderHandleInfo;
+  formatUnavailable?: boolean;
 }
 export type Encoder = (blob: Blob, options: Options, signal: AbortSignal) => Promise<Blob>;
 export const encode: Encoder = (blob, options, signal) =>
@@ -58,10 +72,10 @@ export const encode: Encoder = (blob, options, signal) =>
       finish();
       reject(new Error("CANCELLED"));
     };
-    worker.onmessage = (event: MessageEvent<{ ok: boolean; blob?: Blob }>) => {
+    worker.onmessage = (event: MessageEvent<{ ok: boolean; blob?: Blob; error?: string }>) => {
       finish();
       if (event.data.ok && event.data.blob) resolve(event.data.blob);
-      else reject(new Error("COMPRESSION_FAILED"));
+      else reject(new Error(event.data.error === "ENCODER_UNAVAILABLE" ? "ENCODER_UNAVAILABLE" : "COMPRESSION_FAILED"));
     };
     worker.onerror = () => {
       finish();
@@ -101,15 +115,11 @@ export async function runBatch(
           chunks.push(new Uint8Array(bytes));
         }
         const original = new Blob(chunks);
+        const originalExt = sourceExtension(file.name, new Uint8Array(await original.slice(0, 12).arrayBuffer()));
         const compressed = await encoder(original, options, signal);
-        const output = chooseOutput(
-          original,
-          compressed,
-          file.name,
-          compressed.size >= original.size
-            ? signatureExtension(new Uint8Array(await original.slice(0, 12).arrayBuffer()))
-            : "webp",
-        );
+        const expectedMime = options.format === "original" ? extensionMime(originalExt) : `image/${options.format}`;
+        if (compressed.type !== expectedMime) throw new Error("ENCODER_UNAVAILABLE");
+        const output = chooseOutput(original, compressed, file.name, originalExt);
         const saved = await deck.fs.writeBlob(
           { batchId: batch.batchId, suggestedName: output.name, blob: output.blob },
           { signal },
@@ -120,9 +130,14 @@ export async function runBatch(
           outputSize: saved.size,
           folder: batch.folder,
         });
-      } catch {
+      } catch (error) {
         if (signal.aborted) break;
-        results.push({ file, status: "failed", ...(outputFolder ? { folder: outputFolder } : {}) });
+        results.push({
+          file,
+          status: "failed",
+          ...(error instanceof Error && error.message === "ENCODER_UNAVAILABLE" ? { formatUnavailable: true } : {}),
+          ...(outputFolder ? { folder: outputFolder } : {}),
+        });
       }
       progress([...results]);
     }

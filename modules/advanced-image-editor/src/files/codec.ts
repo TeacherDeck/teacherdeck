@@ -10,7 +10,8 @@ import { imageHeader } from "./header.ts";
 import { checkDimensions, MAX_INPUT_BYTES } from "./limits.ts";
 import { requireInputBudget } from "./budget.ts";
 
-export type ExportFormat = "deckimage" | "psd" | "png" | "jpeg";
+export type RasterFormat = "png" | "jpeg" | "webp";
+export type ExportFormat = "deckimage" | "psd" | RasterFormat;
 export interface EncodeResult {
   blob: Blob;
   revision: number;
@@ -56,7 +57,8 @@ export async function decodeDocument(
     document.layers.push(createPixelLayer({ width: bitmap.width, height: bitmap.height, data: image.data }));
     canvas.width = 1;
     canvas.height = 1;
-    return { document, warnings: [], fonts: [], flattened: false };
+    const rasterFormat = header.mime === "image/jpeg" ? "jpeg" : header.mime === "image/webp" ? "webp" : "png";
+    return { document, warnings: [], fonts: [], flattened: false, rasterFormat };
   } finally {
     bitmap?.close();
   }
@@ -92,7 +94,10 @@ export async function encodeDocument(document: EditorDocument, format: ExportFor
       context.fillRect(0, 0, document.width, document.height);
     }
     context.drawImage(raw, 0, 0);
-    const blob = await canvas.convertToBlob({ type: format === "jpeg" ? "image/jpeg" : "image/png", quality: 0.95 });
+    const mime = `image/${format}`;
+    const blob = await canvas.convertToBlob({ type: mime, quality: 0.95 });
+    // Canvas may silently return PNG when an encoder is unavailable. Never save it with a false extension.
+    if (blob.type !== mime) throw new Error("UNSUPPORTED_EXPORT");
     return { blob, revision: document.revision, format };
   } finally {
     canvas.width = 1;

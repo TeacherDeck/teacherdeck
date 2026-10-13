@@ -68,6 +68,17 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe("image crop editing flow", () => {
+  it("uses the explicitly selected format for saving instead of the source default", async () => {
+    vi.mocked(saveCrops).mockResolvedValue({ folder: null, saved: ["first"], failed: [], cancelled: false });
+    const { deck } = await setup();
+    fireEvent.click(screen.getByRole("combobox", { name: "저장 형식" }));
+    fireEvent.click(screen.getByRole("option", { name: "WebP · 투명도 유지" }));
+    fireEvent.click(screen.getByRole("button", { name: "현재 사진 저장" }));
+    await waitFor(() => expect(saveCrops).toHaveBeenCalledOnce());
+    expect(vi.mocked(saveCrops).mock.calls[0]?.[2]).toBe("webp");
+    await screen.findByText("2/2");
+    deck.dispose();
+  });
   it("acknowledges dropped filenames before decoding without opening a picker", async () => {
     const { deck, host } = await setup(1, files, false);
     let finish: ((value: Uint8Array<ArrayBuffer>) => void) | undefined;
@@ -150,6 +161,7 @@ describe("image crop editing flow", () => {
     await waitFor(() => expect(save.hasAttribute("disabled")).toBe(false));
     fireEvent.click(save);
     await waitFor(() => expect(saveCrops).toHaveBeenCalledOnce());
+    expect(vi.mocked(saveCrops).mock.calls[0]?.[2]).toBe("original");
     expect(vi.mocked(saveCrops).mock.calls[0]?.[1][0]?.edit).toMatchObject({
       outputWidth: 50,
       brightness: 120,

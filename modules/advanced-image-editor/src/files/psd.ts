@@ -14,6 +14,7 @@ import {
 import type { EditorDocument, Layer, PixelLayer, Raster, TextLayer, Transform, Color } from "../core/model.ts";
 import { checkBytes, checkDimensions, MAX_INPUT_BYTES, MAX_LAYERS, MAX_WORKING_BYTES } from "./limits.ts";
 import { psdEncodingScratch } from "./export-budget.ts";
+import type { RasterFormat } from "./codec.ts";
 
 // ImageData-only reading/writing never creates a DOM Canvas; this also works inside a Worker.
 initializeCanvas(
@@ -36,6 +37,8 @@ export interface ImportedDocument {
   warnings: string[];
   fonts: string[];
   flattened: boolean;
+  /** Original raster encoding, determined from the file bytes, not its filename. */
+  rasterFormat?: RasterFormat;
 }
 export class PsdImportError extends Error {
   readonly code: "PSD_UNSUPPORTED" | "PSD_COMPLEX_TEXT" | "PSD_NO_COMPOSITE";

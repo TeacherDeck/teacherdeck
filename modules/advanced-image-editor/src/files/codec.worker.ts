@@ -41,6 +41,7 @@ self.onmessage = async (event: MessageEvent<CodecRequest>) => {
       "ANIMATED_IMAGE",
       "INVALID_PROJECT",
       "INVALID_PSD",
+      "UNSUPPORTED_EXPORT",
     ];
     const reasons =
       error && typeof error === "object" && "reasons" in error && Array.isArray(error.reasons)

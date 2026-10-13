@@ -55,13 +55,18 @@ describe("compression additions and recovery", () => {
     await waitFor(() => expect(runBatch).toHaveBeenCalledTimes(1));
     await screen.findByText(/대기 0개/);
     expect(vi.mocked(runBatch).mock.calls[0]?.[1]).toEqual([first]);
+    expect(vi.mocked(runBatch).mock.calls[0]?.[3].format).toBe("original");
     expect(host.requests.filter((r) => ["pickFolder", "createOutputFolder"].includes(r.method))).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "압축 설정" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "저장 형식" }));
+    fireEvent.click(screen.getByRole("option", { name: "WebP · 투명도 유지" }));
     await act(async () => {
       host.emit("fs.dropped", { files: [second] });
     });
     await waitFor(() => expect(runBatch).toHaveBeenCalledTimes(2));
     await screen.findByText(/2개 · .*대기 0개/);
     expect(vi.mocked(runBatch).mock.calls[1]?.[1]).toEqual([second]);
+    expect(vi.mocked(runBatch).mock.calls[1]?.[3].format).toBe("webp");
     expect(screen.getByText(/합성 첫사진.png · 압축 ·/)).toBeTruthy();
     expect(screen.getByText(/합성 다음사진.png · 압축 ·/)).toBeTruthy();
     deck.dispose();

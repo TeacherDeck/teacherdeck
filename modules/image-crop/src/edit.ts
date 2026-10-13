@@ -120,7 +120,7 @@ export function transferRect(
     ratio,
   );
 }
-export function outputName(name: string, format: "png" | "jpeg"): string {
+export function outputName(name: string, extension: string): string {
   const stem =
     name
       .replace(/\.[^.]*$/, "")
@@ -130,5 +130,5 @@ export function outputName(name: string, format: "png" | "jpeg"): string {
       .join("")
       .replace(/[. ]+$/g, "")
       .slice(0, 90) || "이미지";
-  return `${stem}_자르기.${format === "jpeg" ? "jpg" : "png"}`;
+  return `${stem}_자르기.${extension}`;
 }

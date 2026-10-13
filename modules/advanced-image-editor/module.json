@@ -4,7 +4,7 @@
   "id": "advanced-image-editor",
   "name": "고급 이미지 편집",
   "description": "레이어·색보정·누끼와 기본 PSD를 편집해요.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "category": "image",
   "icon": "icon.svg",
   "entry": "index.html",

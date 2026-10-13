@@ -5,6 +5,7 @@ import {
   Body,
   Button,
   CheckBox,
+  ComboBox,
   DropZone,
   InfoBar,
   ListView,
@@ -223,6 +224,21 @@ export function App({ deck }: { deck: Deck }) {
       <ToolLayout.Section step="options" title="2. 압축 설정">
         <SettingsExpander header="압축 설정" description={`품질 ${options.quality}% · 긴 변 ${options.maxEdge}px`}>
           <div className={styles.options}>
+            <ComboBox
+              header="저장 형식"
+              value={options.format}
+              disabled={running}
+              options={[
+                { value: "original", label: "원본 형식 유지" },
+                { value: "png", label: "PNG · 투명도 유지" },
+                { value: "jpeg", label: "JPG · 흰 배경" },
+                { value: "webp", label: "WebP · 투명도 유지" },
+              ]}
+              onChange={(format) => {
+                if (!running && (format === "original" || format === "png" || format === "jpeg" || format === "webp"))
+                  setOptions({ ...options, format });
+              }}
+            />
             <NumberBox
               header="품질 (%)"
               value={options.quality}
@@ -244,7 +260,9 @@ export function App({ deck }: { deck: Deck }) {
           </div>
         </SettingsExpander>
         <Body secondary>
-          작은 이미지는 확대하지 않아요. 투명도를 유지하는 WebP로 저장해요. 용량이 줄지 않으면 원본을 복사해요.
+          기본은 각 원본의 형식과 확장자를 유지해요. 다른 형식으로 바꾸려면 저장 형식을 선택해 주세요. 작은 이미지는
+          확대하지 않아요. 같은 형식으로 처리한 용량이 줄지 않으면 원본을 복사해요. JPG를 선택하면 투명한 부분은 흰
+          배경으로 저장해요.
         </Body>
         <Button
           disabled={running}
@@ -310,7 +328,9 @@ export function App({ deck }: { deck: Deck }) {
                 <Body>
                   {result.file.name} ·{" "}
                   {result.status === "failed"
-                    ? "처리하지 못했어요. 형식과 크기를 확인해 주세요."
+                    ? result.formatUnavailable
+                      ? "이 PC에서 지원하지 않는 저장 형식이에요. 저장 형식을 직접 선택해 다시 시도해 주세요."
+                      : "처리하지 못했어요. 형식과 크기를 확인해 주세요."
                     : `${result.status === "original" ? "원본 복사" : "압축"} · ${bytes(result.file.size)} → ${bytes(result.outputSize ?? 0)}`}
                 </Body>
                 {result.folder && (

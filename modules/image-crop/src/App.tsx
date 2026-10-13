@@ -71,7 +71,7 @@ export function App({ deck }: { deck: Deck }) {
   const [message, setMessage] = useState("");
   const [preview, setPreview] = useState("");
   const [previewing, setPreviewing] = useState(false);
-  const [format, setFormat] = useState<"png" | "jpeg">("png");
+  const [format, setFormat] = useState<"original" | "png" | "jpeg" | "webp">("original");
   const [advance, setAdvance] = useState(true);
   const destination = useRef<OutputSession | null>(null);
   const [parent, setParent] = useState<FolderHandleInfo | null>(null);
@@ -405,7 +405,7 @@ export function App({ deck }: { deck: Deck }) {
           return next;
         });
         setMessage(
-          `${result.saved.length}개 저장했어요.${result.failed.length ? ` ${result.failed.length}개는 저장하지 못했어요. 현재 편집은 유지해요.` : ""}${result.cancelled ? " 취소했어요. 저장된 결과는 각 저장 위치에 남아요." : ""}`,
+          `${result.saved.length}개 저장했어요.${result.failed.length ? ` ${result.failed.length}개는 저장하지 못했어요. 현재 편집은 유지해요.` : ""}${result.formatUnavailable?.length ? " 이 PC에서 지원하지 않는 저장 형식이 있어요. 저장 형식을 직접 선택해 다시 시도해 주세요." : ""}${result.cancelled ? " 취소했어요. 저장된 결과는 각 저장 위치에 남아요." : ""}`,
         );
         if (result.destinationExpired) {
           resetDestination();
@@ -567,10 +567,14 @@ export function App({ deck }: { deck: Deck }) {
             value={format}
             disabled={busy}
             options={[
+              { value: "original", label: "원본 형식 유지" },
               { value: "png", label: "PNG · 투명도 유지" },
               { value: "jpeg", label: "JPG · 흰 배경" },
+              { value: "webp", label: "WebP · 투명도 유지" },
             ]}
-            onChange={(value) => setFormat(value === "jpeg" ? "jpeg" : "png")}
+            onChange={(value) =>
+              setFormat(value === "jpeg" || value === "png" || value === "webp" ? value : "original")
+            }
           />
         </div>
         <Caption secondary>

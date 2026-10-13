@@ -6,6 +6,7 @@ import { OutputSession } from "./output-session.ts";
 import { MAX_BYTES } from "./header.ts";
 import { outputName, type Edit } from "./edit.ts";
 import type { CropRequest, CropResponse } from "./crop.worker.ts";
+import { resolveOutputFormat, type OutputFormat } from "./output-format.ts";
 export type Renderer = (request: CropRequest, signal: AbortSignal) => Promise<CropResponse>;
 export const renderCrop: Renderer = (request, signal) => {
   if (signal.aborted) return Promise.reject(new Error("CANCELLED"));
@@ -27,7 +28,8 @@ export const renderCrop: Renderer = (request, signal) => {
     signal.addEventListener("abort", abort, { once: true });
     worker.onmessage = (event: MessageEvent<CropResponse & { error?: string }>) => {
       finish();
-      if (event.data.error) reject(new Error("INVALID_IMAGE"));
+      if (event.data.error)
+        reject(new Error(event.data.error === "ENCODER_UNAVAILABLE" ? "ENCODER_UNAVAILABLE" : "INVALID_IMAGE"));
       else resolve(event.data);
     };
     worker.onerror = () => {
@@ -75,12 +77,13 @@ export interface CropOutput {
   folders?: Record<string, FolderHandleInfo>;
   saved: string[];
   failed: string[];
+  formatUnavailable?: string[];
   cancelled: boolean;
 }
 export async function saveCrops(
   deck: Pick<Deck, "fs">,
   items: CropItem[],
-  format: "png" | "jpeg",
+  format: OutputFormat,
   signal: AbortSignal,
   progress: (done: number) => void = () => undefined,
   render: Renderer = renderCrop,
@@ -94,6 +97,7 @@ export async function saveCrops(
   const outputs: Record<string, string> = {};
   const saved: string[] = [],
     failed: string[] = [];
+  const formatUnavailable: string[] = [];
   const used = destination.usedNames;
   try {
     for (const item of items) {
@@ -106,14 +110,14 @@ export async function saveCrops(
         folder = batch.folder;
         folders[item.file.handle] = batch.folder;
         const bytes = item.bytes ?? (await readImage(deck, item.file, signal));
-        const result = await render({ bytes, edit: item.edit, preview: false, format }, signal);
+        const resolved = resolveOutputFormat(item.file.name, bytes, format);
+        const result = await render({ bytes, edit: item.edit, preview: false, format: resolved.format }, signal);
         if (result.sourceWidth !== item.sourceWidth || result.sourceHeight !== item.sourceHeight)
           throw new Error("SOURCE_CHANGED");
-        const proposed = outputName(item.file.name, format);
+        const proposed = outputName(item.file.name, resolved.extension);
         let name = proposed;
         let suffix = 2;
-        while (used.has(name.toLowerCase()))
-          name = proposed.replace(/\.[^.]+$/, `_${suffix++}.${format === "jpeg" ? "jpg" : "png"}`);
+        while (used.has(name.toLowerCase())) name = proposed.replace(/\.[^.]+$/, `_${suffix++}.${resolved.extension}`);
         used.add(name.toLowerCase());
         const output = await deck.fs.writeBlob(
           { batchId: batch.batchId, suggestedName: name, blob: result.blob },
@@ -123,6 +127,7 @@ export async function saveCrops(
         saved.push(item.file.handle);
       } catch (error) {
         if (!signal.aborted) failed.push(item.file.handle);
+        if (error instanceof Error && error.message === "ENCODER_UNAVAILABLE") formatUnavailable.push(item.file.handle);
         if (error && typeof error === "object" && "code" in error && error.code === "NOT_FOUND" && acquired) {
           destinationExpired = true;
           break;
@@ -133,5 +138,5 @@ export async function saveCrops(
   } finally {
     if (!session) await destination.close();
   }
-  return { folder, folders, outputs, destinationExpired, saved, failed, cancelled: signal.aborted };
+  return { folder, folders, outputs, destinationExpired, saved, failed, formatUnavailable, cancelled: signal.aborted };
 }

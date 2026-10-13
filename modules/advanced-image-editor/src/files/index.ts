@@ -12,6 +12,8 @@ import { projectEncodingScratch } from "./project.ts";
 import { psdEncodingScratch } from "./export-budget.ts";
 export { inspectInputBudget } from "./budget.ts";
 export { OutputSession } from "./output-session.ts";
+export { exportName, exportTarget } from "./export-format.ts";
+export type { ExportSelection } from "./export-format.ts";
 export type { ImportedDocument, ImportOptions, EncodeResult, ExportFormat };
 export class FileOperationError extends Error {
   readonly code: string;
@@ -134,8 +136,4 @@ export async function exportDocument(
   // Main-thread live document + the Worker snapshot + codec/canvas/writer buffers coexist until completion.
   assertMemoryBudget(document, cloneBytes + scratch + reservedBytes);
   return (await runner({ kind: "encode", document, format }, signal)) as EncodeResult;
-}
-export function exportName(name: string, format: ExportFormat): string {
-  const base = name.replace(/\.[^.]+$/, "") || "편집한 이미지";
-  return `${base}.${format === "jpeg" ? "jpg" : format}`;
 }

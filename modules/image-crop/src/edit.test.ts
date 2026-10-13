@@ -52,7 +52,7 @@ describe("crop geometry", () => {
   it("swaps oriented dimensions only for quarter turns and creates safe output names", () => {
     expect(orientedSize(400, 300, 1)).toEqual({ width: 300, height: 400 });
     expect(orientedSize(400, 300, 2)).toEqual({ width: 400, height: 300 });
-    expect(outputName("합성:사진?.png", "jpeg")).toBe("합성_사진__자르기.jpg");
+    expect(outputName("합성:사진?.png", "jpg")).toBe("합성_사진__자르기.jpg");
   });
   it("checks encoded dimensions before allocating large decoded images", () => {
     const bytes = new Uint8Array(33);

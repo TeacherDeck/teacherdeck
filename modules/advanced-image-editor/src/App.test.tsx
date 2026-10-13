@@ -170,6 +170,97 @@ describe("dropped editor inputs", () => {
     deck.dispose();
   });
 });
+describe("image export format selection", () => {
+  it.each([
+    ["jpg", "jpeg"],
+    ["jpeg", "jpeg"],
+    ["png", "png"],
+    ["webp", "webp"],
+    ["psd", "png"],
+    ["deckimage", "png"],
+  ])("uses the opened %s file for automatic export", async (extension, format) => {
+    const name = `합성.${extension}`;
+    const imported = importedText();
+    if (extension === "jpg" || extension === "jpeg") imported.rasterFormat = "jpeg";
+    else if (extension === "png" || extension === "webp") imported.rasterFormat = extension;
+    files.import.mockResolvedValueOnce(imported);
+    const { deck } = await setup({ "fs.pickFiles": () => [{ ...syntheticFile, name, ext: extension }] });
+    await openText();
+    fireEvent.click(button("내보내기"));
+    await screen.findByText("새 파일로 내보냈어요. 편집 상태는 작업 파일로 저장하세요.");
+    expect(files.export.mock.calls[0]?.[1]).toBe(format);
+    const suffix = ["psd", "deckimage"].includes(extension) ? "png" : extension;
+    expect(files.save.mock.calls[0]?.[1]).toBe(`합성.${suffix}`);
+    deck.dispose();
+  });
+
+  it("honors an explicit format and lets the user return to the original JPEG suffix", async () => {
+    files.import.mockResolvedValueOnce({ ...importedText(), rasterFormat: "jpeg" });
+    const { deck } = await setup({
+      "fs.pickFiles": () => [{ ...syntheticFile, name: "합성.jpeg", ext: "jpeg" }],
+    });
+    await openText();
+    fireEvent.click(screen.getByRole("combobox", { name: "내보내기 형식" }));
+    fireEvent.click(await screen.findByRole("option", { name: "WebP · 투명 배경" }));
+    fireEvent.click(button("내보내기"));
+    await screen.findByText("새 파일로 내보냈어요. 편집 상태는 작업 파일로 저장하세요.");
+    expect(files.export.mock.calls[0]?.[1]).toBe("webp");
+    expect(files.save.mock.calls[0]?.[1]).toBe("합성.webp");
+    await waitFor(() => expect(button("내보내기").hasAttribute("disabled")).toBe(false));
+    fireEvent.click(screen.getByRole("combobox", { name: "내보내기 형식" }));
+    fireEvent.click(await screen.findByRole("option", { name: "원본 형식 · JPEG" }));
+    fireEvent.click(button("내보내기"));
+    await waitFor(() => expect(files.save).toHaveBeenCalledTimes(2));
+    expect(files.export.mock.calls[1]?.[1]).toBe("jpeg");
+    expect(files.save.mock.calls[1]?.[1]).toBe("합성.jpeg");
+    deck.dispose();
+  });
+
+  it("uses decoded image content when the filename has the wrong extension", async () => {
+    files.import.mockResolvedValueOnce({ ...importedText(), rasterFormat: "png" });
+    const { deck } = await setup({
+      "fs.pickFiles": () => [{ ...syntheticFile, name: "합성.jpeg", ext: "jpeg" }],
+    });
+    await openText();
+    fireEvent.click(button("내보내기"));
+    await screen.findByText("새 파일로 내보냈어요. 편집 상태는 작업 파일로 저장하세요.");
+    expect(files.export.mock.calls[0]?.[1]).toBe("png");
+    expect(files.save.mock.calls[0]?.[1]).toBe("합성.png");
+    deck.dispose();
+  });
+
+  it("resets automatic output to PNG when a JPEG document is replaced with a new document", async () => {
+    files.import.mockResolvedValueOnce({ ...importedText(), rasterFormat: "jpeg" });
+    const { deck } = await setup({
+      "fs.pickFiles": () => [{ ...syntheticFile, name: "합성.jpeg", ext: "jpeg" }],
+    });
+    await openText();
+    fireEvent.click(button("새 작업"));
+    fireEvent.click(await screen.findByRole("button", { name: "만들기" }));
+    await screen.findByText(/미저장 작업/);
+    await waitFor(() => expect(button("내보내기").hasAttribute("disabled")).toBe(false));
+    fireEvent.click(button("내보내기"));
+    await screen.findByText("새 파일로 내보냈어요. 편집 상태는 작업 파일로 저장하세요.");
+    expect(files.export.mock.calls[0]?.[1]).toBe("png");
+    expect(files.save.mock.calls[0]?.[1]).toBe("새 작업.png");
+    expect(files.save.mock.calls[0]?.[3]).toBeUndefined();
+    deck.dispose();
+  });
+
+  it("does not write a file when the requested encoder is unavailable", async () => {
+    files.import.mockResolvedValueOnce({ ...importedText(), rasterFormat: "webp" });
+    const { deck } = await setup({
+      "fs.pickFiles": () => [{ ...syntheticFile, name: "합성.webp", ext: "webp" }],
+    });
+    await openText();
+    files.export.mockRejectedValueOnce(new FileOperationError("UNSUPPORTED_EXPORT"));
+    fireEvent.click(button("내보내기"));
+    await screen.findByText("이 PC에서 선택한 이미지 형식으로 저장할 수 없어요. 다른 내보내기 형식을 선택하세요.");
+    expect(files.save).not.toHaveBeenCalled();
+    deck.dispose();
+  });
+});
+
 describe("advanced editor document lifecycle", () => {
   it("exposes named icon actions and switches tools by shortcut without consuming text or composition keys", async () => {
     const { deck, view } = await setup();
