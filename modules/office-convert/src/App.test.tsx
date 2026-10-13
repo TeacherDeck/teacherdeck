@@ -68,6 +68,9 @@ describe("installed Office SDK workflow", () => {
     expect(host.requests.some((r) => ["pickFolder", "createOutputFolder"].includes(r.method))).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "다른 저장 폴더 선택" }));
     await screen.findByText("저장 폴더: 합성 폴더");
+    expect((screen.getByRole("button", { name: "변환" }) as HTMLButtonElement).disabled).toBe(true);
+    host.emit("fs.dropped", { files: [file("third", "셋째 문서.xls"), file("fourth", "넷째 문서.doc")] });
+    await screen.findByText("4개 문서");
     fireEvent.click(screen.getByRole("button", { name: "변환" }));
     await waitFor(() => expect(host.requests.filter((r) => r.method === "openOutputFolder")).toHaveLength(4));
     expect(
@@ -76,6 +79,35 @@ describe("installed Office SDK workflow", () => {
         .slice(2)
         .map((r) => r.args),
     ).toEqual([{ parentHandle: "parent" }, { parentHandle: "parent" }]);
+    expect(
+      host.requests.filter((r) => r.method === "convert").map((r) => (r.args as OfficeConvertArgs).sourceHandle),
+    ).toEqual(["first", "second", "third", "fourth"]);
+    deck.dispose();
+  });
+  it("preserves successes and failures when adding a document, then runs only pending documents", async () => {
+    const { host, deck } = await setup((args) => {
+      if (args.sourceHandle === "failed") throw new DeckCallError("INTERNAL", "합성 오류");
+      return result(args);
+    });
+    host.emit("fs.dropped", { files: [file("done", "합성 완료.xls"), file("failed", "합성 실패.xls")] });
+    await screen.findByText("2개 문서");
+    fireEvent.click(screen.getByRole("button", { name: "변환" }));
+    await screen.findByRole("button", { name: "실패한 문서 다시 변환" });
+    host.emit("fs.dropped", { files: [file("new", "합성 추가.doc")] });
+    await screen.findByText("3개 문서");
+    expect(screen.getByRole("button", { name: "결과 확인" })).toBeTruthy();
+    expect(screen.getByText("다시 확인")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "변환" }));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "결과 확인" })).toHaveLength(2));
+    expect(
+      host.requests.filter((r) => r.method === "convert").map((r) => (r.args as OfficeConvertArgs).sourceHandle),
+    ).toEqual(["done", "failed", "new"]);
+    expect((screen.getByRole("button", { name: "변환" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "실패한 문서 다시 변환" }));
+    await screen.findByRole("button", { name: "실패한 문서 다시 변환" });
+    expect(
+      host.requests.filter((r) => r.method === "convert").map((r) => (r.args as OfficeConvertArgs).sourceHandle),
+    ).toEqual(["done", "failed", "new", "failed"]);
     deck.dispose();
   });
   it("retains completed results and failed-only retry when no new supported document is added", async () => {

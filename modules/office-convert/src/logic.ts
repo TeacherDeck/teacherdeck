@@ -77,9 +77,10 @@ export function conversionError(code: string | undefined, safeMessage?: string):
 }
 /** Update failed/pending choices without discarding successfully published results. */
 export function replanRows(rows: ConversionRow[], plans: ConversionRow[]): ConversionRow[] {
-  return rows.map((row) => {
+  return plans.map((plan) => {
+    const row = rows.find((item) => item.file.handle === plan.file.handle);
+    if (!row) return plan;
     if (row.state === "converted") return row;
-    const plan = plans.find((item) => item.file.handle === row.file.handle);
-    return plan ? { ...plan, state: row.state, ...(row.message ? { message: row.message } : {}) } : row;
+    return { ...plan, state: row.state, ...(row.message ? { message: row.message } : {}) };
   });
 }

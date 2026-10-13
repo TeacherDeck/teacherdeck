@@ -80,7 +80,6 @@ export function App({ deck }: { deck: Deck }) {
     if (additions.length) {
       selectedFiles.current = [...selectedFiles.current, ...additions];
       setFiles(selectedFiles.current);
-      setRows([]);
     }
     setInputMessage(
       additions.length
@@ -108,7 +107,7 @@ export function App({ deck }: { deck: Deck }) {
     }
   }
   const plans = planConversions(files, macros),
-    shown = rows.length ? rows : plans;
+    shown = replanRows(rows, plans);
   const hancomRunning = rows.some((row) => row.state === "converting" && providerFor(row.file) === "hancom");
   const unsupported = plans.some(
     (row) =>
@@ -120,19 +119,15 @@ export function App({ deck }: { deck: Deck }) {
   }
   async function run(retry = false) {
     if (locked.current) return;
-    const selected = retry ? rows.filter((row) => row.state === "failed" || row.state === "cancelled") : plans;
+    const selected = shown.filter((row) =>
+      retry ? row.state === "failed" || row.state === "cancelled" : row.state === "pending",
+    );
     if (!selected.length) return;
     locked.current = true;
     stopped.current = false;
     setBusy(true);
     setMessage("");
-    const next = retry
-      ? rows.map((row) => {
-          if (!selected.includes(row)) return { ...row };
-          const replacement = plans.find((plan) => plan.file.handle === row.file.handle);
-          return replacement ? { ...replacement } : { ...row };
-        })
-      : plans.map((row) => ({ ...row }));
+    const next = shown.map((row) => (selected.includes(row) ? { ...row, state: "pending" as const } : { ...row }));
     try {
       update(next);
       for (const row of next) {
@@ -344,7 +339,11 @@ export function App({ deck }: { deck: Deck }) {
       </ToolLayout.Section>
       <ToolLayout.Section step="run" title="변환">
         <div className={s.actions}>
-          <Button appearance="primary" disabled={busy || plans.length === 0} onClick={() => void run()}>
+          <Button
+            appearance="primary"
+            disabled={busy || !shown.some((row) => row.state === "pending")}
+            onClick={() => void run()}
+          >
             변환
           </Button>
           {busy && <Button onClick={() => void stop()}>중지</Button>}

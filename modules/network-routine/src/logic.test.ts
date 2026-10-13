@@ -30,6 +30,13 @@ import {
   validateSettings,
   wifiNamesSignature,
 } from "./logic.ts";
+
+it("rejects Wi-Fi names shared across internal and external lists after whitespace normalization", () => {
+  const settings = defaultSettings();
+  settings.wifi_rules.internal_names = ["Synthetic WiFi"];
+  settings.wifi_rules.external_names = ["synthetic  wifi"];
+  expect(validateSettings(settings)).toContain("같은 이름을 내부망과 외부망에 함께 넣을 수 없어요.");
+});
 import type { DecisionMode, Settings, WifiSnapshot } from "./logic.ts";
 import { sourceCases, sourceProvenance } from "./source-cases.ts";
 

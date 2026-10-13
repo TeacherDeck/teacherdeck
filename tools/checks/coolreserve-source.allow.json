@@ -1,10 +1,10 @@
 {
   "$comment": "SPDX-License-Identifier: GPL-3.0-only; reviewed MIT upstream artifact; ADR-0023",
   "repository": "https://github.com/rochelobeJYJ/CoolReserve",
-  "revision": "bbad4407346b14d791c5e0b4aacb53bd7e54660b",
-  "version": "0.2.0",
+  "revision": "864de2b877def17554510d858c3e878b1a434bfa",
+  "version": "0.2.1",
   "archive": {
-    "path": "vendor/coolreserve/bbad4407346b14d791c5e0b4aacb53bd7e54660b.zip",
+    "path": "vendor/coolreserve/864de2b877def17554510d858c3e878b1a434bfa.zip",
     "sha256": "b9e07be139920e87d5ed88e15c7ae82a363b087e993bb5c00c2fbab2a28a3120"
   },
   "files": [
@@ -82,13 +82,13 @@
   "moduleFiles": [
     {
       "path": "CHANGELOG.md",
-      "size": 1786,
-      "sha256": "4cddedd8d11981c0fb1dce7aab1fd784e159485ccd43fb53df282a9d0d683e62"
+      "size": 2043,
+      "sha256": "1d3bdaf8a83cbfb829ba76cf5e50d71c0c9cc1bdb525c94425a0d64d90f0d768"
     },
     {
       "path": "README.md",
-      "size": 8523,
-      "sha256": "f7027524d28c16ac7baa962764a65ad6e505a54b864615ca1307d0daf3b52c03"
+      "size": 8837,
+      "sha256": "7bb315320678d11dece8cde676616022da8ffca27d4aa8bcb2eac19603e7cb1b"
     },
     {
       "path": "icon.svg",
@@ -103,12 +103,12 @@
     {
       "path": "module.json",
       "size": 637,
-      "sha256": "ff142de45475bb7035388bf81e20d40ece026b887ab112896a50485268ec294d"
+      "sha256": "59d218827ce1406f3a8e20e62ddba0905dfe4ef7cf35c2d73ce6ec565e9e569d"
     },
     {
       "path": "package.json",
       "size": 398,
-      "sha256": "a26bcbc27a0d693a4814ac0f75292b877add29e0baae2648435ac1e343aee47f"
+      "sha256": "9d969f2cd247ea585bdd0f661b30e1172ae2a2315418d9d691a25fe34c60d0aa"
     },
     {
       "path": "src/App.test.tsx",
@@ -121,9 +121,14 @@
       "sha256": "ca6e0cf4a615389f6fcbd1981e3409a3bae22a87871eb6666d06d14f6c5265c6"
     },
     {
+      "path": "src/Editor.test.tsx",
+      "size": 3757,
+      "sha256": "d846a0f5c1438a110b0951a9b606ce5921adb7902ffbcb2ecb1374f0eb36c78f"
+    },
+    {
       "path": "src/Editor.tsx",
-      "size": 10756,
-      "sha256": "a7ae3ab6ce5c0b3f6bbc10e23cb3053ff6614fa8e498b99a453dd487760992f2"
+      "size": 11410,
+      "sha256": "85f8390ca89657945d5409817e03080d46988226c0ff80c743d809bfe044f61e"
     },
     {
       "path": "src/archive.worker.ts",

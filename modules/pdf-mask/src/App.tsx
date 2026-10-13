@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-import type { Deck, FileHandleInfo, FolderHandleInfo } from "@deck/sdk";
+import { createDocumentSession, type Deck, type FileHandleInfo, type FolderHandleInfo } from "@deck/sdk";
 import {
   Body,
   Button,
   Caption,
   CheckBox,
   ComboBox,
+  ContentDialog,
   DropZone,
   ImageCropPreview,
   InfoBar,
@@ -18,7 +19,7 @@ import {
   makeStyles,
   tokens,
 } from "@deck/ui";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { readFile, readInput, redact, saveResult, type Input } from "./batch.ts";
 import {
   boundRect,
@@ -56,15 +57,70 @@ export function App({ deck }: { deck: Deck }) {
   const [term, setTerm] = useState("");
   const [skipHeader, setSkipHeader] = useState(true);
   const [autoOcr, setAutoOcr] = useState(true);
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [candidates, applyCandidates] = useState<Candidate[]>([]);
+  const candidatesRef = useRef<Candidate[]>([]);
+  function setCandidates(value: Candidate[] | ((previous: Candidate[]) => Candidate[])) {
+    const next = typeof value === "function" ? value(candidatesRef.current) : value;
+    candidatesRef.current = next;
+    applyCandidates(next);
+  }
   const [pageIndex, setPageIndex] = useState(0);
   const [preview, setPreview] = useState("");
   const [previewing, setPreviewing] = useState(false);
   const [rect, setRect] = useState<Rect>({ x: 20, y: 20, width: 100, height: 30 });
-  const [ack, setAck] = useState(false);
+  const [ack, applyAck] = useState(false);
+  const ackRef = useRef(false);
+  function setAck(value: boolean) {
+    ackRef.current = value;
+    applyAck(value);
+  }
   const [folder, setFolder] = useState<FolderHandleInfo | null>(null);
   const [parent, setParent] = useState<FolderHandleInfo | null>(null);
   const [saved, setSaved] = useState<FileHandleInfo | null>(null);
+  const savedWorkspace = useRef(true);
+  const saveLatest = useRef<() => Promise<void>>(async () => undefined);
+  const confirmReplacement = useRef<((proceed: boolean) => void) | null>(null);
+  const [replacing, setReplacing] = useState(false);
+  const session = useMemo(() => createDocumentSession(deck, { save: () => saveLatest.current() }), [deck]);
+  saveLatest.current = run;
+  useEffect(() => {
+    void session.ready.catch(() => setMessage("작업 보호를 준비하지 못했어요. 도구를 다시 열어 주세요."));
+    return () => {
+      confirmReplacement.current?.(false);
+      confirmReplacement.current = null;
+      session.dispose();
+    };
+  }, [session]);
+  function change(apply: () => void) {
+    if (!current.current) {
+      apply();
+      return;
+    }
+    void session
+      .change(() => {
+        savedWorkspace.current = false;
+        setSaved(null);
+        setAck(false);
+        apply();
+      })
+      .then((applied) => {
+        if (!applied) setMessage("작업 보호를 확인하지 못해 변경하지 않았어요. 다시 시도해 주세요.");
+      });
+  }
+  async function canReplace(): Promise<boolean> {
+    try {
+      await session.settle();
+    } catch {
+      setMessage("작업 보호 상태를 확인하지 못했어요. 현재 문서를 유지해요.");
+      return false;
+    }
+    if (!current.current || savedWorkspace.current) return true;
+    if (confirmReplacement.current) return false;
+    setReplacing(true);
+    return new Promise((resolve) => {
+      confirmReplacement.current = resolve;
+    });
+  }
   const page = input?.pages[pageIndex];
   const onPage = candidates.filter((c) => c.page === page?.number);
   const selected = candidates.filter((c) => c.selected);
@@ -150,6 +206,10 @@ export function App({ deck }: { deck: Deck }) {
   async function load(file: FileHandleInfo, notice = "PDF를 입력했어요. 문서 내용을 읽고 있어요.") {
     if (lock.current) return;
     setRun(true);
+    if (!(await canReplace())) {
+      setRun(false);
+      return;
+    }
     setPendingFile(file);
     setInputMessage(notice);
     setMessage("");
@@ -174,8 +234,15 @@ export function App({ deck }: { deck: Deck }) {
       const found = detect(next.pages, terms, enabled);
       if (abort.signal.aborted) throw new Error("CANCELLED");
       const previous = current.current;
-      current.current = next;
-      setInput(next);
+      const loaded = next;
+      if (
+        !(await session.change(() => {
+          savedWorkspace.current = false;
+          current.current = loaded;
+          setInput(loaded);
+        }))
+      )
+        throw new Error("DOCUMENT_PROTECTION_FAILED");
       if (previous) void previous.doc.loadingTask.destroy().catch(() => undefined);
       setCandidates(found);
       setPageIndex(0);
@@ -188,12 +255,14 @@ export function App({ deck }: { deck: Deck }) {
       setMessage(
         `${next.pages.length}쪽에서 개인정보 후보 ${found.length}건을 찾았어요. 제거할 영역을 확인해 주세요.${scanMessage}`,
       );
-    } catch {
+    } catch (error) {
       if (next && current.current !== next) await next.doc.loadingTask.destroy();
       setMessage(
         abort.signal.aborted
           ? "읽기를 취소했어요. 이전 문서는 유지해요."
-          : "PDF를 읽지 못했어요. 비밀번호가 없는 32 MB·100쪽 이하 PDF를 선택해 주세요.",
+          : error instanceof Error && error.message === "PDF_TIMEOUT"
+            ? "PDF 검사 시간이 지나 중지했어요. 쪽 수를 줄인 PDF로 다시 시도해 주세요. 이전 문서는 유지해요."
+            : "PDF를 읽지 못했어요. 비밀번호가 없는 32 MB·100쪽 이하 PDF를 선택해 주세요.",
       );
     } finally {
       controller.current = null;
@@ -214,10 +283,10 @@ export function App({ deck }: { deck: Deck }) {
     if (!input) return;
     try {
       const found = detect(input.pages, nextTerms, nextEnabled);
-      setCandidates(mergeCandidates(found, candidates));
-      setSaved(null);
-      setAck(false);
-      setMessage(`개인정보 후보 ${found.length}건을 찾았어요. 수동 영역은 유지해요.`);
+      change(() => {
+        setCandidates(mergeCandidates(found, candidatesRef.current));
+        setMessage(`개인정보 후보 ${found.length}건을 찾았어요. 수동 영역은 유지해요.`);
+      });
     } catch {
       setMessage("검색어와 후보가 너무 많아요. 256개 이하 검색어로 나눠 주세요.");
     }
@@ -235,11 +304,17 @@ export function App({ deck }: { deck: Deck }) {
       if (abort.signal.aborted) throw new Error("CANCELLED");
       const found = detect(result.input.pages, terms, enabled);
       const merged = mergeCandidates(found, candidates);
-      current.current = result.input;
-      setInput(result.input);
-      setCandidates(merged);
-      setSaved(null);
-      setAck(false);
+      if (
+        !(await session.change(() => {
+          savedWorkspace.current = false;
+          current.current = result.input;
+          setInput(result.input);
+          setCandidates(merged);
+          setSaved(null);
+          setAck(false);
+        }))
+      )
+        throw new Error("DOCUMENT_PROTECTION_FAILED");
       setMessage(
         `이미지 글자 ${result.summary.read}쪽을 읽었어요. 빈 인식 ${result.summary.empty}쪽 · 낮은 신뢰도 ${result.summary.uncertain}쪽. 후보 ${found.length}건과 각 페이지를 확인해 주세요.`,
       );
@@ -330,43 +405,56 @@ export function App({ deck }: { deck: Deck }) {
   }
   function addArea() {
     if (!page || candidates.length >= MAX_CANDIDATES) return;
-    setCandidates((old) => [
-      ...old,
-      {
-        id: crypto.randomUUID(),
-        page: page.number,
-        kind: "검색어",
-        label: "직접 지정 영역",
-        rect: boundRect(rect, page.width, page.height),
-        selected: true,
-        manual: true,
-      },
-    ]);
-    setSaved(null);
+    change(() =>
+      setCandidates((old) => [
+        ...old,
+        {
+          id: crypto.randomUUID(),
+          page: page.number,
+          kind: "검색어",
+          label: "직접 지정 영역",
+          rect: boundRect(rect, page.width, page.height),
+          selected: true,
+          manual: true,
+        },
+      ]),
+    );
   }
   async function run() {
-    if (!input || lock.current || !ack || !selected.length) return;
+    const source = current.current;
+    if (!source) return;
+    const areas = candidatesRef.current;
+    const selectedCount = areas.filter((candidate) => candidate.selected).length;
+    if (lock.current || !ackRef.current || !selectedCount) {
+      setMessage("제거할 영역을 고르고 확인란에 표시한 뒤 저장해 주세요. 현재 문서는 유지해요.");
+      throw new Error("REVIEW_REQUIRED");
+    }
     setRun(true);
     setMessage("");
     setDone(0);
     const abort = new AbortController();
     controller.current = abort;
     try {
-      const blob = await redact(input, candidates, abort.signal, progress);
-      const output = await saveResult(deck, input, blob, abort.signal, parent?.handle);
+      const blob = await redact(source, areas, abort.signal, progress);
+      const output = await saveResult(deck, source, blob, abort.signal, parent?.handle);
       if (output) {
         setFolder(output.folder);
         setSaved(output.saved);
+        savedWorkspace.current = true;
         setMessage(
-          `선택한 ${selected.length}개 영역을 제거하고 새 PDF를 저장했어요. 출력의 텍스트·주석·첨부가 없는 것을 확인했어요.`,
+          `선택한 ${selectedCount}개 영역을 제거하고 새 PDF를 저장했어요. 출력의 텍스트·주석·첨부가 없는 것을 확인했어요.`,
         );
-      } else setMessage("저장을 취소했어요. 제거 영역은 유지해요.");
+      } else {
+        setMessage("저장을 취소했어요. 제거 영역은 유지해요.");
+        throw new Error("SAVE_CANCELLED");
+      }
     } catch {
       setMessage(
         abort.signal.aborted
           ? "취소했어요. 원본과 완료된 결과는 유지해요."
           : "새 PDF를 만들거나 검사하지 못했어요. 큰 페이지는 나누고, 저장 폴더를 다시 선택해 주세요.",
       );
+      throw new Error("SAVE_FAILED");
     } finally {
       controller.current = null;
       setRun(false);
@@ -401,16 +489,29 @@ export function App({ deck }: { deck: Deck }) {
         )}
         <Button
           disabled={busy || !input}
-          onClick={() => {
-            void current.current?.doc.loadingTask.destroy();
-            current.current = null;
-            setInput(null);
-            setCandidates([]);
-            setFolder(null);
-            setSaved(null);
-            setMessage("");
-            setInputMessage("");
-          }}
+          onClick={() =>
+            void (async () => {
+              if (lock.current) return;
+              setRun(true);
+              try {
+                if (!(await canReplace())) return;
+                await current.current?.doc.loadingTask.destroy();
+                current.current = null;
+                savedWorkspace.current = true;
+                setInput(null);
+                setCandidates([]);
+                setFolder(null);
+                setSaved(null);
+                setMessage("");
+                setInputMessage("");
+                await session.save();
+              } catch {
+                setMessage("문서를 닫지 못했어요. 현재 영역을 유지하니 다시 시도해 주세요.");
+              } finally {
+                setRun(false);
+              }
+            })()
+          }
         >
           문서 비우기
         </Button>
@@ -484,7 +585,7 @@ export function App({ deck }: { deck: Deck }) {
             header="제거할 검색어"
             value={term}
             disabled={busy}
-            onChange={setTerm}
+            onChange={(value) => change(() => setTerm(value))}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.nativeEvent.isComposing) addTerm();
             }}
@@ -637,8 +738,11 @@ export function App({ deck }: { deck: Deck }) {
                       checked={candidate.selected}
                       disabled={busy}
                       onChange={(value) => {
-                        setCandidates((all) => all.map((c) => (c.id === candidate.id ? { ...c, selected: value } : c)));
-                        setSaved(null);
+                        change(() =>
+                          setCandidates((all) =>
+                            all.map((c) => (c.id === candidate.id ? { ...c, selected: value } : c)),
+                          ),
+                        );
                       }}
                     />
                     <Button disabled={busy} onClick={() => setRect(candidate.rect)}>
@@ -647,7 +751,7 @@ export function App({ deck }: { deck: Deck }) {
                     {candidate.manual && (
                       <Button
                         disabled={busy}
-                        onClick={() => setCandidates((all) => all.filter((c) => c.id !== candidate.id))}
+                        onClick={() => change(() => setCandidates((all) => all.filter((c) => c.id !== candidate.id)))}
                       >
                         영역 제거
                       </Button>
@@ -680,7 +784,7 @@ export function App({ deck }: { deck: Deck }) {
             appearance="primary"
             disabled={busy || !input || !ack || !selected.length}
             onClick={() => {
-              void run();
+              void session.save();
             }}
           >
             정보 제거하여 저장
@@ -714,6 +818,21 @@ export function App({ deck }: { deck: Deck }) {
           결과도 눈으로 확인해 주세요.
         </Body>
       </ToolLayout.Section>
+      <ContentDialog
+        open={replacing}
+        title="저장하지 않은 제거 영역이 있어요"
+        primaryButtonText="영역 버리고 계속"
+        closeButtonText="취소"
+        defaultButton="close"
+        onClose={(result) => {
+          setReplacing(false);
+          const resolve = confirmReplacement.current;
+          confirmReplacement.current = null;
+          resolve?.(result === "primary");
+        }}
+      >
+        현재 영역을 유지하려면 취소를 누르고 PDF를 먼저 저장해 주세요. 원본 PDF는 바뀌지 않아요.
+      </ContentDialog>
     </ToolLayout>
   );
 }
