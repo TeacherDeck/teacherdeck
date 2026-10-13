@@ -4,7 +4,7 @@
   "id": "dday",
   "name": "D-day",
   "description": "날짜를 저장하고 남은 날·지난 날을 이 PC에서 확인해요.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "category": "utility",
   "icon": "icon.svg",
   "entry": "index.html",
@@ -15,6 +15,7 @@
   ],
   "requires": {
     "storage": "^1.0",
+    "window": "^1.2.0",
     "fs": "^1.4.0"
   },
   "optional": {}

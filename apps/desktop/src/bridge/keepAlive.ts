@@ -23,11 +23,15 @@ export class KeepAliveSet {
   }
 
   /** Computes evictions without changing the LRU while a save confirmation is pending. */
-  preview(next: string | null, keepAlive: (id: string) => boolean): Mounted {
+  preview(
+    next: string | null,
+    keepAlive: (id: string) => boolean,
+    protectedIds: ReadonlySet<string> = new Set(),
+  ): Mounted {
     const copy = new KeepAliveSet(this.max);
     copy.hidden = [...this.hidden];
     copy.active = this.active;
-    return copy.activate(next, keepAlive);
+    return copy.activate(next, keepAlive, protectedIds);
   }
 
   /** A confirmed discarded document must unload even when it opted into keepAlive. */
@@ -37,12 +41,24 @@ export class KeepAliveSet {
   }
 
   /** Switches to `next` (null = no module shown). `keepAlive(id)` tells whether a module opted in. */
-  activate(next: string | null, keepAlive: (id: string) => boolean): Mounted {
+  activate(
+    next: string | null,
+    keepAlive: (id: string) => boolean,
+    protectedIds: ReadonlySet<string> = new Set(),
+  ): Mounted {
     const before = new Set(this.mountedIds());
     const prev = this.active;
     this.hidden = this.hidden.filter((id) => id !== next);
     if (prev !== null && prev !== next && keepAlive(prev)) this.hidden.unshift(prev);
-    this.hidden = this.hidden.slice(0, Math.max(0, this.max - (next !== null && keepAlive(next) ? 1 : 0)));
+    const slots = Math.max(0, this.max - (next !== null && keepAlive(next) ? 1 : 0));
+    // Keep running/unsaved work ahead of idle frames; each group still follows LRU.
+    const retained = new Set(
+      [...this.hidden.filter((id) => protectedIds.has(id)), ...this.hidden.filter((id) => !protectedIds.has(id))].slice(
+        0,
+        slots,
+      ),
+    );
+    this.hidden = this.hidden.filter((id) => retained.has(id));
     this.active = next;
     const mounted = this.mountedIds();
     const now = new Set(mounted);

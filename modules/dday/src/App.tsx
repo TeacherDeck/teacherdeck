@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-import type { Deck, FileHandleInfo } from "@deck/sdk";
+import { createDocumentSession, type Deck, type FileHandleInfo } from "@deck/sdk";
 import {
   Body,
   BodyStrong,
@@ -18,7 +18,7 @@ import {
   deckTokens,
   makeStyles,
 } from "@deck/ui";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import {
   STATE_KEY,
   emptyDocument,
@@ -32,6 +32,7 @@ import {
   type Item,
 } from "./logic.ts";
 import { exportBackup, pickBackup, replaceDocument } from "./files.ts";
+import { readDraft } from "./draft.ts";
 const useStyles = makeStyles({
   page: { padding: deckTokens.pagePadding, display: "flex", flexDirection: "column", gap: deckTokens.sectionGap },
   row: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: deckTokens.inlineGap },
@@ -65,7 +66,7 @@ function blankItem(): Item {
 export function App({ deck }: { deck: Deck }) {
   const s = useStyles(),
     [document, setDocument] = useState<Document>(emptyDocument),
-    [draft, setDraft] = useState<Item>(blankItem);
+    [draft, applyDraft] = useState<Item>(blankItem);
   const [ready, setReady] = useState(false),
     [blocked, setBlocked] = useState(false),
     [busy, setBusy] = useState(false),
@@ -76,6 +77,37 @@ export function App({ deck }: { deck: Deck }) {
   const [preview, setPreview] = useState<Document | null>(null),
     [previewOpen, setPreviewOpen] = useState(false),
     [addToList, setAddToList] = useState(true);
+  const draftRef = useRef(draft);
+  const draftChanged = useRef(false);
+  const session = useMemo(
+    () =>
+      createDocumentSession(deck, {
+        save: async () => {
+          await deck.storage.set("draft.v1", draftRef.current);
+        },
+        onError: () => setMessage("초안을 저장하지 못했어요. 입력을 유지했으니 다시 저장해 주세요."),
+      }),
+    [deck],
+  );
+  function setDraft(value: SetStateAction<Item>) {
+    void session.change(() => {
+      const next = typeof value === "function" ? value(draftRef.current) : value;
+      draftRef.current = next;
+      draftChanged.current = true;
+      applyDraft(next);
+    });
+  }
+  useEffect(() => {
+    void session.ready.catch(() => undefined);
+    return () => session.dispose();
+  }, [session]);
+  useEffect(() => {
+    if (!ready || !draftChanged.current) return;
+    const timer = setTimeout(() => {
+      void session.save();
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [draft, ready, session]);
   const sourceFile = useRef<FileHandleInfo | undefined>(undefined);
   const pendingSource = useRef<FileHandleInfo | undefined>(undefined);
   const raw = useRef<unknown>(null),
@@ -108,11 +140,20 @@ export function App({ deck }: { deck: Deck }) {
     setBusy(true);
     setReady(false);
     try {
-      const value = await deck.storage.get(STATE_KEY);
+      const [value, savedDraft] = await Promise.all([
+        deck.storage.get(STATE_KEY),
+        deck.storage.get("draft.v1"),
+        session.ready,
+      ]);
       raw.current = value;
       const next = value === null ? emptyDocument() : readDocument(value);
       if (active.current) {
         setDocument(next);
+        if (savedDraft !== null) {
+          const restored = readDraft(savedDraft);
+          draftRef.current = restored;
+          applyDraft(restored);
+        }
         setBlocked(false);
         setReady(true);
         setMessage("");
@@ -133,6 +174,7 @@ export function App({ deck }: { deck: Deck }) {
     lock.current = true;
     setBusy(true);
     try {
+      await session.settle();
       await action();
     } catch {
       if (active.current)
@@ -154,6 +196,7 @@ export function App({ deck }: { deck: Deck }) {
     }
   }
   async function saveDraft() {
+    const draft = draftRef.current;
     if (!draft.title.trim() || dateOrdinal(draft.date) === null) {
       setMessage("일정 이름과 존재하는 날짜를 YYYY-MM-DD 형식으로 적어 주세요.");
       return;
@@ -178,7 +221,9 @@ export function App({ deck }: { deck: Deck }) {
         setDraft((previous) => (previous.id === item.id ? { ...previous, ...changes, updatedAt } : previous));
     });
   }
-  function editItem(item: Item) {
+  async function editItem(item: Item) {
+    await session.settle();
+    const draft = draftRef.current;
     const original = document.items.find((entry) => entry.id === draft.id);
     const changed = original ? JSON.stringify(original) !== JSON.stringify(draft) : !!(draft.title || draft.group);
     if (changed) {
@@ -256,7 +301,7 @@ export function App({ deck }: { deck: Deck }) {
           value={draft.title}
           disabled={disabled}
           onChange={(title) => {
-            if (title.length <= 120) setDraft({ ...draft, title });
+            if (title.length <= 120) setDraft((previous) => ({ ...previous, title }));
           }}
         />
         <TextBox
@@ -264,14 +309,16 @@ export function App({ deck }: { deck: Deck }) {
           value={draft.date}
           placeholder="예: 2026-12-25"
           disabled={disabled}
-          onChange={(date) => setDraft({ ...draft, date })}
+          onChange={(date) => {
+            if (date.length <= 80) setDraft((previous) => ({ ...previous, date }));
+          }}
         />
         <TextBox
           header="분류 (선택)"
           value={draft.group}
           disabled={disabled}
           onChange={(group) => {
-            if (group.length <= 80) setDraft({ ...draft, group });
+            if (group.length <= 80) setDraft((previous) => ({ ...previous, group }));
           }}
         />
         <div className={s.row}>
@@ -282,7 +329,7 @@ export function App({ deck }: { deck: Deck }) {
             입력 취소
           </Button>
         </div>
-        <Caption secondary>입력 중인 내용은 저장을 누르기 전까지 초안이에요. 일정는 보관해도 사라지지 않아요.</Caption>
+        <Caption secondary>입력 중인 초안은 이 PC에 자동으로 보관해요. 일정는 보관해도 사라지지 않아요.</Caption>
       </section>
       <div className={s.row}>
         <TextBox
@@ -327,7 +374,7 @@ export function App({ deck }: { deck: Deck }) {
               {item.group ? " · " + item.group : ""}
             </Body>
             <div className={s.row}>
-              <Button disabled={disabled} onClick={() => editItem(item)}>
+              <Button disabled={disabled} onClick={() => void editItem(item)}>
                 수정
               </Button>
               <Button

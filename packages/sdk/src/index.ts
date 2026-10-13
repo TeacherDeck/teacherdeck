@@ -209,3 +209,4 @@ export type { MessagingCancelArgs } from "./generated/MessagingCancelArgs.ts";
 export type { MessagingCancelResult } from "./generated/MessagingCancelResult.ts";
 export type { MessagingApprovalRequest } from "./generated/MessagingApprovalRequest.ts";
 export type { MessagingApprovalResolution } from "./generated/MessagingApprovalResolution.ts";
+export { createDocumentSession, type DocumentSession, type DocumentSessionOptions } from "./document-session.ts";

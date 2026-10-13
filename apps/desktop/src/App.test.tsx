@@ -309,6 +309,28 @@ it("keeps an unsaved iframe and restores browser history when leaving is cancell
   expect(host.modulesUnloaded).not.toHaveBeenCalled();
 });
 
+it("hides protected keepAlive work without a save prompt and evicts an idle frame first", async () => {
+  vi.mocked(host.listModules).mockResolvedValueOnce([
+    entry("sample-running", "실행 중 타이머", true),
+    entry("sample-idle-a", "대기 도구 가", true),
+    entry("sample-idle-b", "대기 도구 나", true),
+    entry("sample-idle-c", "대기 도구 다", true),
+  ]);
+  render(<App />);
+  await open("실행 중 타이머");
+  const running = frameWindow("실행 중 타이머");
+  vi.mocked(host.documentAction).mockImplementation(async (owner, action) => ({
+    state: owner === "sample-running" ? { documentHandle: "running", dirty: true, saving: false } : null,
+    requestId: action.kind === "prepare" && owner === "sample-running" ? "leave" : null,
+    saved: null,
+  }));
+  for (const name of ["대기 도구 가", "대기 도구 나", "대기 도구 다"]) await open(name);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(frameWindow("실행 중 타이머")).toBe(running);
+  expect(screen.queryByTitle("대기 도구 가")).toBeNull();
+  expect(screen.getByTitle("실행 중 타이머").getAttribute("aria-hidden")).toBe("true");
+});
+
 it("native exit cancellation resolves the host token without closing or unloading", async () => {
   await openTool();
   vi.mocked(host.moduleUnloaded).mockClear();

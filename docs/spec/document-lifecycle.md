@@ -4,9 +4,9 @@
 
 `registerDocument({})`는 소유 모듈의 `{documentHandle}`을 반환한다. 같은 살아 있는 모듈에서 재호출하면 기존 핸들을 반환하며 dirty를 초기화하지 않는다. `setDocumentState({documentHandle,dirty,saving})`는 해당 모듈의 핸들만 받는다. 등록 성공과 최초 dirty 설정 성공 전에 첫 편집을 적용하지 않는다. 숨김은 핸들을 유지하며 언로드는 폐기한다.
 
-작업 파일 저장을 완료한 revision이 현재 revision과 같은 경우에만 dirty=false로 등록한다. PNG/JPEG 또는 손실 있는 PSD 출력은 완전한 편집 문서 저장을 대신하지 않는다. 저장 실패·취소는 dirty를 유지하며 saving은 실제 작업 중에만 true다.
+현재 작업의 저장을 완료한 revision이 현재 revision과 같은 경우에만 dirty=false로 등록한다. 레이어 편집기는 편집 가능한 작업 파일, 메모·배정기는 복원 가능한 입력 상태, 이미지 자르기·PDF 개인정보 지우기는 현재 처리를 반영한 결과 파일을 저장한다. 일부 사진만 저장했거나 미완성 입력이 남으면 dirty를 유지한다. 레이어·마스크 등 편집 정보가 있는 도구에서 PNG/JPEG 또는 손실 있는 PSD 출력은 완전한 편집 문서 저장을 대신하지 않는다. 저장 실패·취소는 dirty를 유지하며 saving은 실제 작업 중에만 true다.
 
-셸은 이탈·LRU 제거 전에 dirty 또는 saving 문서를 확인한다. 저장·버리기·취소를 선택하며 취소가 기본이다. 중재부터 완료까지 모듈 레이어의 사용자 입력을 잠시 막고, 취소 또는 실패 시 즉시 복원한다. 저장 선택은 소유 iframe에 `window.documentSaveRequested` 이벤트를 보낸다. payload는 `{documentHandle,requestId}`만 담는다. 모듈은 작업 파일 저장 후 `completeDocumentSave({documentHandle,requestId,saved})`로 답한다. 호스트는 준비된 요청·모듈 소유권·문서 핸들을 검사한다. saved=true와 dirty=false·saving=false를 모두 확인해야 성공이며 응답 뒤 새 편집이 생겨도 성공으로 간주하지 않는다. 요청은 60초 내 응답해야 한다. 시간 초과·실패·취소는 iframe과 미저장 상태를 유지한다.
+셸은 iframe을 실제로 제거하기 전에 dirty 또는 saving 문서를 확인한다. keepAlive iframe을 그대로 숨기는 화면 이동은 저장 확인 없이 작업을 유지한다. 유지 한도는 활성 도구를 포함한 3개이며, 숨긴 도구 중 dirty 또는 saving 문서를 먼저 유지하고 같은 보호 상태에서는 LRU 순서를 따른다. 보호 문서만으로 한도를 넘으면 가장 오래 사용하지 않은 문서의 저장·버리기·취소를 확인하며 취소가 기본이다. 중재부터 완료까지 모듈 레이어의 사용자 입력을 잠시 막고, 취소 또는 실패 시 즉시 복원한다. 저장 선택은 소유 iframe에 `window.documentSaveRequested` 이벤트를 보낸다. payload는 `{documentHandle,requestId}`만 담는다. 모듈은 작업 파일 저장 후 `completeDocumentSave({documentHandle,requestId,saved})`로 답한다. 호스트는 준비된 요청·모듈 소유권·문서 핸들을 검사한다. saved=true와 dirty=false·saving=false를 모두 확인해야 성공이며 응답 뒤 새 편집이 생겨도 성공으로 간주하지 않는다. 요청은 60초 내 응답해야 한다. 시간 초과·실패·취소는 iframe과 미저장 상태를 유지한다.
 
 main 전용 module_visibility의 optional `documentAction`은 Rust 원천 typed union으로 정의한다. status는 보호 상태를, prepare는 5분 수명의 한 번 사용 이탈 requestId를 반환한다. requestSave·saveResult·cancelSave는 그 요청에 한정된다. discard는 동일 문서 핸들과 prepare requestId를 확인하고 보호 등록을 폐기하며 셸은 해당 iframe을 제거한다. 미저장 내용을 유지한 iframe을 clean으로 표시하고 숨기지 않는다. 기존 visible 호출은 창 상태 복원만 수행한다.
 

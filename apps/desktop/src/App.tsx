@@ -342,13 +342,20 @@ export function App() {
         const keep = (id: string) =>
           modulesRef.current.find((m) => m.resolution.id === id)?.manifest?.ui?.keepAlive === true;
         const before = pageRef.current.kind === "module" ? pageRef.current.id : null;
-        const planned = keepAlive.current.preview(activeId, keep);
-        const affected = [...(before !== null && before !== activeId ? [before] : []), ...planned.evicted];
-        if (!(await protection.allow(affected))) return false;
-        const afterDecision = keepAlive.current.preview(activeId, keep);
+        const states = await Promise.all(
+          mountedRef.current.map(async (id) => ({
+            id,
+            state: (await host.documentAction(id, { kind: "status" })).state,
+          })),
+        );
+        const protectedIds = new Set(states.filter(({ state }) => state?.dirty || state?.saving).map(({ id }) => id));
+        const planned = keepAlive.current.preview(activeId, keep, protectedIds);
+        // Hiding a retained iframe preserves its work. Confirm only actual disposal.
+        if (!(await protection.allow(planned.evicted))) return false;
+        const afterDecision = keepAlive.current.preview(activeId, keep, protectedIds);
         // The host rechecks dirty/saving at unload, covering a late edit after confirmation.
         if (afterDecision.evicted.length > 0) await host.modulesUnloaded(afterDecision.evicted);
-        const { mounted: nextMounted } = keepAlive.current.activate(activeId, keep);
+        const { mounted: nextMounted } = keepAlive.current.activate(activeId, keep, protectedIds);
         activeModuleRef.current = activeId;
         if (before !== null && before !== activeId && nextMounted.includes(before)) {
           bridge.sendEvent(before, "module.visibility", { visible: false });

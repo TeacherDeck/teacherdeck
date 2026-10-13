@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-import { DeckCallError, type Deck, type FileHandleInfo } from "@deck/sdk";
+import { createDocumentSession, DeckCallError, type Deck, type FileHandleInfo } from "@deck/sdk";
 import {
   Body,
   BodyStrong,
@@ -365,7 +365,12 @@ export function App({ deck }: { deck: Deck }) {
   const [meeting, setMeeting] = useState<Meeting>(emptyMeeting);
   const latest = useRef(meeting);
   const [library, setLibrary] = useState<Library>(EMPTY_LIBRARY);
-  const [status, setStatus] = useState("불러오는 중이에요.");
+  const [status, applyStatus] = useState("불러오는 중이에요.");
+  const statusRef = useRef(status);
+  const setStatus = (value: string) => {
+    statusRef.current = value;
+    applyStatus(value);
+  };
   const [taskError, setTaskError] = useState("");
   const [copyStatus, setCopyStatus] = useState("");
   const [ready, setReady] = useState(false);
@@ -383,17 +388,19 @@ export function App({ deck }: { deck: Deck }) {
   const busyRef = useRef(false);
   const sourceFile = useRef<FileHandleInfo | undefined>(undefined);
   const rosterSource = useRef<FileHandleInfo | undefined>(undefined);
-  const [names, setNames] = useState("");
-  const [absent, setAbsent] = useState("");
-  const [rosterName, setRosterName] = useState("");
-  const [draft, setDraft] = useState("");
-  const [kind, setKind] = useState<EntryKind>("발언");
+  const [names, applyNamesState] = useState("");
+  const [absent, applyAbsentState] = useState("");
+  const [rosterName, applyRosterNameState] = useState("");
+  const rosterDraft = useRef(false);
+  const [draft, applyDraftState] = useState("");
+  const [kind, applyKindState] = useState<EntryKind>("발언");
   const kindChosen = useRef(false);
-  const [privateNote, setPrivateNote] = useState(false);
+  const [privateNote, applyPrivateState] = useState(false);
   const privateChosen = useRef(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [editedOwner, setEditedOwner] = useState("");
   const [editedDue, setEditedDue] = useState("");
+  const editFields = useRef({ owner: "", due: "" });
   const editingId = useRef<string | null>(null);
   const previousDraft = useRef("");
   const previousComposer = useRef({
@@ -403,6 +410,7 @@ export function App({ deck }: { deck: Deck }) {
     privateChosen: false,
   });
   const input = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  const inputIntent = useRef("");
   const attendeeInput = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const log = useRef<HTMLDivElement>(null);
   const scrollToNewEntry = useRef(true);
@@ -413,13 +421,102 @@ export function App({ deck }: { deck: Deck }) {
   const undo = useRef<Meeting[]>([]);
   const redo = useRef<Meeting[]>([]);
   const write = useMemo(() => createWriter(deck), [deck]);
-  const update = useCallback((next: Meeting, force = false) => {
-    if (busyRef.current && !force) return;
-    latest.current = next;
-    revision.current++;
-    setMeeting(next);
-    if (!saveFailed.current) setStatus("자동 저장을 기다리는 중이에요.");
-  }, []);
+  const form = useRef({
+    names: "",
+    absent: "",
+    rosterName: "",
+    draft: "",
+    kind: "발언" as EntryKind,
+    privateNote: false,
+  });
+  const setRosterName = (value: string) => {
+    form.current.rosterName = value;
+    applyRosterNameState(value);
+  };
+  const setNames = (value: string) => {
+    form.current.names = value;
+    applyNamesState(value);
+  };
+  const setAbsent = (value: string) => {
+    form.current.absent = value;
+    applyAbsentState(value);
+  };
+  const setDraft = (value: string) => {
+    inputIntent.current = value;
+    form.current.draft = value;
+    applyDraftState(value);
+  };
+  const setKind = (value: EntryKind) => {
+    form.current.kind = value;
+    applyKindState(value);
+  };
+  const setPrivateNote = (value: boolean) => {
+    form.current.privateNote = value;
+    applyPrivateState(value);
+  };
+  const incomplete = () =>
+    editingId.current !== null
+      ? "기록을 수정하고 있어요. 수정 저장 또는 수정 취소를 누른 뒤 다시 저장해 주세요."
+      : form.current.names !== activeSpeakers(latest.current).join("\n") ||
+          form.current.absent !== (latest.current.absentees?.join("\n") ?? "")
+        ? "입력 중인 참석자·결석자 명단이 있어요. 회의 시작 또는 참석자 창의 저장으로 적용한 뒤 다시 저장해 주세요."
+        : rosterDraft.current
+          ? "입력 중인 위원회 이름이 있어요. 명단 저장·갱신을 누르거나 위원회 이름을 비운 뒤 다시 저장해 주세요."
+          : form.current.draft.trim() &&
+              ((kindChosen.current && form.current.kind !== "발언") || form.current.privateNote)
+            ? "입력한 발언의 종류·비공개 선택이 아직 기록되지 않았어요. 기록을 누른 뒤 다시 저장해 주세요."
+            : "";
+  const session = useMemo(
+    () =>
+      createDocumentSession(deck, {
+        save: async () => {
+          if (busyRef.current) throw new Error("MEETING_BUSY");
+          await write(latest.current);
+          const showSaved =
+            saveFailed.current || ["자동 저장을 기다리는 중이에요.", "저장하는 중이에요."].includes(statusRef.current);
+          saveFailed.current = false;
+          if (incomplete()) setStatus(incomplete());
+          else if (showSaved) setStatus("저장했어요.");
+        },
+        isSaved: () => !incomplete(),
+        onError: () => {
+          inputIntent.current = form.current.draft;
+          saveFailed.current = true;
+          setStatus("저장하지 못했어요. 입력은 유지했으니 현재 작업을 마친 뒤 지금 저장을 눌러 주세요.");
+        },
+      }),
+    [deck, write],
+  );
+  const protectedChange = useRef(false);
+  const protect = useCallback(
+    (action: () => void) => {
+      if (protectedChange.current) {
+        action();
+        return;
+      }
+      void session.change(() => {
+        protectedChange.current = true;
+        try {
+          action();
+        } finally {
+          protectedChange.current = false;
+        }
+      });
+    },
+    [session],
+  );
+  const update = useCallback(
+    (next: Meeting, force = false) => {
+      if (busyRef.current && !force) return;
+      protect(() => {
+        latest.current = next;
+        revision.current++;
+        setMeeting(next);
+        if (!saveFailed.current) setStatus("자동 저장을 기다리는 중이에요.");
+      });
+    },
+    [protect],
+  );
   const snapshot = useCallback(() => {
     undo.current.push(latest.current);
     while (undo.current.length > 50 || new TextEncoder().encode(JSON.stringify(undo.current)).length > 6000000)
@@ -430,20 +527,29 @@ export function App({ deck }: { deck: Deck }) {
   const setInput = useCallback(
     (value: string) => {
       if (busyRef.current) return;
-      setDraft(value);
-      if (input.current) input.current.value = value;
-      // Editing has its own input; keep the new-statement draft in autosave and backups.
-      if (!editingId.current) update({ ...latest.current, draft: value });
+      // Keep the text belonging to each queued Enter while the first dirty acknowledgement is pending.
+      inputIntent.current = value;
+      protect(() => {
+        if (busyRef.current) return;
+        setDraft(value);
+        if (input.current) input.current.value = value;
+        // Editing has its own input; keep the new-statement draft in autosave and backups.
+        if (!editingId.current) update({ ...latest.current, draft: value });
+      });
     },
-    [update],
+    [update, protect],
   );
   useEffect(() => {
     let active = true;
     setFailedLoad(false);
-    Promise.allSettled([loadMeeting(deck), loadLibrary(deck)])
-      .then(([meetingResult, libraryResult]) => {
+    Promise.allSettled([loadMeeting(deck), loadLibrary(deck), session.ready])
+      .then(([meetingResult, libraryResult, protectionResult]) => {
         if (!active) return;
-        if (meetingResult.status !== "fulfilled" || libraryResult.status !== "fulfilled") {
+        if (
+          meetingResult.status !== "fulfilled" ||
+          libraryResult.status !== "fulfilled" ||
+          protectionResult.status !== "fulfilled"
+        ) {
           setCanRecoverMeeting(meetingResult.status === "fulfilled");
           setFailedLoad(true);
           return;
@@ -468,179 +574,181 @@ export function App({ deck }: { deck: Deck }) {
     return () => {
       active = false;
     };
-  }, [deck, loadAttempt]);
+  }, [deck, loadAttempt, session]);
   useEffect(() => {
     if (ready) queueMicrotask(() => (running ? input.current : attendeeInput.current)?.focus());
   }, [ready, running]);
   useEffect(() => {
     const flush = () => {
-      if (!busyRef.current && revision.current > 0) void write(latest.current).catch(() => undefined);
+      if (!busyRef.current && revision.current > 0) void session.save();
     };
     const off = deck.on("module.visibility", ({ visible }) => {
       if (!visible) flush();
     });
-    window.addEventListener("pagehide", flush);
     return () => {
       off();
-      window.removeEventListener("pagehide", flush);
-      flush();
+      session.dispose();
     };
-  }, [deck, write]);
+  }, [deck, session]);
   useEffect(() => {
     if (!ready || busy || revision.current === 0) return;
-    const current = revision.current;
     const timer = setTimeout(() => {
       if (busyRef.current) return;
-      void write(latest.current)
-        .then(() => {
-          if (current === revision.current) {
-            saveFailed.current = false;
-            setStatus("저장했어요.");
-          }
-        })
-        .catch(() => {
-          saveFailed.current = true;
-          setStatus("자동 저장하지 못했어요. 내보내기에서 .json 백업을 저장하고 다시 시도해 주세요.");
-        });
+      void session.save();
     }, 350);
     return () => clearTimeout(timer);
-  }, [meeting, ready, busy, write]);
+  }, [meeting, ready, busy, session]);
   useEffect(() => {
     if (log.current && scrollToNewEntry.current) log.current.scrollTop = log.current.scrollHeight;
     scrollToNewEntry.current = false;
   }, [meeting.entries]);
   const cancelEdit = useCallback(() => {
-    if (busyRef.current) return;
-    editingId.current = null;
-    setEditing(null);
-    setKind(previousComposer.current.kind);
-    kindChosen.current = previousComposer.current.kindChosen;
-    privateChosen.current = previousComposer.current.privateChosen;
-    setPrivateNote(previousComposer.current.privateNote);
-    setInput(previousDraft.current);
-    focusInput();
-  }, [setInput]);
-  const commit = useCallback(() => {
-    if (!ready || busyRef.current) return;
-    const raw = input.current?.value ?? latest.current.draft;
-    const id = editingId.current;
-    const original = id ? latest.current.entries.find((entry) => entry.id === id) : undefined;
-    const entry = original
-      ? raw.trim()
-        ? { ...original, text: raw.trimEnd(), raw, owner: editedOwner, due: editedDue }
-        : null
-      : parseEntry(
-          raw,
-          latest.current.speakers,
-          latest.current.selected,
-          id ?? crypto.randomUUID(),
-          latest.current.speakerIds,
-          latest.current.selectedId,
-        );
-    if (!entry) {
-      if (id) cancelEdit();
-      return;
-    }
-    if (kindChosen.current || (entry.kind === "발언" && kind !== "발언")) entry.kind = kind;
-    if (entry.kind === "안건") {
-      entry.speaker = "";
-      entry.speakerId = "";
-    }
-    if (privateChosen.current) entry.private = privateNote;
-    else entry.private ||= privateNote;
-    if (entry.private && entry.kind === "안건") entry.kind = "발언";
-    if (entry.kind !== "조치") {
-      entry.owner = "";
-      entry.due = "";
-    }
-    if (original) entry.edited = true;
-    entry.timestamp = original?.timestamp ?? new Date().toISOString();
-    snapshot();
-    editingId.current = null;
-    setEditing(null);
-    setKind(id ? previousComposer.current.kind : "발언");
-    kindChosen.current = id ? previousComposer.current.kindChosen : false;
-    privateChosen.current = id ? previousComposer.current.privateChosen : false;
-    setPrivateNote(id ? previousComposer.current.privateNote : false);
-    const restoredDraft = id ? previousDraft.current : "";
-    if (input.current) input.current.value = restoredDraft;
-    setDraft(restoredDraft);
-    scrollToNewEntry.current = !id;
-    update({
-      ...latest.current,
-      draft: restoredDraft,
-      entries: id
-        ? latest.current.entries.map((item) => (item.id === id ? entry : item))
-        : [...latest.current.entries, entry],
+    protect(() => {
+      if (busyRef.current) return;
+      editingId.current = null;
+      setEditing(null);
+      setKind(previousComposer.current.kind);
+      kindChosen.current = previousComposer.current.kindChosen;
+      privateChosen.current = previousComposer.current.privateChosen;
+      setPrivateNote(previousComposer.current.privateNote);
+      setInput(previousDraft.current);
+      focusInput();
     });
-    focusInput();
-  }, [ready, kind, privateNote, editedOwner, editedDue, snapshot, update, cancelEdit]);
+  }, [setInput, protect]);
+  const commit = useCallback(() => {
+    const raw = inputIntent.current;
+    protect(() => {
+      if (!ready || busyRef.current) return;
+      const id = editingId.current;
+      const original = id ? latest.current.entries.find((entry) => entry.id === id) : undefined;
+      const entry = original
+        ? raw.trim()
+          ? { ...original, text: raw.trimEnd(), raw, owner: editFields.current.owner, due: editFields.current.due }
+          : null
+        : parseEntry(
+            raw,
+            latest.current.speakers,
+            latest.current.selected,
+            id ?? crypto.randomUUID(),
+            latest.current.speakerIds,
+            latest.current.selectedId,
+          );
+      if (!entry) {
+        if (id) cancelEdit();
+        return;
+      }
+      if (kindChosen.current || (entry.kind === "발언" && form.current.kind !== "발언")) entry.kind = form.current.kind;
+      if (entry.kind === "안건") {
+        entry.speaker = "";
+        entry.speakerId = "";
+      }
+      if (privateChosen.current) entry.private = form.current.privateNote;
+      else entry.private ||= form.current.privateNote;
+      if (entry.private && entry.kind === "안건") entry.kind = "발언";
+      if (entry.kind !== "조치") {
+        entry.owner = "";
+        entry.due = "";
+      }
+      if (original) entry.edited = true;
+      entry.timestamp = original?.timestamp ?? new Date().toISOString();
+      snapshot();
+      editingId.current = null;
+      setEditing(null);
+      setKind(id ? previousComposer.current.kind : "발언");
+      kindChosen.current = id ? previousComposer.current.kindChosen : false;
+      privateChosen.current = id ? previousComposer.current.privateChosen : false;
+      setPrivateNote(id ? previousComposer.current.privateNote : false);
+      const restoredDraft = id ? previousDraft.current : "";
+      if (input.current) input.current.value = restoredDraft;
+      setDraft(restoredDraft);
+      scrollToNewEntry.current = !id;
+      update({
+        ...latest.current,
+        draft: restoredDraft,
+        entries: id
+          ? latest.current.entries.map((item) => (item.id === id ? entry : item))
+          : [...latest.current.entries, entry],
+      });
+      focusInput();
+    });
+  }, [ready, kind, privateNote, editedOwner, editedDue, snapshot, update, cancelEdit, protect]);
   const selectSpeaker = useCallback(
     (selected: string, retag = false, selectedId = "") => {
-      if (busyRef.current) return;
-      const id = editingId.current;
-      if (id || retag) {
-        const target = id ?? latest.current.entries.at(-1)?.id;
-        if (target) {
-          snapshot();
-          update({
-            ...latest.current,
-            selected: id ? latest.current.selected : selected,
-            selectedId: id ? (latest.current.selectedId ?? "") : selectedId,
-            entries: latest.current.entries.map((entry) =>
-              entry.id === target ? { ...entry, speaker: selected, speakerId: selectedId, edited: true } : entry,
-            ),
-          });
-        }
-      } else update({ ...latest.current, selected, selectedId });
-      focusInput();
+      protect(() => {
+        if (busyRef.current) return;
+        const id = editingId.current;
+        if (id || retag) {
+          const target = id ?? latest.current.entries.at(-1)?.id;
+          if (target) {
+            snapshot();
+            update({
+              ...latest.current,
+              selected: id ? latest.current.selected : selected,
+              selectedId: id ? (latest.current.selectedId ?? "") : selectedId,
+              entries: latest.current.entries.map((entry) =>
+                entry.id === target ? { ...entry, speaker: selected, speakerId: selectedId, edited: true } : entry,
+              ),
+            });
+          }
+        } else update({ ...latest.current, selected, selectedId });
+        focusInput();
+      });
     },
-    [snapshot, update],
+    [snapshot, update, protect],
   );
   const applyNames = useCallback(() => {
-    if (busyRef.current) return false;
-    const speakers = lines(names);
-    if (!speakers.length || speakers.length > 12) {
-      setStatus("참석자를 한 명 이상, 최대 12명까지 입력해 주세요.");
-      return false;
-    }
-    let next: Meeting;
-    try {
-      next = applyRoster(latest.current, speakers);
-    } catch {
-      setStatus("기록이 있는 화자를 보존하면 24명을 넘어요. 명단을 정리한 뒤 다시 저장해 주세요.");
-      return false;
-    }
-    snapshot();
-    update({ ...next, absentees: lines(absent), startedAt: latest.current.startedAt || new Date().toISOString() });
-    setNames(speakers.join("\n"));
-    setRunning(true);
-    setDialog("");
-    focusInput();
-    return true;
-  }, [names, absent, update, snapshot]);
+    protect(() => {
+      if (busyRef.current) return false;
+      const speakers = lines(form.current.names);
+      if (!speakers.length || speakers.length > 12) {
+        setStatus("참석자를 한 명 이상, 최대 12명까지 입력해 주세요.");
+        return false;
+      }
+      let next: Meeting;
+      try {
+        next = applyRoster(latest.current, speakers);
+      } catch {
+        setStatus("기록이 있는 화자를 보존하면 24명을 넘어요. 명단을 정리한 뒤 다시 저장해 주세요.");
+        return false;
+      }
+      snapshot();
+      update({
+        ...next,
+        absentees: lines(form.current.absent),
+        startedAt: latest.current.startedAt || new Date().toISOString(),
+      });
+      setNames(speakers.join("\n"));
+      setAbsent(lines(form.current.absent).join("\n"));
+      setRunning(true);
+      setDialog("");
+      focusInput();
+      return true;
+    });
+  }, [names, absent, update, snapshot, protect]);
   const restoreUndo = useCallback(
     (forward = false) => {
-      if (busyRef.current) return;
-      const source = forward ? redo.current : undo.current;
-      const target = forward ? undo.current : redo.current;
-      const next = source.pop();
-      if (next) {
-        target.push(latest.current);
-        const retainedDraft = latest.current.draft;
-        update({ ...next, draft: retainedDraft });
-        setDraft(retainedDraft);
-        if (input.current) input.current.value = retainedDraft;
-        editingId.current = null;
-        setEditing(null);
-        setKind("발언");
-        kindChosen.current = false;
-        privateChosen.current = false;
-        setPrivateNote(false);
-      }
-      focusInput();
+      protect(() => {
+        if (busyRef.current) return;
+        const source = forward ? redo.current : undo.current;
+        const target = forward ? undo.current : redo.current;
+        const next = source.pop();
+        if (next) {
+          target.push(latest.current);
+          const retainedDraft = latest.current.draft;
+          update({ ...next, draft: retainedDraft });
+          setDraft(retainedDraft);
+          if (input.current) input.current.value = retainedDraft;
+          editingId.current = null;
+          setEditing(null);
+          setKind("발언");
+          kindChosen.current = false;
+          privateChosen.current = false;
+          setPrivateNote(false);
+        }
+        focusInput();
+      });
     },
-    [update],
+    [update, protect],
   );
   useEffect(() => {
     const handle = (event: KeyboardEvent) => {
@@ -662,10 +770,6 @@ export function App({ deck }: { deck: Deck }) {
       if (dialog) return;
       if (["F4", "F8", "F9"].includes(event.code)) {
         event.preventDefault();
-        if (event.code === "F9") {
-          setNames(activeSpeakers(latest.current).join("\n"));
-          setAbsent(latest.current.absentees?.join("\n") ?? "");
-        }
         setDialog(event.code === "F4" ? "help" : event.code === "F8" ? "export" : "people");
         return;
       }
@@ -716,34 +820,36 @@ export function App({ deck }: { deck: Deck }) {
   }, [ready, busy, running, dialog, applyNames, selectSpeaker, restoreUndo, cancelEdit]);
   const edit = useCallback(
     (entry: Entry) => {
-      if (busyRef.current) return;
-      if (!editingId.current) {
-        previousDraft.current = latest.current.draft;
-        previousComposer.current = {
-          kind,
-          kindChosen: kindChosen.current,
-          privateNote,
-          privateChosen: privateChosen.current,
-        };
-      }
-      editingId.current = entry.id;
-      setEditing(entry.id);
-      setEditedOwner(entry.owner);
-      setEditedDue(entry.due);
-      setKind(entry.kind);
-      kindChosen.current = false;
-      privateChosen.current = false;
-      setPrivateNote(entry.private);
-      setInput(entry.text);
-      focusInput();
+      protect(() => {
+        if (busyRef.current) return;
+        if (!editingId.current) {
+          previousDraft.current = latest.current.draft;
+          previousComposer.current = {
+            kind: form.current.kind,
+            kindChosen: kindChosen.current,
+            privateNote: form.current.privateNote,
+            privateChosen: privateChosen.current,
+          };
+        }
+        editingId.current = entry.id;
+        setEditing(entry.id);
+        setEditedOwner(entry.owner);
+        setEditedDue(entry.due);
+        editFields.current = { owner: entry.owner, due: entry.due };
+        setKind(entry.kind);
+        kindChosen.current = false;
+        privateChosen.current = false;
+        setPrivateNote(entry.private);
+        setInput(entry.text);
+        focusInput();
+      });
     },
-    [setInput, kind, privateNote],
+    [setInput, kind, privateNote, protect],
   );
   const remove = useCallback((id: string) => {
     if (busyRef.current) return;
     setEntryToRemove(id);
     setDialog("delete-entry");
-    focusInput();
   }, []);
   const speakerChoices = useMemo(
     () =>
@@ -764,25 +870,31 @@ export function App({ deck }: { deck: Deck }) {
   }, [meeting.entries]);
   const retagEntry = useCallback(
     (id: string, speakerId: string) => {
-      if (busyRef.current) return;
-      snapshot();
-      const at = (latest.current.speakerIds ?? latest.current.speakers.map((_, i) => `legacy-${i}`)).indexOf(speakerId);
-      update({
-        ...latest.current,
-        entries: latest.current.entries.map((e) =>
-          e.id === id ? { ...e, speakerId, speaker: latest.current.speakers[at] ?? "", edited: true } : e,
-        ),
+      protect(() => {
+        if (busyRef.current) return;
+        snapshot();
+        const at = (latest.current.speakerIds ?? latest.current.speakers.map((_, i) => `legacy-${i}`)).indexOf(
+          speakerId,
+        );
+        update({
+          ...latest.current,
+          entries: latest.current.entries.map((e) =>
+            e.id === id ? { ...e, speakerId, speaker: latest.current.speakers[at] ?? "", edited: true } : e,
+          ),
+        });
       });
     },
-    [snapshot, update],
+    [snapshot, update, protect],
   );
   const task = async (action: () => Promise<void>) => {
     if (busyRef.current) return;
+    if (!(await session.change(() => undefined)) || busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
     setTaskError("");
     try {
       await action();
+      await session.settle();
     } catch (error) {
       setTaskError(
         error instanceof Error && error.message === "ARCHIVE_FULL"
@@ -792,6 +904,7 @@ export function App({ deck }: { deck: Deck }) {
     } finally {
       busyRef.current = false;
       setBusy(false);
+      void session.save();
     }
   };
   const switchTo = async (data: Meeting) => {
@@ -847,8 +960,8 @@ export function App({ deck }: { deck: Deck }) {
     });
   const saveRoster = () =>
     void task(async () => {
-      const people = lines(names);
-      const name = rosterName.trim();
+      const people = lines(form.current.names);
+      const name = form.current.rosterName.trim();
       if (!name || !people.length || people.length > 12) {
         setStatus("위원회 이름과 참석자 명단을 입력해 주세요.");
         return;
@@ -866,6 +979,7 @@ export function App({ deck }: { deck: Deck }) {
       };
       await deck.storage.set(LIBRARY_KEY, next);
       setLibrary(next);
+      rosterDraft.current = false;
       setStatus("위원회 명단을 저장했어요.");
     });
   const currentAgenda = useMemo(
@@ -890,12 +1004,10 @@ export function App({ deck }: { deck: Deck }) {
           backup ? "비공개 메모와 초안을 포함한 백업 파일을 저장했어요." : "비공개 메모를 뺀 회의록 파일을 저장했어요.",
         );
     });
-  const saveNow = () =>
-    void task(async () => {
-      await write(latest.current);
-      saveFailed.current = false;
-      setStatus("저장했어요.");
-    });
+  const saveNow = () => {
+    setStatus("저장하는 중이에요.");
+    void session.save();
+  };
   const peopleFields = (
     <div className={s.grid}>
       <TextBox
@@ -906,7 +1018,7 @@ export function App({ deck }: { deck: Deck }) {
         value={names}
         disabled={busy}
         onChange={(value) => {
-          if (!busyRef.current) setNames(value);
+          if (!busyRef.current) protect(() => setNames(value));
         }}
         description="한 줄에 한 명, 최대 12명. 순서대로 Alt+1~9, 0, -, =를 써요."
       />
@@ -917,7 +1029,7 @@ export function App({ deck }: { deck: Deck }) {
         value={absent}
         disabled={busy}
         onChange={(value) => {
-          if (!busyRef.current) setAbsent(value);
+          if (!busyRef.current) protect(() => setAbsent(value));
         }}
       />
     </div>
@@ -987,7 +1099,11 @@ export function App({ deck }: { deck: Deck }) {
           value={rosterName}
           disabled={busy}
           onChange={(value) => {
-            if (!busyRef.current) setRosterName(value);
+            if (!busyRef.current)
+              protect(() => {
+                setRosterName(value);
+                rosterDraft.current = !!value.trim();
+              });
           }}
         />
         <Button onClick={saveRoster} disabled={busy}>
@@ -1039,14 +1155,16 @@ export function App({ deck }: { deck: Deck }) {
             { value: "", label: "위원회 명단 불러오기" },
             ...library.rosters.map((r) => ({ value: r.name, label: r.name })),
           ]}
-          onChange={(name) => {
-            if (busyRef.current) return;
-            const roster = library.rosters.find((r) => r.name === name);
-            if (roster) {
-              setNames(roster.people.join("\n"));
-              if (!running) update({ ...latest.current, title: roster.title, place: roster.place });
-            }
-          }}
+          onChange={(name) =>
+            protect(() => {
+              if (busyRef.current) return;
+              const roster = library.rosters.find((r) => r.name === name);
+              if (roster) {
+                setNames(roster.people.join("\n"));
+                if (!running) update({ ...latest.current, title: roster.title, place: roster.place });
+              }
+            })
+          }
         />
       )}
     </SettingsExpander>
@@ -1108,13 +1226,13 @@ export function App({ deck }: { deck: Deck }) {
               disabled={busy}
               header="회의 제목"
               value={meeting.title}
-              onChange={(title) => update({ ...latest.current, title })}
+              onChange={(title) => protect(() => update({ ...latest.current, title }))}
             />
             <TextBox
               disabled={busy}
               header="장소 (선택)"
               value={meeting.place ?? ""}
-              onChange={(place) => update({ ...latest.current, place })}
+              onChange={(place) => protect(() => update({ ...latest.current, place }))}
             />
           </div>
           {peopleFields}
@@ -1133,11 +1251,14 @@ export function App({ deck }: { deck: Deck }) {
                 <Button
                   key={roster.name}
                   disabled={busy}
-                  onClick={() => {
-                    setNames(roster.people.join("\n"));
-                    setRosterName(roster.name);
-                    update({ ...latest.current, title: roster.title, place: roster.place });
-                  }}
+                  onClick={() =>
+                    protect(() => {
+                      setNames(roster.people.join("\n"));
+                      setRosterName(roster.name);
+                      rosterDraft.current = false;
+                      update({ ...latest.current, title: roster.title, place: roster.place });
+                    })
+                  }
                 >
                   {roster.name} 불러오기
                 </Button>
@@ -1165,8 +1286,6 @@ export function App({ deck }: { deck: Deck }) {
             <Button
               size="small"
               onClick={() => {
-                setNames(activeSpeakers(latest.current).join("\n"));
-                setAbsent(latest.current.absentees?.join("\n") ?? "");
                 setDialog("people");
               }}
             >
@@ -1225,9 +1344,11 @@ export function App({ deck }: { deck: Deck }) {
                           key={item}
                           checked={kind === item}
                           onClick={() => {
-                            kindChosen.current = true;
-                            setKind(item);
-                            if (dialog !== "kinds") focusInput();
+                            protect(() => {
+                              kindChosen.current = true;
+                              setKind(item);
+                              if (dialog !== "kinds") focusInput();
+                            });
                           }}
                         >
                           {item}
@@ -1238,9 +1359,11 @@ export function App({ deck }: { deck: Deck }) {
                         content="비공개 메모"
                         checked={privateNote}
                         onChange={(checked) => {
-                          if (busyRef.current) return;
-                          privateChosen.current = true;
-                          setPrivateNote(checked);
+                          protect(() => {
+                            if (busyRef.current) return;
+                            privateChosen.current = true;
+                            setPrivateNote(checked);
+                          });
                         }}
                       />
                     </div>
@@ -1253,8 +1376,28 @@ export function App({ deck }: { deck: Deck }) {
                 </div>
                 {editing && kind === "조치" && (
                   <div className={s.row}>
-                    <TextBox disabled={busy} header="조치 담당자" value={editedOwner} onChange={setEditedOwner} />
-                    <TextBox disabled={busy} header="조치 기한" value={editedDue} onChange={setEditedDue} />
+                    <TextBox
+                      disabled={busy}
+                      header="조치 담당자"
+                      value={editedOwner}
+                      onChange={(value) =>
+                        protect(() => {
+                          editFields.current.owner = value;
+                          setEditedOwner(value);
+                        })
+                      }
+                    />
+                    <TextBox
+                      disabled={busy}
+                      header="조치 기한"
+                      value={editedDue}
+                      onChange={(value) =>
+                        protect(() => {
+                          editFields.current.due = value;
+                          setEditedDue(value);
+                        })
+                      }
+                    />
                   </div>
                 )}
                 <TextBox
@@ -1398,9 +1541,11 @@ export function App({ deck }: { deck: Deck }) {
               key={item}
               checked={kind === item}
               onClick={() => {
-                kindChosen.current = true;
-                setKind(item);
-                if (dialog !== "kinds") focusInput();
+                protect(() => {
+                  kindChosen.current = true;
+                  setKind(item);
+                  if (dialog !== "kinds") focusInput();
+                });
               }}
             >
               {item}
@@ -1411,9 +1556,11 @@ export function App({ deck }: { deck: Deck }) {
             content="비공개 메모"
             checked={privateNote}
             onChange={(checked) => {
-              if (busyRef.current) return;
-              privateChosen.current = true;
-              setPrivateNote(checked);
+              protect(() => {
+                if (busyRef.current) return;
+                privateChosen.current = true;
+                setPrivateNote(checked);
+              });
             }}
           />
         </div>
@@ -1426,11 +1573,12 @@ export function App({ deck }: { deck: Deck }) {
         defaultButton="close"
         onClose={(result) => {
           if (busyRef.current) return;
-          if (result === "primary") {
-            snapshot();
-            update({ ...latest.current, entries: latest.current.entries.filter((e) => e.id !== entryToRemove) });
-            if (editingId.current === entryToRemove) cancelEdit();
-          }
+          if (result === "primary")
+            protect(() => {
+              snapshot();
+              update({ ...latest.current, entries: latest.current.entries.filter((e) => e.id !== entryToRemove) });
+              if (editingId.current === entryToRemove) cancelEdit();
+            });
           setDialog("");
           focusInput();
         }}
@@ -1470,8 +1618,12 @@ export function App({ deck }: { deck: Deck }) {
           if (busyRef.current) return;
           if (result === "primary") applyNames();
           else {
-            setDialog("");
-            focusInput();
+            protect(() => {
+              setNames(activeSpeakers(latest.current).join("\n"));
+              setAbsent(latest.current.absentees?.join("\n") ?? "");
+              setDialog("");
+              focusInput();
+            });
           }
         }}
       >

@@ -67,10 +67,10 @@ modules/<id>/
 3. **로드**: 셸이 모듈 origin의 iframe을 만든다([security.md](security.md), SEC-002).
 4. **핸드셰이크**: 모듈이 `hello`를 보내고 셸이 `init`으로 응답한다([bridge-protocol.md](bridge-protocol.md), BRG-003).
 5. **활성**: 모듈이 `req`로 캡을 호출한다. 호스트는 매 호출마다 권한을 검사한다(CAP-008).
-6. **숨김**: 다른 화면으로 전환하면, `ui.keepAlive: true`인 모듈은 iframe을 숨긴 채 유지하고 `module.visibility` 이벤트를 보낸다. 동시에 유지되는 keepAlive 모듈은 최대 3개(LRU)다. 그 외 모듈은 언로드한다.
+6. **숨김**: 다른 화면으로 전환하면, `ui.keepAlive: true`인 모듈은 iframe을 숨긴 채 유지하고 `module.visibility` 이벤트를 보낸다. 동시에 유지되는 keepAlive 모듈은 활성 도구를 포함해 최대 3개다. 숨긴 도구 중 dirty 또는 saving 문서를 먼저 유지하고, 같은 보호 상태에서는 LRU 순서를 따른다. 그 외 모듈은 언로드한다.
 7. **언로드**: iframe을 제거한다. 호스트는 모듈이 바꾼 창 상태(항상 위, 전체화면)를 되돌린다([capabilities.md](capabilities.md)).
 
-window 1.2에 문서를 등록한 도구는 이탈·LRU 언로드·앱 종료 전에 [미저장 문서 보호](document-lifecycle.md)를 적용한다. 저장 실패·취소·만료 때 iframe을 유지하며 버리기 선택은 해당 iframe을 제거한다. keepAlive 한도는 유지한다.
+window 1.2에 문서를 등록한 도구는 실제 언로드·앱 종료 전에 [미저장 문서 보호](document-lifecycle.md)를 적용한다. iframe을 유지한 채 숨기는 이동은 확인 없이 작업을 계속한다. 저장 실패·취소·만료 때 iframe을 유지하며 버리기 선택은 해당 iframe을 제거한다. keepAlive 한도는 유지한다.
 
 ### 파일 입력과 결과 저장
 

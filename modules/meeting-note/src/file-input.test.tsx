@@ -38,6 +38,9 @@ async function setup() {
     module: { id: "meeting-note", version: "0.2.0" },
     granted: ["fs", "storage", "window", "messaging"],
     handlers: {
+      "window.registerDocument": () => ({ documentHandle: "meeting-document" }),
+      "window.setDocumentState": () => null,
+      "window.completeDocumentSave": () => null,
       "storage.get": (args) => values.get((args as { key: string }).key) ?? null,
       "storage.set": (args) => {
         const a = args as { key: string; value: unknown };
@@ -123,13 +126,25 @@ describe("native file input and direct output", () => {
     const { host, deck, file } = await open();
     await act(async () => host.emit("fs.dropped", { files: [file] }));
     await screen.findByText(/합성백업.json에서 회의록을 불러왔어요/);
-    fireEvent.click(screen.getByRole("button", { name: "새 회의" }));
-    fireEvent.click(await screen.findByRole("button", { name: "새 회의 시작" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "새 회의" }));
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "새 회의 시작" }));
+    });
     await screen.findByRole("button", { name: "회의 시작 (Ctrl+Enter)" });
-    fireEvent.change(screen.getByRole("textbox", { name: "참석자" }), { target: { value: "합성교사나" } });
-    fireEvent.click(screen.getByRole("button", { name: "회의 시작 (Ctrl+Enter)" }));
-    fireEvent.click(await screen.findByRole("button", { name: "내보내기 (F8)" }));
-    fireEvent.click(await screen.findByRole("button", { name: ".json 백업 저장" }));
+    await act(async () => {
+      fireEvent.change(screen.getByRole("textbox", { name: "참석자" }), { target: { value: "합성교사나" } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "회의 시작 (Ctrl+Enter)" }));
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "내보내기 (F8)" }));
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: ".json 백업 저장" }));
+    });
     await waitFor(() => expect(host.requests.some((r) => r.method === "openOutputFolder")).toBe(true));
     expect(host.requests.find((r) => r.method === "openOutputFolder")?.args).toEqual({ parentHandle: "chosen" });
     expect(host.requests.some((r) => r.method === "pickFolder")).toBe(true);
@@ -139,16 +154,31 @@ describe("native file input and direct output", () => {
     const { host, deck, file } = await open();
     await act(async () => host.emit("fs.dropped", { files: [file] }));
     await screen.findByText(/합성백업.json에서 회의록을 불러왔어요/);
-    fireEvent.click(screen.getByRole("button", { name: "새 회의" }));
-    fireEvent.click(await screen.findByRole("button", { name: "새 회의 시작" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "새 회의" }));
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "새 회의 시작" }));
+    });
     await screen.findByRole("button", { name: "회의 시작 (Ctrl+Enter)" });
     await act(async () => host.emit("fs.dropped", { files: [{ ...file, handle: "second", name: "합성두번째.json" }] }));
     await screen.findByText(/합성두번째.json에서 회의록을 불러왔어요/);
-    fireEvent.click(screen.getByRole("button", { name: "지난 회의" }));
-    fireEvent.click(await screen.findByRole("button", { name: "회의 열기" }));
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "지난 회의" }) as HTMLButtonElement).disabled).toBe(false),
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "지난 회의" }));
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "회의 열기" }));
+    });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    fireEvent.click(screen.getByRole("button", { name: "내보내기 (F8)" }));
-    fireEvent.click(await screen.findByRole("button", { name: ".json 백업 저장" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "내보내기 (F8)" }));
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: ".json 백업 저장" }));
+    });
     await waitFor(() => expect(host.requests.some((r) => r.method === "openOutputFolder")).toBe(true));
     expect(host.requests.find((r) => r.method === "openOutputFolder")?.args).toEqual({ parentHandle: "chosen" });
     expect(host.requests.some((r) => r.method === "pickFolder")).toBe(true);

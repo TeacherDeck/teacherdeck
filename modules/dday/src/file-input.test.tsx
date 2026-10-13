@@ -32,6 +32,9 @@ async function setup() {
     module: { id: "dday", version: "0.2.0" },
     granted: ["fs", "storage", "window", "messaging"],
     handlers: {
+      "window.registerDocument": () => ({ documentHandle: "document" }),
+      "window.setDocumentState": () => null,
+      "window.completeDocumentSave": () => null,
       "storage.get": (args) => values.get((args as { key: string }).key) ?? null,
       "storage.set": (args) => {
         const a = args as { key: string; value: unknown };

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-import type { Deck, FileHandleInfo } from "@deck/sdk";
+import { createDocumentSession, type Deck, type FileHandleInfo } from "@deck/sdk";
 import {
   Body,
   BodyStrong,
@@ -18,7 +18,7 @@ import {
   makeStyles,
   tokens,
 } from "@deck/ui";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import {
   STATE_KEY,
   emptyDocument,
@@ -29,6 +29,7 @@ import {
   type Item,
 } from "./logic.ts";
 import { exportBackup, pickBackup, replaceDocument } from "./files.ts";
+import { readDraft } from "./draft.ts";
 const useStyles = makeStyles({
   page: {
     padding: deckTokens.pagePadding,
@@ -96,7 +97,7 @@ function blankItem(): Item {
 export function App({ deck }: { deck: Deck }) {
   const s = useStyles(),
     [document, setDocument] = useState<Document>(emptyDocument),
-    [draft, setDraft] = useState<Item>(blankItem);
+    [draft, applyDraft] = useState<Item>(blankItem);
   const [ready, setReady] = useState(false),
     [blocked, setBlocked] = useState(false),
     [busy, setBusy] = useState(false),
@@ -108,6 +109,37 @@ export function App({ deck }: { deck: Deck }) {
   const [preview, setPreview] = useState<Document | null>(null),
     [previewOpen, setPreviewOpen] = useState(false),
     [addToList, setAddToList] = useState(true);
+  const draftRef = useRef(draft);
+  const draftChanged = useRef(false);
+  const session = useMemo(
+    () =>
+      createDocumentSession(deck, {
+        save: async () => {
+          await deck.storage.set("draft.v1", draftRef.current);
+        },
+        onError: () => setMessage("초안을 저장하지 못했어요. 입력을 유지했으니 다시 저장해 주세요."),
+      }),
+    [deck],
+  );
+  function setDraft(value: SetStateAction<Item>) {
+    void session.change(() => {
+      const next = typeof value === "function" ? value(draftRef.current) : value;
+      draftRef.current = next;
+      draftChanged.current = true;
+      applyDraft(next);
+    });
+  }
+  useEffect(() => {
+    void session.ready.catch(() => undefined);
+    return () => session.dispose();
+  }, [session]);
+  useEffect(() => {
+    if (!ready || !draftChanged.current) return;
+    const timer = setTimeout(() => {
+      void session.save();
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [draft, ready, session]);
   const sourceFile = useRef<FileHandleInfo | undefined>(undefined);
   const pendingSource = useRef<FileHandleInfo | undefined>(undefined);
   const raw = useRef<unknown>(null),
@@ -147,11 +179,20 @@ export function App({ deck }: { deck: Deck }) {
     setBusy(true);
     setReady(false);
     try {
-      const value = await deck.storage.get(STATE_KEY);
+      const [value, savedDraft] = await Promise.all([
+        deck.storage.get(STATE_KEY),
+        deck.storage.get("draft.v1"),
+        session.ready,
+      ]);
       raw.current = value;
       const next = value === null ? emptyDocument() : readDocument(value);
       if (active.current) {
         setDocument(next);
+        if (savedDraft !== null) {
+          const restored = readDraft(savedDraft);
+          draftRef.current = restored;
+          applyDraft(restored);
+        }
         setBlocked(false);
         setReady(true);
         setMessage("");
@@ -172,6 +213,7 @@ export function App({ deck }: { deck: Deck }) {
     lock.current = true;
     setBusy(true);
     try {
+      await session.settle();
       await action();
     } catch {
       if (active.current)
@@ -193,6 +235,7 @@ export function App({ deck }: { deck: Deck }) {
     }
   }
   async function saveDraft() {
+    const draft = draftRef.current;
     if (!draft.title.trim() && !draft.body.trim()) {
       setMessage("제목이나 메모 내용을 적어 주세요.");
       return;
@@ -206,7 +249,7 @@ export function App({ deck }: { deck: Deck }) {
     };
     await commit(next);
     if (active.current) {
-      if (editing) revealItem(next, draft.id);
+      if (document.items.some((item) => item.id === draft.id)) revealItem(next, draft.id);
       else pendingFocus.current = "input";
       setDraft(blankItem());
     }
@@ -235,7 +278,9 @@ export function App({ deck }: { deck: Deck }) {
       revealItem(next, nextId);
     });
   }
-  function editItem(item: Item) {
+  async function editItem(item: Item) {
+    await session.settle();
+    const draft = draftRef.current;
     const original = document.items.find((entry) => entry.id === draft.id);
     const changed = original ? JSON.stringify(original) !== JSON.stringify(draft) : !!(draft.title || draft.body);
     if (changed) {
@@ -314,7 +359,7 @@ export function App({ deck }: { deck: Deck }) {
             value={draft.title}
             disabled={disabled}
             onChange={(title) => {
-              if (title.length <= 120) setDraft({ ...draft, title });
+              if (title.length <= 120) setDraft((previous) => ({ ...previous, title }));
             }}
           />
           <TextBox
@@ -325,7 +370,7 @@ export function App({ deck }: { deck: Deck }) {
             value={draft.body}
             disabled={disabled}
             onChange={(body) => {
-              if (body.length <= 4000) setDraft({ ...draft, body });
+              if (body.length <= 4000) setDraft((previous) => ({ ...previous, body }));
             }}
             onKeyDown={(event) => {
               if (event.ctrlKey && event.key === "Enter" && !event.nativeEvent.isComposing) {
@@ -355,7 +400,7 @@ export function App({ deck }: { deck: Deck }) {
                   content="상단 고정"
                   checked={draft.pinned}
                   disabled={disabled}
-                  onChange={(pinned) => setDraft({ ...draft, pinned })}
+                  onChange={(pinned) => setDraft((previous) => ({ ...previous, pinned }))}
                 />
                 <ComboBox
                   header="메모 색"
@@ -367,14 +412,14 @@ export function App({ deck }: { deck: Deck }) {
                     { value: "blue", label: "파랑" },
                     { value: "green", label: "초록" },
                   ]}
-                  onChange={(tone) => setDraft({ ...draft, tone })}
+                  onChange={(tone) => setDraft((previous) => ({ ...previous, tone }))}
                 />
               </div>
             </SettingsExpander>
           </div>
         </div>
         <Caption secondary>
-          입력 중인 내용은 저장을 누르기 전까지 초안이에요. Ctrl+Enter로도 저장해요. 메모는 보관해도 사라지지 않아요.
+          입력 중인 초안은 이 PC에 자동으로 보관해요. Ctrl+Enter로도 저장해요. 메모는 보관해도 사라지지 않아요.
         </Caption>
       </section>
       <div className={s.row}>
@@ -441,7 +486,7 @@ export function App({ deck }: { deck: Deck }) {
               onChange={() => undefined}
             />
             <div className={s.row}>
-              <Button disabled={disabled} onClick={() => editItem(selected)}>
+              <Button disabled={disabled} onClick={() => void editItem(selected)}>
                 수정
               </Button>
               <Button
