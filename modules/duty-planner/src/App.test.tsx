@@ -217,22 +217,27 @@ async function open(saved: unknown = null, expandRoster = true, stored?: Map<str
     },
   };
 }
+async function readyDialog(name: string) {
+  // jsdom does not focus pointer targets. Wait for Tabster's DOM registration,
+  // then focus a real action before checking the modal's accessible controls.
+  // A protected date change may still be awaiting its first dirty acknowledgement.
+  const dialog = await waitFor(() => {
+    const element = document.querySelector<HTMLElement>('[role="dialog"]');
+    expect(element).toBeTruthy();
+    expect(document.getElementById(element?.getAttribute("aria-labelledby") ?? "")?.textContent).toBe(name);
+    return required(element);
+  });
+  await waitFor(() => expect(dialog.querySelector("[data-tabster-dummy]")).toBeTruthy());
+  (dialog.querySelector("button") as HTMLButtonElement).focus();
+  return screen.findByRole("dialog", { name });
+}
 async function openRestoreConfirmation() {
   const trigger = screen.getByRole("button", { name: "복원 적용" });
   trigger.focus();
   await act(async () => {
     fireEvent.click(trigger);
   });
-  // jsdom does not focus pointer targets. Wait for Tabster's DOM registration,
-  // then focus a real action before checking the modal's accessible controls.
-  const dialog = await waitFor(() => {
-    const element = document.querySelector<HTMLElement>('[role="dialog"]');
-    expect(element).toBeTruthy();
-    return required(element);
-  });
-  await waitFor(() => expect(dialog.querySelector("[data-tabster-dummy]")).toBeTruthy());
-  (dialog.querySelector("button") as HTMLButtonElement).focus();
-  await screen.findByRole("dialog", { name: "백업 복원 확인" });
+  const dialog = await readyDialog("백업 복원 확인");
   await within(dialog).findByRole("button", { name: "확인하고 복원" });
   return dialog;
 }
@@ -610,11 +615,7 @@ it("opens narrow-window date editing in a dialog at the selected calendar date a
   await act(async () => {
     fireEvent.click(date);
   });
-  const dialog = await screen.findByRole("dialog", { name: "10월 6일 배정 편집" });
-  // jsdom has no layout or pointer focus. Model a browser's focus only after
-  // Tabster has registered the surface, as in the shared ContentDialog tests.
-  await waitFor(() => expect(dialog.querySelector("[data-tabster-dummy]")).toBeTruthy());
-  required(dialog.querySelector<HTMLButtonElement>("button")).focus();
+  const dialog = await readyDialog("10월 6일 배정 편집");
   expect(within(dialog).getByRole("textbox", { name: "날짜 메모" })).toBeTruthy();
   await act(async () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "닫기" }));
@@ -658,18 +659,19 @@ it("closes date editing on a month transition and reopens at a valid month-end d
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "31일 배정 편집" }));
   });
-  expect(screen.getByRole("dialog", { name: "10월 31일 배정 편집" })).toBeTruthy();
+  expect(await readyDialog("10월 31일 배정 편집")).toBeTruthy();
   await act(async () => {
     fireEvent.change(month, { target: { value: "11" } });
   });
   await act(async () => {
     fireEvent.blur(month);
   });
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  const nextDate = await screen.findByRole("button", { name: "30일 배정 편집" });
   await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "30일 배정 편집" }));
+    fireEvent.click(nextDate);
   });
-  expect(screen.getByRole("dialog", { name: "11월 30일 배정 편집" })).toBeTruthy();
+  expect(await readyDialog("11월 30일 배정 편집")).toBeTruthy();
   expect(screen.getByRole("textbox", { name: "날짜 메모" })).toBeTruthy();
   deck.dispose();
 });
@@ -684,7 +686,7 @@ it("shows condition conflicts inside the narrow date dialog and removes invalid 
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "6일 배정 편집" }));
   });
-  const dialog = screen.getByRole("dialog", { name: "10월 6일 배정 편집" });
+  const dialog = await readyDialog("10월 6일 배정 편집");
   await act(async () => {
     const checkbox = within(dialog).getByRole("checkbox", { name: "이 날짜는 지도하지 않아요" });
     checkbox.focus();
@@ -694,7 +696,7 @@ it("shows condition conflicts inside the narrow date dialog and removes invalid 
   await act(async () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "닫기" }));
   });
-  const day = screen.getByRole("button", { name: "6일 배정 편집" });
+  const day = await screen.findByRole("button", { name: "6일 배정 편집" });
   expect(within(day).queryByText("교사A")).toBeNull();
   expect(within(day).getByText("직접 배정 조건 충돌")).toBeTruthy();
   expect(within(screen.getByRole("button", { name: "7일 배정 편집" })).getByText("교사A")).toBeTruthy();
