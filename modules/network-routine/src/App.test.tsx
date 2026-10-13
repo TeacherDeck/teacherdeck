@@ -4,12 +4,16 @@
 import { connect, DeckCallError, type RoutineStatus, type NetworkConfigureArgs } from "@deck/sdk";
 import { createMockHost } from "@deck/sdk/testing";
 import { DeckProvider } from "@deck/ui";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App.tsx";
 import { defaultSettings } from "./logic.ts";
 import { patchFor, rulesFor } from "./profile.ts";
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 function fixture(): RoutineStatus {
   const settings = defaultSettings();
   settings.decision_mode = "hybrid";
@@ -49,8 +53,19 @@ function fixture(): RoutineStatus {
     error: null,
   };
 }
-async function setup(options: { damaged?: boolean; cancelled?: boolean; stale?: boolean } = {}) {
+async function setup(
+  options: {
+    damaged?: boolean;
+    cancelled?: boolean;
+    stale?: boolean;
+    partial?: boolean;
+    failedReadback?: boolean;
+    schedule?: boolean;
+  } = {},
+) {
   let status = fixture();
+  let attempted = false;
+  if (options.schedule) status.rules.decisionMode = "schedule";
   if (options.stale) status = { ...status, enabled: false, error: "RECONFIGURE_REQUIRED" };
   const host = createMockHost({
     module: { id: "network-routine", version: "0.1.0" },
@@ -61,7 +76,10 @@ async function setup(options: { damaged?: boolean; cancelled?: boolean; stale?: 
         if (options.damaged) throw new DeckCallError("INTERNAL", "synthetic damaged state");
         return status;
       },
-      "network.inspect": () => status.snapshot,
+      "network.inspect": () => {
+        if (attempted && options.failedReadback) throw new DeckCallError("INTERNAL", "synthetic unavailable adapter");
+        return attempted && options.partial ? { ...status.snapshot, ips: ["192.0.2.99"] } : status.snapshot;
+      },
       "network.saveProfile": () => ({ profileHandle: "profile", revision: 5 }),
       "network.configureRoutine": (args) => {
         const a = args as NetworkConfigureArgs;
@@ -75,10 +93,16 @@ async function setup(options: { damaged?: boolean; cancelled?: boolean; stale?: 
         return { routineHandle: status.routineHandle, status };
       },
       "network.apply": () => {
+        attempted = true;
         if (options.cancelled) throw new DeckCallError("CANCELLED", "synthetic UAC cancellation");
+        if (options.partial) throw new DeckCallError("INTERNAL", "synthetic DNS failure");
         return { snapshot: status.snapshot, manualOverrideSegment: "segment" };
       },
-      "network.evaluate": () => status,
+      "network.evaluate": () => {
+        attempted = true;
+        if (options.partial) throw new DeckCallError("INTERNAL", "synthetic DNS failure");
+        return status;
+      },
       "network.stopRoutine": () => {
         status = { ...status, enabled: false };
         return { stopped: true };
@@ -142,18 +166,54 @@ describe("network routine native SDK workflow", () => {
   it("reports UAC cancellation without recording a successful manual switch", async () => {
     const { host, deck } = await setup({ cancelled: true });
     fireEvent.click(screen.getByRole("button", { name: "내부망으로 수동 전환" }));
-    await waitFor(() =>
-      expect(
-        screen.getByText("관리자 승인을 취소했어요. 저장 상태와 현재 네트워크를 다시 확인해 주세요."),
-      ).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByText(/관리자 승인을 취소했어요/)).toBeTruthy());
     expect(screen.queryByText(/수동 우선:/)).toBeNull();
     expect(host.requests.find((r) => r.method === "apply")?.args).toEqual({
       profileHandle: "profile",
       revision: 4,
       mode: "internal",
     });
-    expect(host.requests.filter((r) => r.method === "status")).toHaveLength(1);
+    expect(host.requests.filter((r) => r.method === "status")).toHaveLength(2);
+    expect(host.requests.filter((r) => r.method === "inspect")).toHaveLength(1);
+    deck.dispose();
+  });
+  it.each([
+    { failedReadback: false, evaluate: false },
+    { failedReadback: true, evaluate: false },
+    { failedReadback: false, evaluate: true },
+    { failedReadback: true, evaluate: true },
+  ])(
+    "reads actual state after partial failure (readback failure: $failedReadback; evaluate: $evaluate)",
+    async ({ failedReadback, evaluate }) => {
+      const { host, deck } = await setup({ partial: true, failedReadback });
+      expect(screen.getByText(/IP 192.0.2.10/)).toBeTruthy();
+      fireEvent.click(
+        screen.getByRole("button", { name: evaluate ? "저장한 조건으로 지금 검사" : "내부망으로 수동 전환" }),
+      );
+      await screen.findByText(/일부 설정이 바뀌었을 수 있어요/);
+      expect(screen.queryByText(/IP 192.0.2.10/)).toBeNull();
+      expect(screen.getByText(failedReadback ? /IP 없음/ : /IP 192.0.2.99/)).toBeTruthy();
+      expect(screen.queryByText(/내부망으로 전환했어요/)).toBeNull();
+      expect(host.requests.filter((r) => r.method === "apply" || r.method === "evaluate")).toHaveLength(1);
+      expect((screen.getByRole("button", { name: "내부망으로 수동 전환" }) as HTMLButtonElement).disabled).toBe(false);
+      deck.dispose();
+    },
+  );
+  it("updates the schedule preview across a time boundary without modifying the adapter", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 9, 12, 21, 59, 59));
+    let tick: (() => void) | undefined;
+    vi.spyOn(globalThis, "setInterval").mockImplementation((callback, delay) => {
+      if (delay === 1_000) tick = callback as () => void;
+      return 1 as unknown as ReturnType<typeof setInterval>;
+    });
+    vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined);
+    const { host, deck } = await setup({ schedule: true });
+    expect(screen.getByText(/외부망 DHCP ·/)).toBeTruthy();
+    vi.setSystemTime(new Date(2026, 9, 12, 22, 0, 0));
+    act(() => tick?.());
+    expect(screen.getByText(/내부망 ·/)).toBeTruthy();
+    expect(host.requests.some((r) => r.method === "apply" || r.method === "evaluate")).toBe(false);
     deck.dispose();
   });
 });

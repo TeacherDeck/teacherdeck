@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-import type { Deck } from "@deck/sdk";
+import { createDocumentSession, type Deck, type DocumentSession, type FileHandleInfo } from "@deck/sdk";
 import {
   Body,
   BodyStrong,
@@ -20,7 +20,7 @@ import {
   mergeClasses,
   tokens,
 } from "@deck/ui";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject, type SetStateAction } from "react";
 import {
   averagePast,
   calendar,
@@ -56,6 +56,8 @@ import { loadLedger, replaceLedger, saveLedgerMonths } from "./ledger.ts";
 import { decodeLegacy } from "./legacy.ts";
 import { DetailedEditor } from "./DetailedEditor.tsx";
 import { detailedCounts } from "./detailed.ts";
+import { loadWorkspace, saveWorkspace, type Workspace } from "./workspace.ts";
+import { emptyDetailedDraft } from "./detailed-draft.ts";
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: deckTokens.itemGap, padding: deckTokens.pagePadding },
@@ -109,35 +111,130 @@ const useStyles = makeStyles({
     overflowWrap: "anywhere",
   },
 });
+function useWorkspaceState<T>(initial: T | (() => T), session: DocumentSession, changed: RefObject<boolean>) {
+  const [value, apply] = useState(initial);
+  const current = useRef(value);
+  const restore = useCallback((next: T) => {
+    current.current = next;
+    apply(next);
+  }, []);
+  const set = useCallback(
+    (update: SetStateAction<T>) => {
+      void session.change(() => {
+        const next = typeof update === "function" ? (update as (previous: T) => T)(current.current) : update;
+        changed.current = true;
+        restore(next);
+      });
+    },
+    [session, changed, restore],
+  );
+  return [value, set, restore, current] as const;
+}
 export function App({ deck }: { deck: Deck }) {
   const s = useStyles();
-  const [state, setState] = useState<PlannerState>(initialState);
-  const [months, setMonths] = useState<Months>({});
-  const [backupText, setBackupText] = useState("");
-  const [legacyYear, setLegacyYear] = useState<number | null>(null);
+  const changed = useRef(false);
+  const workspaceValue = useRef<(() => Workspace) | null>(null);
+  const formalSave = useRef<(() => Promise<void>) | null>(null);
+  const session = useMemo(
+    () =>
+      createDocumentSession(deck, {
+        save: async () => {
+          if (!workspaceValue.current) throw new Error("WORKSPACE_NOT_READY");
+          if (formalSave.current) await formalSave.current();
+          await saveWorkspace(deck, workspaceValue.current());
+        },
+        onError: () => setMessage("작업 초안을 보관하지 못했어요. 화면의 입력을 유지했으니 다시 저장해 주세요."),
+      }),
+    [deck],
+  );
+  const [state, setState, restoreState, stateRef] = useWorkspaceState<PlannerState>(initialState, session, changed);
+  const [months, setMonths, restoreMonths, monthsRef] = useWorkspaceState<Months>({}, session, changed);
+  const [backupText, setBackupText, restoreBackupText, backupTextRef] = useWorkspaceState("", session, changed);
+  const sourceFile = useRef<FileHandleInfo | undefined>(undefined);
+  const pendingSource = useRef<FileHandleInfo | undefined>(undefined);
+  const readingFile = useRef(false);
+  const [chooseExportFolder, setChooseExportFolder] = useState(false);
+  const [legacyYear, setLegacyYear, restoreLegacyYear, legacyYearRef] = useWorkspaceState<number | null>(
+    null,
+    session,
+    changed,
+  );
   const [restoreOpen, setRestoreOpen] = useState(false);
   const [restorePreview, setRestorePreview] = useState<{ months: Months; legacy: boolean } | null>(null);
-  const [replacementPending, setReplacementPending] = useState(false);
-  const [timetableText, setTimetableText] = useState("");
-  const [roster, setRoster] = useState("");
+  const [replacementPending, setReplacementPending, restoreReplacementPending, replacementPendingRef] =
+    useWorkspaceState(false, session, changed);
+  const [timetableText, setTimetableText, restoreTimetableText, timetableTextRef] = useWorkspaceState(
+    "",
+    session,
+    changed,
+  );
+  const [roster, setRoster, restoreRoster, rosterRef] = useWorkspaceState("", session, changed);
   const [message, setMessage] = useState("");
   const [issues, setIssues] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [storageBlocked, setStorageBlocked] = useState(false);
-  const [teacherId, setTeacherId] = useState("");
-  const [selectedDay, setSelectedDay] = useState("1");
+  const [teacherId, setTeacherId, restoreTeacherId, teacherIdRef] = useWorkspaceState("", session, changed);
+  const [selectedDay, setSelectedDay, restoreSelectedDay, selectedDayRef] = useWorkspaceState("1", session, changed);
   const [narrow, setNarrow] = useState(() => window.matchMedia?.("(max-width: 760px)").matches ?? false);
   const [dateDialog, setDateDialog] = useState(false);
-  const [manualSelection, setManualSelection] = useState<string[]>([]);
-  const [newName, setNewName] = useState("");
+  const [manualSelection, setManualSelection, restoreManualSelection, manualSelectionRef] = useWorkspaceState<string[]>(
+    [],
+    session,
+    changed,
+  );
+  const [newName, setNewName, restoreNewName, newNameRef] = useWorkspaceState("", session, changed);
   const [rosterExpanded, setRosterExpanded] = useState(true);
+  const [detailedDraft, setDetailedDraft, restoreDetailedDraft, detailedDraftRef] = useWorkspaceState(
+    emptyDetailedDraft,
+    session,
+    changed,
+  );
   const dateTrigger = useRef<HTMLButtonElement | null>(null);
   const rosterPanel = useRef<HTMLDivElement | null>(null);
   const nameInput = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const composingName = useRef(false);
   const workerRef = useRef<Worker | null>(null);
   const saving = useRef(false);
+  const preserveSelection = useRef(false);
+  workspaceValue.current = () => ({
+    state: stateRef.current,
+    months: { ...monthsRef.current, [monthKey(stateRef.current)]: stateRef.current },
+    roster: rosterRef.current,
+    timetableText: timetableTextRef.current,
+    newName: newNameRef.current,
+    backupText: backupTextRef.current,
+    legacyYear: legacyYearRef.current,
+    replacementPending: replacementPendingRef.current,
+    teacherId: teacherIdRef.current,
+    selectedDay: selectedDayRef.current,
+    manualSelection: manualSelectionRef.current,
+    detailedDraft: detailedDraftRef.current,
+    actualSlots: Object.fromEntries([...actualEditors.current].map(([key, value]) => [key, value.slots])),
+  });
+  useEffect(() => () => session.dispose(), [session]);
+  useEffect(() => {
+    if (!loaded || !changed.current) return;
+    const timeout = setTimeout(() => {
+      void session.save();
+    }, 350);
+    return () => clearTimeout(timeout);
+  }, [
+    state,
+    months,
+    roster,
+    timetableText,
+    newName,
+    backupText,
+    legacyYear,
+    replacementPending,
+    teacherId,
+    selectedDay,
+    manualSelection,
+    detailedDraft,
+    loaded,
+    session,
+  ]);
   // Stored actual performers are a compact set; editor slots retain empty positions.
   // A different source array (recording/restoring a month) invalidates its old draft.
   const actualEditors = useRef(new Map<string, { source: string[] | undefined; slots: string[] }>());
@@ -164,14 +261,37 @@ export function App({ deck }: { deck: Deck }) {
       const [latestState, storedMonths] = await Promise.all([loadState(deck), loadMonths(deck)]);
       return { current: selectCurrent(latestState, storedMonths), months: storedMonths };
     };
-    void read()
-      .then(({ current: saved, months: storedMonths }) => {
+    void Promise.all([read(), loadWorkspace(deck), session.ready])
+      .then(([{ current: saved, months: storedMonths }, workspace]) => {
         if (!active) return;
-        setMonths(storedMonths);
+        restoreMonths(storedMonths);
         setRosterExpanded(!saved?.input.teachers.length);
         if (saved) {
-          setState(saved);
-          setRoster(saved.input.teachers.map((t) => `${t.name}\t${t.past}`).join("\n"));
+          restoreState(saved);
+          restoreRoster(saved.input.teachers.map((t) => `${t.name}\t${t.past}`).join("\n"));
+        }
+        if (workspace) {
+          restoreState(workspace.state);
+          restoreMonths(workspace.months);
+          restoreRoster(workspace.roster);
+          restoreTimetableText(workspace.timetableText);
+          restoreNewName(workspace.newName);
+          restoreBackupText(workspace.backupText);
+          restoreLegacyYear(workspace.legacyYear);
+          restoreReplacementPending(workspace.replacementPending);
+          restoreTeacherId(workspace.teacherId);
+          restoreSelectedDay(workspace.selectedDay);
+          restoreManualSelection(workspace.manualSelection);
+          restoreDetailedDraft(workspace.detailedDraft);
+          preserveSelection.current = true;
+          actualEditors.current = new Map(
+            Object.entries(workspace.actualSlots).map(([key, slots]) => {
+              const [month, day] = key.split(":");
+              const entry = month === monthKey(workspace.state) ? workspace.state : workspace.months[month ?? ""];
+              return [key, { source: entry?.actual?.[day ?? ""], slots }];
+            }),
+          );
+          setRosterExpanded(!workspace.state.input.teachers.length || !!workspace.newName);
         }
         setLoaded(true);
       })
@@ -190,7 +310,11 @@ export function App({ deck }: { deck: Deck }) {
     };
   }, [deck]);
   useEffect(() => {
-    setManualSelection(state.assignments[selectedDay] ?? state.input.manual[selectedDay] ?? []);
+    if (preserveSelection.current) {
+      preserveSelection.current = false;
+      return;
+    }
+    restoreManualSelection(state.assignments[selectedDay] ?? state.input.manual[selectedDay] ?? []);
   }, [selectedDay, state.assignments, state.input.manual]);
   useEffect(() => {
     const query = window.matchMedia?.("(max-width: 760px)");
@@ -203,7 +327,7 @@ export function App({ deck }: { deck: Deck }) {
     return () => query.removeEventListener("change", changed);
   }, []);
   useEffect(() => {
-    setSelectedDay((day) => validSelectedDay(state.input, day));
+    restoreSelectedDay(validSelectedDay(state.input, selectedDayRef.current));
     setDateDialog(false);
   }, [state.input.year, state.input.month]);
   function changeMonth(year: number, month: number) {
@@ -216,25 +340,32 @@ export function App({ deck }: { deck: Deck }) {
     setRoster(next.input.teachers.map((t) => `${t.name}\t${t.past}`).join("\n"));
     setIssues([]);
   }
-  async function persist(next = state) {
+  async function persist(next?: PlannerState) {
+    await session.settle();
+    const target = next ?? stateRef.current;
     if (saving.current) throw new Error("SAVE_BUSY");
     saving.current = true;
     setBusy(true);
-    try {
-      const drafts = { ...months, [monthKey(next)]: next };
-      if (replacementPending) {
-        await replaceLedger(deck, drafts, monthKey(next));
-        setReplacementPending(false);
+    formalSave.current = async () => {
+      const drafts = { ...monthsRef.current, [monthKey(target)]: target };
+      if (replacementPendingRef.current) {
+        await replaceLedger(deck, drafts, monthKey(target));
+        restoreReplacementPending(false);
       } else {
-        await saveLedgerMonths(deck, drafts, monthKey(next));
+        await saveLedgerMonths(deck, drafts, monthKey(target));
       }
-      setMonths(drafts);
+      restoreMonths(drafts);
+      restoreState(target);
+    };
+    try {
+      if (!(await session.save())) throw new Error("WORKSPACE_SAVE_FAILED");
     } finally {
+      formalSave.current = null;
       saving.current = false;
       setBusy(false);
     }
   }
-  async function restoreConfirmed(preview: { months: Months; legacy: boolean }) {
+  async function restoreConfirmed(preview: { months: Months; legacy: boolean }, importedSource?: FileHandleInfo) {
     const first = Object.values(preview.months)[0];
     if (!first || saving.current) return;
     saving.current = true;
@@ -242,6 +373,7 @@ export function App({ deck }: { deck: Deck }) {
     try {
       if (storageBlocked) await replaceLedger(deck, preview.months, monthKey(first));
       setMonths(preview.months);
+      sourceFile.current = importedSource;
       setState(first);
       setReplacementPending(!storageBlocked);
       setRoster(first.input.teachers.map((t) => `${t.name}\t${t.past}`).join("\n"));
@@ -271,11 +403,51 @@ export function App({ deck }: { deck: Deck }) {
   }
   async function exportFile(name: string, text: string) {
     try {
-      if (await writeExport(deck, name, text)) setMessage("새 결과 폴더에 저장했어요.");
+      if (await writeExport(deck, name, text, sourceFile.current, chooseExportFolder))
+        setMessage("저장 폴더에 새 파일로 저장했어요.");
     } catch {
       setMessage("파일을 저장하지 못했어요. 다시 저장해 주세요.");
     }
   }
+  const importFile = async (file?: FileHandleInfo) => {
+    if (readingFile.current || saving.current || busy || !loaded || restoreOpen) {
+      setMessage("현재 작업을 마친 뒤 백업 파일을 다시 놓아 주세요.");
+      return;
+    }
+    readingFile.current = true;
+    setBusy(true);
+    try {
+      const text = await readBackup(deck, file, (selected) => {
+        pendingSource.current = selected;
+      });
+      if (text !== null) {
+        setBackupText(text);
+        setMessage(
+          `${pendingSource.current?.name ?? "백업 파일"}을 읽었어요. JSON 백업 복원에서 내용을 확인해 주세요.`,
+        );
+      }
+    } catch {
+      setMessage("백업을 읽지 못했어요. 5MiB 이하 UTF-8 JSON 파일을 선택해 주세요.");
+    } finally {
+      readingFile.current = false;
+      setBusy(false);
+    }
+  };
+  const dropped = useRef(importFile);
+  dropped.current = importFile;
+  useEffect(
+    () =>
+      deck.on("fs.dropped", ({ files }) => {
+        const file = files[0];
+        if (files.length !== 1 || !file || file?.ext.toLowerCase() !== "json") {
+          setMessage("JSON 백업 파일을 한 번에 1개씩 놓아 주세요.");
+          return;
+        }
+        setMessage(`${file.name}을 받았어요. 백업을 읽고 있어요.`);
+        void dropped.current(file);
+      }),
+    [deck],
+  );
   function updateInput(patch: Partial<PlanInput>) {
     const next = changeConditions(state, patch, HOLIDAYS);
     if (next.state.detailed && patch.teachers) {
@@ -1000,10 +1172,12 @@ export function App({ deck }: { deck: Deck }) {
         closeButtonText="취소"
         defaultButton="close"
         onClose={(result) => {
+          const importedSource = pendingSource.current;
           setRestoreOpen(false);
-          if (result === "primary" && restorePreview) void restoreConfirmed(restorePreview);
+          if (result === "primary" && restorePreview) void restoreConfirmed(restorePreview, importedSource);
         }}
       >
+        <Body>{pendingSource.current?.name ?? "붙여 넣은 백업"}</Body>
         <Body>{Object.keys(restorePreview?.months ?? {}).length}개월의 자료로 현재 작업을 바꿔요.</Body>
         {restorePreview?.legacy && (
           <Body>
@@ -1018,6 +1192,8 @@ export function App({ deck }: { deck: Deck }) {
         </Body>
       </ContentDialog>
       <DetailedEditor
+        draft={detailedDraft}
+        onDraftChange={setDetailedDraft}
         state={state}
         input={{ ...cumulative, holidays: HOLIDAYS }}
         busy={busy}
@@ -1025,6 +1201,12 @@ export function App({ deck }: { deck: Deck }) {
         onChange={(detailed) => setState((prev) => ({ ...prev, detailed }))}
       />
       <SettingsExpander header="월 마감 · 백업 · 내보내기">
+        <CheckBox
+          content="내보낼 때 다른 폴더 선택"
+          checked={chooseExportFolder}
+          onChange={setChooseExportFolder}
+          disabled={busy}
+        />
         <div className={s.row}>
           <Button
             disabled={busy || storageBlocked || !!state.closed}
@@ -1032,7 +1214,7 @@ export function App({ deck }: { deck: Deck }) {
               const next = closeMonth(state);
               void persist(next)
                 .then(() => {
-                  setState(next);
+                  restoreState(next);
                   setMessage("실제 수행 횟수로 월을 마감했어요.");
                 })
                 .catch(() => setMessage("월 마감을 저장하지 못했어요. 다시 시도해 주세요."));
@@ -1055,13 +1237,10 @@ export function App({ deck }: { deck: Deck }) {
             기존 형식 JSON 저장
           </Button>
           <Button
-            onClick={() =>
-              void readBackup(deck)
-                .then((text) => {
-                  if (text !== null) setBackupText(text);
-                })
-                .catch(() => setMessage("백업을 읽지 못했어요. 5MiB 이하 UTF-8 JSON 파일을 선택해 주세요."))
-            }
+            disabled={busy}
+            onClick={() => {
+              void importFile();
+            }}
           >
             백업 파일 열기
           </Button>
@@ -1070,7 +1249,16 @@ export function App({ deck }: { deck: Deck }) {
           <InfoBar message="마감한 달이에요. 수행 기록을 수정하려면 마감 수정 열기를 누르고 수정 후 다시 저장·마감해 주세요." />
         )}
         <SettingsExpander header="JSON 백업 복원">
-          <TextBox header="복원할 JSON" multiline value={backupText} onChange={setBackupText} disabled={busy} />
+          <TextBox
+            header="복원할 JSON"
+            multiline
+            value={backupText}
+            onChange={(value) => {
+              pendingSource.current = undefined;
+              setBackupText(value);
+            }}
+            disabled={busy}
+          />
           <NumberBox
             header="기존 형식의 연도"
             value={legacyYear ?? input.year}

@@ -142,11 +142,8 @@ export async function copyBatch(
   signal: AbortSignal,
   progress: (results: CopyResult[]) => void,
   previous: CopyResult[] = [],
+  parentHandle?: string,
 ): Promise<{ results: CopyResult[]; folder?: FolderHandleInfo; cancelled?: boolean }> {
-  const parent = await deck.fs.pickFolder();
-  if (!parent) return { results: previous, cancelled: true };
-  if (signal.aborted) throw new Error("CANCELLED");
-  const batch = await deck.fs.createOutputFolder({ parentHandle: parent.handle, suggestedName: "파일명 정리 결과" });
   const results: CopyResult[] = rows.map(
     (row) =>
       previous.find((result) => result.source === row.entry.file.handle && result.status === "success") ?? {
@@ -155,65 +152,64 @@ export async function copyBatch(
         status: "notStarted",
       },
   );
-  try {
-    for (const [index, row] of rows.entries()) {
-      if (signal.aborted) break;
-      if (results[index]?.status === "success") continue;
-      let writeId: string | undefined;
-      try {
-        const write = await deck.fs.beginWrite({
-          batchId: batch.batchId,
-          suggestedName: row.name,
-          size: row.entry.file.size,
-        });
-        writeId = write.writeId;
-        let offset = 0;
-        for await (const chunk of deck.fs.readChunks({ handle: row.entry.file.handle }, { signal })) {
-          if (signal.aborted) throw new Error("CANCELLED");
-          for (let at = 0; at < chunk.length; at += write.chunkBytes) {
-            const response = await deck.fs.writeChunk({
-              writeId,
-              offset,
-              data: Array.from(chunk.subarray(at, at + write.chunkBytes)),
-            });
-            offset = response.nextOffset;
-          }
-        }
-        if (signal.aborted) throw new Error("CANCELLED");
-        const saved = await deck.fs.commitWrite({ writeId });
-        writeId = undefined;
-        results[index] = {
-          source: row.entry.file.handle,
-          name: row.name,
-          status: "success",
-          saved,
-          folder: batch.folder,
-        };
-      } catch {
-        results[index] = {
-          source: row.entry.file.handle,
-          name: row.name,
-          status: signal.aborted ? "notStarted" : "failed",
-        };
-      } finally {
-        if (writeId)
-          try {
-            await deck.fs.abortWrite({ writeId });
-          } catch {
-            /* Host-owned unfinished output remains recoverable. */
-          }
-      }
-      progress([...results]);
-      if (signal.aborted) break;
-    }
-  } finally {
+  if (signal.aborted) return { results: previous.length ? previous : results };
+  let folder: FolderHandleInfo | undefined;
+  for (const [index, row] of rows.entries()) {
+    if (signal.aborted) break;
+    if (results[index]?.status === "success") continue;
+    let writeId: string | undefined;
+    let batch: Awaited<ReturnType<Deck["fs"]["openOutputFolder"]>> | undefined;
     try {
-      await deck.fs.closeOutputFolder({ batchId: batch.batchId });
+      batch = await deck.fs.openOutputFolder(parentHandle ? { parentHandle } : { sourceHandle: row.entry.file.handle });
+      folder = batch.folder;
+      if (signal.aborted) throw new Error("CANCELLED");
+      const write = await deck.fs.beginWrite({
+        batchId: batch.batchId,
+        suggestedName: row.name,
+        size: row.entry.file.size,
+      });
+      writeId = write.writeId;
+      let offset = 0;
+      for await (const chunk of deck.fs.readChunks({ handle: row.entry.file.handle }, { signal })) {
+        if (signal.aborted) throw new Error("CANCELLED");
+        for (let at = 0; at < chunk.length; at += write.chunkBytes) {
+          const response = await deck.fs.writeChunk({
+            writeId,
+            offset,
+            data: Array.from(chunk.subarray(at, at + write.chunkBytes)),
+          });
+          offset = response.nextOffset;
+        }
+      }
+      if (signal.aborted) throw new Error("CANCELLED");
+      const saved = await deck.fs.commitWrite({ writeId });
+      writeId = undefined;
+      results[index] = {
+        source: row.entry.file.handle,
+        name: saved.name,
+        status: "success",
+        saved,
+        folder: batch.folder,
+      };
     } catch {
-      /* Completed files remain user-owned. */
+      results[index] = {
+        source: row.entry.file.handle,
+        name: row.name,
+        status: signal.aborted ? "notStarted" : "failed",
+      };
+    } finally {
+      if (writeId)
+        try {
+          await deck.fs.abortWrite({ writeId });
+        } catch {
+          /* Host-owned unfinished output remains recoverable. */
+        }
+      if (batch) await deck.fs.closeOutputFolder({ batchId: batch.batchId }).catch(() => undefined);
     }
+    progress([...results]);
+    if (signal.aborted) break;
   }
-  return { results, folder: batch.folder };
+  return { results, ...(folder ? { folder } : {}) };
 }
 export class RenamePlanExpired extends Error {
   readonly partial: RenameResult | undefined;
@@ -241,10 +237,10 @@ export async function renameBatch(
 export async function histories(deck: Deck): Promise<RenameHistory[]> {
   return (await deck.fileOps.listHistory({ limit: 20 })).entries;
 }
-export async function templateFile(deck: Deck): Promise<void> {
-  const parent = await deck.fs.pickFolder();
-  if (!parent) return;
-  const batch = await deck.fs.createOutputFolder({ parentHandle: parent.handle, suggestedName: "파일명 연결 양식" });
+export async function templateFile(deck: Deck, parentHandle?: string): Promise<void> {
+  const destination = parentHandle ?? (await deck.fs.pickFolder())?.handle;
+  if (!destination) return;
+  const batch = await deck.fs.openOutputFolder({ parentHandle: destination });
   const input = workbookTemplate();
   let writeId: string | undefined;
   try {

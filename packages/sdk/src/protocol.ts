@@ -6,13 +6,14 @@ import type { CaptureFailedEvent } from "./generated/CaptureFailedEvent.ts";
 import type { OverlayInfo } from "./generated/OverlayInfo.ts";
 import type { ShortcutTriggeredEvent } from "./generated/ShortcutTriggeredEvent.ts";
 import type { DeckError } from "./generated/DeckError.ts";
+import type { DocumentSaveRequested } from "./generated/DocumentSaveRequested.ts";
 import type { DroppedFiles } from "./generated/DroppedFiles.ts";
 import type { ErrorCode } from "./generated/ErrorCode.ts";
 
 /** Integer protocol version carried in every message (BRG-008). */
 export const PROTOCOL_VERSION = 1;
 /** SDK semver (VER-006). */
-export const SDK_VERSION = "0.7.0";
+export const SDK_VERSION = "0.10.0";
 /** Default request timeout; `long` registry methods are exempt (BRG-004). */
 export const DEFAULT_TIMEOUT_MS = 30_000;
 /** A module must say hello within this time after loading (BRG-003). */
@@ -36,6 +37,7 @@ export const EVENT_TOPICS = [
   "shortcut.triggered",
   "window.presentationClosed",
   "window.presentationDisconnected",
+  "window.documentSaveRequested",
 ] as const;
 export type EventTopic = (typeof EVENT_TOPICS)[number];
 
@@ -47,6 +49,7 @@ export interface ThemePayload {
 }
 
 export interface EventPayloads {
+  "window.documentSaveRequested": DocumentSaveRequested;
   "window.presentationClosed": { presentationHandle: string };
   "window.presentationDisconnected": { presentationHandle: string };
   "capture.completed": CaptureCompletedEvent;

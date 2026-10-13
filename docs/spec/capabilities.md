@@ -78,7 +78,7 @@ window1.1의 로컬 학생 화면 추가 계약과 권한 범위는 [학생 화�
 |  |  | `set` | 키에 값 저장(256KB 이하) |
 |  |  | `delete` | 키 삭제 |
 |  |  | `keys` | 저장된 키 목록 |
-| `fs` | 1.3.0 | `listFiles` (long) | 선택 폴더의 제한된 파일 목록 |
+| `fs` | 1.4.0 | `listFiles` (long) | 선택 폴더의 제한된 파일 목록 |
 |  |  | `pickDestination` (long) | 명시적으로 기억할 새 파일 저장 폴더 선택 |
 |  |  | `destinationStatus` | 저장 폴더 권한 상태 |
 |  |  | `revealDestination` | 저장 폴더 열기 |
@@ -90,12 +90,16 @@ window1.1의 로컬 학생 화면 추가 계약과 권한 범위는 [학생 화�
 |  |  | `openRead` (long) | 파일 읽기 리소스 열기(256KiB 청크) |
 |  |  | `closeRead` | 파일 읽기 리소스 닫기 |
 |  |  | `createOutputFolder` (long) | 새 결과 폴더 만들기 |
+|  |  | `openOutputFolder` (long) | 원본 또는 선택 폴더에 새 결과 파일 저장 |
 |  |  | `beginWrite` (long) | 새 결과 파일 쓰기 시작 |
 |  |  | `writeChunk` | 64KiB 이하 순차 청크 쓰기 |
 |  |  | `commitWrite` (long) | 완성된 결과를 덮어쓰기 없이 게시 |
 |  |  | `abortWrite` | 미완성 파일 쓰기 취소 |
 |  |  | `closeOutputFolder` | 결과 폴더 작업 권한 닫기 |
-| `window` | 1.1.0 | `listDisplays` | 학생 화면을 표시할 모니터 목록 |
+| `window` | 1.2.0 | `registerDocument` | 편집 문서의 수명 보호 등록 |
+|  |  | `setDocumentState` | 미저장·저장 중 상태 등록 |
+|  |  | `completeDocumentSave` | 셸이 요청한 작업 저장 결과 |
+|  |  | `listDisplays` | 학생 화면을 표시할 모니터 목록 |
 |  |  | `openPresentation` | 선택한 모니터에 공개 결과 표시 |
 |  |  | `updatePresentation` | 학생 화면의 공개 결과 갱신 |
 |  |  | `closePresentation` | 자기 모듈의 학생 화면 닫기 |
@@ -128,6 +132,7 @@ window1.1의 로컬 학생 화면 추가 계약과 권한 범위는 [학생 화�
 ### 2.3 `window`
 
 - 모듈이 숨겨지거나 언로드되면 호스트가 창 상태를 원래대로 되돌린다.
+- window 1.2의 문서 등록·미저장 상태·저장 응답은 [문서 수명 보호](document-lifecycle.md)와 [ADR-0030](../adr/0030-unsaved-document-lifecycle.md)을 따른다.
 
 ## 2.4 clipboard 1.0 — 출력 전용
 
@@ -199,6 +204,12 @@ fs 1.2 pickDestination({remember})은 사용자 선택·권한 확인 뒤 Destin
 capture.trigger({sessionHandle})는 arm한 세션에 사용자 요청 한 장을 저장하고 CaptureResult를 반환한다. overlay.status({overlayHandle})는 재진입 시 rect/style/visible/alwaysOnTop을 복원한다.
 
 fs.destinationStatus는 DestinationStatusArgs의 선택 grantHandle을 받으며 생략 시 현재 소유자의 기억한 권한을 조회한다. 조회할 권한이 없으면 null이다.
+
+### 원본 폴더 직접 출력 (fs 1.4)
+
+`openOutputFolder({sourceHandle?,parentHandle?})`는 정확히 하나의 핸들로 기존 폴더의 append-new-only `OutputBatch`를 연다([ADR-0031](../adr/0031-file-input-direct-output.md)). `sourceHandle`은 같은 모듈·세션의 읽기 파일 핸들이며 호스트에서 검증한 부모 폴더를 쓴다. `parentHandle`은 사용자가 선택한 같은 모듈·세션의 폴더 핸들이다. 경로는 반환하지 않고 기존 `OutputBatch`의 표시 이름·폴더 핸들만 반환한다. 둘 다 있거나 없으면 `INVALID_ARGS`, 다른 모듈·세션·종류의 핸들은 권한 오류다.
+
+출력은 기존 폴더에 새 파일로 게시하고 하위 폴더를 만들지 않는다. 이름 충돌은 번호를 붙여 해결하며 기존 파일을 삭제하거나 덮어쓰지 않는다. 디렉터리 가드·리파스 거부·배치 한도·작업 종료 계약은 fs 1.1과 같다. 반환한 폴더 핸들은 위치 표시·`reveal` 전용이며 `listFiles`·`openRead`나 폴더 선택 권한으로 재사용할 수 없다. 기본 결과는 입력 파일별 부모 폴더이며 사용자가 다른 폴더를 지정하면 그 폴더가 우선한다. 원본이 없는 출력은 사용자가 폴더를 선택한다. 쓰기 실패를 다른 위치나 새 하위 폴더로 조용히 우회하지 않는다. 기존 `createOutputFolder`의 의미는 유지한다.
 
 캡 이름은 최대32 ASCII 바이트이며 ^[a-z][a-z0-9]_(?:-[a-z0-9]+)_$를 따른다. 시작은 소문자이고 내부 단일 하이픈만 허용한다. leading/trailing/consecutive 하이픈은 거부한다(ADR-0017 승인 계약).
 

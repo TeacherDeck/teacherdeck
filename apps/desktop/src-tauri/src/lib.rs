@@ -20,6 +20,7 @@ pub mod capture_host;
 mod capture_native;
 mod commands;
 pub mod destination;
+mod document_host;
 pub mod file_listing;
 pub mod file_ops;
 pub mod file_output;
@@ -181,6 +182,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         ),
         storage: StorageService::new(paths.app_data_dir()?.join("module-data")),
         overrides: Mutex::new(Default::default()),
+        documents: Mutex::new(Default::default()),
         active: Mutex::new(None),
         mica: AtomicBool::new(false),
         sec_probe: cfg!(debug_assertions)
@@ -248,12 +250,17 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         if matches!(event, WindowEvent::Destroyed) {
             presentation_host::shutdown(&handle);
         }
-        if let WindowEvent::CloseRequested { api, .. } = event
-            && capture_host::background_active(&handle)
-        {
-            api.prevent_close();
-            if let Some(window) = handle.get_webview_window(MAIN_WINDOW) {
-                let _ = window.hide();
+        if let WindowEvent::CloseRequested { api, .. } = event {
+            if capture_host::background_active(&handle) {
+                api.prevent_close();
+                if let Some(window) = handle.get_webview_window(MAIN_WINDOW) {
+                    let _ = window.hide();
+                }
+            } else if document_host::request_exit(
+                &handle,
+                deck_core::caps::window::DocumentExitAction::Close,
+            ) {
+                api.prevent_close();
             }
         }
 

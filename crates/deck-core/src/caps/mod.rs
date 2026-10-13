@@ -218,7 +218,7 @@ pub const REGISTRY: &[CapSpec] = &[
     },
     CapSpec {
         name: "fs",
-        version: "1.3.0",
+        version: "1.4.0",
         summary: "파일 선택과 핸들(경로는 노출하지 않음)",
         methods: &[
             m("listFiles", true, "선택 폴더의 제한된 파일 목록"),
@@ -241,6 +241,11 @@ pub const REGISTRY: &[CapSpec] = &[
             m("openRead", true, "파일 읽기 리소스 열기(256KiB 청크)"),
             m("closeRead", false, "파일 읽기 리소스 닫기"),
             m("createOutputFolder", true, "새 결과 폴더 만들기"),
+            m(
+                "openOutputFolder",
+                true,
+                "원본 또는 선택 폴더에 새 결과 파일 저장",
+            ),
             m("beginWrite", true, "새 결과 파일 쓰기 시작"),
             m("writeChunk", false, "64KiB 이하 순차 청크 쓰기"),
             m("commitWrite", true, "완성된 결과를 덮어쓰기 없이 게시"),
@@ -250,9 +255,12 @@ pub const REGISTRY: &[CapSpec] = &[
     },
     CapSpec {
         name: "window",
-        version: "1.1.0",
+        version: "1.2.0",
         summary: "창 상태(모듈이 숨겨지면 원래대로 복원)",
         methods: &[
+            m("registerDocument", false, "편집 문서의 수명 보호 등록"),
+            m("setDocumentState", false, "미저장·저장 중 상태 등록"),
+            m("completeDocumentSave", false, "셸이 요청한 작업 저장 결과"),
             m("listDisplays", false, "학생 화면을 표시할 모니터 목록"),
             m("openPresentation", false, "선택한 모니터에 공개 결과 표시"),
             m("updatePresentation", false, "학생 화면의 공개 결과 갱신"),

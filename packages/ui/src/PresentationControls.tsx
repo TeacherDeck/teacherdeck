@@ -9,7 +9,17 @@ import { Caption } from "./typography.tsx";
 import { deckTokens } from "./tokens/index.ts";
 
 export interface PresentationControlsProps {
-  deck: Pick<Deck, "has" | "version" | "window" | "on">;
+  deck: Pick<Deck, "has" | "version" | "on"> & {
+    window: Pick<
+      Deck["window"],
+      | "setFullscreen"
+      | "setAlwaysOnTop"
+      | "listDisplays"
+      | "openPresentation"
+      | "updatePresentation"
+      | "closePresentation"
+    >;
+  };
   payload: PresentationPayload | null;
   disabled?: boolean;
   hidden?: boolean;

@@ -10,6 +10,9 @@ import type { FsDroppedEvent } from "./generated/FsDroppedEvent.ts";
 import type { ModuleEntry } from "./generated/ModuleEntry.ts";
 import type { ShellInfo } from "./generated/ShellInfo.ts";
 import type { UpdateStatus } from "./generated/UpdateStatus.ts";
+import type { DocumentAction } from "./generated/DocumentAction.ts";
+import type { DocumentActionResult } from "./generated/DocumentActionResult.ts";
+import type { DocumentExitRequest } from "./generated/DocumentExitRequest.ts";
 
 function listenCurrent<T>(event: string, handler: EventCallback<T>) {
   return listen<T>(event, handler, { target: { kind: "Window", label: getCurrentWindow().label } });
@@ -77,7 +80,13 @@ export const host = {
   moduleGranted: (moduleId: string) => invoke<string[]>("module_activated", { moduleId, activate: false }),
   moduleVisibility: (moduleId: string, visible: boolean) =>
     invoke("module_visibility", { moduleId, visible }).then(() => undefined),
+  documentAction: (moduleId: string, documentAction: DocumentAction) =>
+    invoke<DocumentActionResult>("module_visibility", { moduleId, documentAction }),
+  onDocumentExit: (fn: (request: DocumentExitRequest) => void) =>
+    listenCurrent<DocumentExitRequest>("deck://document-exit-request", (event) => fn(event.payload)),
   moduleUnloaded: (moduleId: string) => invoke("module_unloaded", { moduleId }).then(() => undefined),
+  modulesUnloaded: (moduleIds: string[]) =>
+    invoke("module_unloaded", { moduleId: "", moduleIds }).then(() => undefined),
   hostInvoke: (moduleId: string, cap: string, method: string, args: unknown) =>
     invoke<unknown>("host_invoke", { moduleId, cap, method, args }),
   checkUpdate: () => invoke<UpdateStatus>("check_update"),
@@ -109,7 +118,8 @@ export type NativeTopic =
   | "overlay.changed"
   | "shortcut.triggered"
   | "window.presentationClosed"
-  | "window.presentationDisconnected";
+  | "window.presentationDisconnected"
+  | "window.documentSaveRequested";
 export type NativeModuleEvent = {
   [T in NativeTopic]: { moduleId: string; topic: T; payload: EventPayloads[T] };
 }[NativeTopic];

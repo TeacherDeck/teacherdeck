@@ -5,6 +5,12 @@
 // (apps/desktop/src/pages/Gallery.tsx); components.test.tsx enforces it.
 export { ColorPicker } from "./ColorPicker.tsx";
 export type { ColorPickerProps } from "./ColorPicker.tsx";
+export { Slider } from "./Slider.tsx";
+export type { SliderProps } from "./Slider.tsx";
+export { CanvasSurface } from "./CanvasSurface.tsx";
+export type { CanvasSurfaceProps, CanvasPoint, CanvasGesture } from "./CanvasSurface.tsx";
+export { CurveEditor } from "./CurveEditor.tsx";
+export type { CurveEditorProps, CurvePoint } from "./CurveEditor.tsx";
 export { ImageCropPreview } from "./ImageCropPreview.tsx";
 export type { ImageCropPreviewProps, CropRect } from "./ImageCropPreview.tsx";
 export { Image } from "./Image.tsx";
@@ -120,4 +126,7 @@ export const COMPONENTS = [
   "Image",
   "ImageCropPreview",
   "ColorPicker",
+  "Slider",
+  "CanvasSurface",
+  "CurveEditor",
 ] as const;

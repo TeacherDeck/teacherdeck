@@ -58,7 +58,7 @@ it("writes real JSON chunks, preserves archives and closes the batch on output f
     granted: ["fs"],
     handlers: {
       "fs.pickFolder": () => ({ handle: "parent", name: "합성" }),
-      "fs.createOutputFolder": () => ({ batchId: "batch", folder: { handle: "folder", name: "합성" } }),
+      "fs.openOutputFolder": () => ({ batchId: "batch", folder: { handle: "folder", name: "합성" } }),
       "fs.beginWrite": () => ({ writeId: "write", chunkBytes: 65536 }),
       "fs.writeChunk": (a) => {
         if (failed) throw new DeckCallError("INTERNAL", "합성 오류");

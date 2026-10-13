@@ -2,6 +2,7 @@
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const VERSION = "(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)";
@@ -152,6 +153,70 @@ function staleModulePackages(root: string): string[] {
   return files;
 }
 
+/** Only release resources whose current catalog and packages match this successful source bundle. */
+function staleBundledPackages(root: string, witnesses: Map<string, Identity>): string[] {
+  const source = path.join(root, "apps/desktop/src-tauri/resources/modules");
+  const catalogPath = path.join(source, "index.json");
+  if (!regularFile(root, catalogPath)) return [];
+  const catalogBytes = fs.readFileSync(catalogPath);
+  const catalog: unknown = JSON.parse(catalogBytes.toString("utf8"));
+  if (
+    typeof catalog !== "object" ||
+    catalog === null ||
+    !("modules" in catalog) ||
+    typeof catalog.modules !== "object" ||
+    catalog.modules === null ||
+    Array.isArray(catalog.modules)
+  )
+    return [];
+  const files: string[] = [];
+  for (const directory of installerDirectories(root)) {
+    const output = path.join(directory, "../..", "modules");
+    const outputCatalog = path.join(output, "index.json");
+    if (!regularFile(root, outputCatalog) || !fs.readFileSync(outputCatalog).equals(catalogBytes)) continue;
+    witnesses.set(catalogPath, identity(catalogPath));
+    witnesses.set(outputCatalog, identity(outputCatalog));
+    for (const [id, entries] of Object.entries(catalog.modules)) {
+      if (!MODULE_ID.test(id) || !Array.isArray(entries) || entries.length !== 1) continue;
+      const entry: unknown = entries[0];
+      if (
+        typeof entry !== "object" ||
+        entry === null ||
+        !("version" in entry) ||
+        typeof entry.version !== "string" ||
+        !STABLE_VERSION.test(entry.version) ||
+        !("sha256" in entry) ||
+        typeof entry.sha256 !== "string" ||
+        !/^[a-f0-9]{64}$/.test(entry.sha256) ||
+        !("size" in entry) ||
+        typeof entry.size !== "number" ||
+        entry.size <= 0 ||
+        manifestVersion(root, path.join(root, "modules", id, "module.json")) !== entry.version
+      )
+        continue;
+      const relative = path.join(id, entry.version, `${id}-${entry.version}.deckmod`);
+      const currentCopies = [path.join(source, relative), path.join(output, relative)];
+      if (
+        !currentCopies.every(
+          (file) =>
+            regularFile(root, file) &&
+            fs.lstatSync(file).size === entry.size &&
+            createHash("sha256").update(fs.readFileSync(file)).digest("hex") === entry.sha256,
+        )
+      )
+        continue;
+      for (const file of currentCopies) witnesses.set(file, identity(file));
+      for (const versionDirectory of directories(root, path.join(output, id))) {
+        const version = path.basename(versionDirectory);
+        if (!STABLE_VERSION.test(version) || compareVersion(version, entry.version) >= 0) continue;
+        const file = path.join(versionDirectory, `${id}-${version}.deckmod`);
+        if (regularFile(root, file)) files.push(file);
+      }
+    }
+  }
+  return files;
+}
+
 /** Cleanup follows a successful build; a missing/failed build always retains every artifact. */
 export function cleanBuildArtifacts(options: CleanupOptions): CleanupResult {
   const result: CleanupResult = {
@@ -209,7 +274,8 @@ export function cleanBuildArtifacts(options: CleanupOptions): CleanupResult {
       const signature = `${item.file}.sig`;
       if (regularFile(root, signature)) files.push(signature);
     }
-    files.push(...staleModulePackages(root));
+    const witnesses = new Map<string, Identity>();
+    files.push(...staleModulePackages(root), ...staleBundledPackages(root, witnesses));
     files.sort();
     const identities = files.map(identity);
     result.files = files.map((file) => path.relative(root, file).split(path.sep).join("/"));
@@ -221,6 +287,7 @@ export function cleanBuildArtifacts(options: CleanupOptions): CleanupResult {
       if (
         !regularFile(root, current) ||
         !sameIdentity(current, currentIdentity) ||
+        [...witnesses].some(([file, previous]) => !regularFile(root, file) || !sameIdentity(file, previous)) ||
         files.some((file, index) => {
           const previous = identities[index];
           return previous === undefined || !regularFile(root, file) || !sameIdentity(file, previous);
@@ -234,12 +301,24 @@ export function cleanBuildArtifacts(options: CleanupOptions): CleanupResult {
           previous === undefined ||
           !regularFile(root, current) ||
           !sameIdentity(current, currentIdentity) ||
+          [...witnesses].some(
+            ([witness, previousIdentity]) => !regularFile(root, witness) || !sameIdentity(witness, previousIdentity),
+          ) ||
           !regularFile(root, file) ||
           !sameIdentity(file, previous)
         ) {
           throw new Error("artifact changed");
         }
         fs.unlinkSync(file);
+        // Resource version folders contain only generated packages. Remove them only when now empty.
+        const directory = path.dirname(file);
+        if (
+          file.endsWith(".deckmod") &&
+          STABLE_VERSION.test(path.basename(directory)) &&
+          safePath(root, directory) &&
+          fs.readdirSync(directory).length === 0
+        )
+          fs.rmdirSync(directory);
       }
     }
     return result;

@@ -103,13 +103,27 @@ pub struct CreateOutputFolderArgs {
     pub suggested_name: String,
 }
 
-/// A newly created output directory and write grant.
+/// Opens a source parent or selected folder for append-new-only output, without a child folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OpenOutputFolderArgs {
+    /// Owned read-file handle; exactly one of this and parent_handle is required.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub source_handle: Option<String>,
+    /// Owned user-selected folder handle, replacing the default source parent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub parent_handle: Option<String>,
+}
+
+/// An output directory and its append-new-only write grant.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OutputBatch {
     /// Opaque output grant.
     pub batch_id: String,
-    /// Display info for the new folder.
+    /// Display info for the output folder.
     pub folder: FolderHandleInfo,
 }
 

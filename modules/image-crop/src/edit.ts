@@ -78,6 +78,35 @@ export const RATIOS = [
 export function orientedSize(width: number, height: number, turns: number): { width: number; height: number } {
   return Math.abs(turns) % 2 ? { width: height, height: width } : { width, height };
 }
+/** Clockwise rotation of the displayed image keeps the same source subject inside the crop. */
+export function rotateEdit(edit: Edit, sourceWidth: number, sourceHeight: number): Edit {
+  const size = orientedSize(sourceWidth, sourceHeight, edit.turns);
+  const rect = clampRect(edit.rect, size.width, size.height);
+  return {
+    ...edit,
+    turns: (edit.turns + 1) % 4,
+    // Flips are applied after rotation by the renderer; swap axes to rotate the current view clockwise.
+    flipX: edit.flipY,
+    flipY: edit.flipX,
+    rect: { x: size.height - rect.y - rect.height, y: rect.x, width: rect.height, height: rect.width },
+  };
+}
+export function flipEdit(edit: Edit, sourceWidth: number, sourceHeight: number, axis: "flipX" | "flipY"): Edit {
+  const size = orientedSize(sourceWidth, sourceHeight, edit.turns);
+  const rect = clampRect(edit.rect, size.width, size.height);
+  return {
+    ...edit,
+    [axis]: !edit[axis],
+    rect: {
+      ...rect,
+      ...(axis === "flipX" ? { x: size.width - rect.x - rect.width } : { y: size.height - rect.y - rect.height }),
+    },
+  };
+}
+export function rotateRatio(value: string): string {
+  const pairs: Record<string, string> = { "4:3": "3:4", "3:4": "4:3", "16:9": "9:16", "9:16": "16:9" };
+  return pairs[value] ?? value;
+}
 export function clampRect(rect: Rect, width: number, height: number, ratio = 0): Rect {
   if (
     ![rect.x, rect.y, rect.width, rect.height, width, height, ratio].every(Number.isFinite) ||
@@ -120,7 +149,7 @@ export function transferRect(
     ratio,
   );
 }
-export function outputName(name: string, format: "png" | "jpeg"): string {
+export function outputName(name: string, extension: string): string {
   const stem =
     name
       .replace(/\.[^.]*$/, "")
@@ -130,5 +159,5 @@ export function outputName(name: string, format: "png" | "jpeg"): string {
       .join("")
       .replace(/[. ]+$/g, "")
       .slice(0, 90) || "이미지";
-  return `${stem}_자르기.${format === "jpeg" ? "jpg" : "png"}`;
+  return `${stem}_자르기.${extension}`;
 }

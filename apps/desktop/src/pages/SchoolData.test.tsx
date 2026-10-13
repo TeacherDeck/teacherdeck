@@ -61,9 +61,11 @@ function timetableCell(name: string) {
 function timetableControl(role: "button" | "combobox", name: string) {
   // Labels only locate the candidate; the role query still checks its accessible
   // name and visibility through the original DOM, including hidden ancestors.
+  // A Dropdown portal shares the Field label via aria-labelledby. Follow the
+  // label's explicit control association so a lingering listbox is not a candidate.
   const candidate =
     role === "combobox"
-      ? screen.getByLabelText(name, { selector: '[role="combobox"]' })
+      ? (screen.getByText(name, { selector: "label" }) as HTMLLabelElement).control
       : screen.getByText(name).closest("button");
   const parent = candidate?.parentElement;
   if (!parent) throw new Error("synthetic timetable control missing");

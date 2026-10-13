@@ -23,6 +23,12 @@
 
 공통 화면과 아이콘의 기준은 [기본 앱·모듈 디자인 계획](docs/proposals/app-module-design-2026-10-11.md)에 있어요. 도구마다 핵심 작업 흐름을 유지하면서 홈의 빠른 실행, 기능별 아이콘, 입력·실행·결과의 위치를 일관되게 다듬고 있어요.
 
+파일을 끌어 넣으면 도구 화면에 받은 파일과 읽기 상태를 표시해요. 결과는 기본적으로 각 원본 파일의 폴더에 새 파일로 저장하고, 다른 폴더를 지정하면 선택한 폴더에 바로 저장해요. 결과 하위 폴더는 자동으로 만들지 않아요. 이름이 겹치면 번호를 붙여 원본을 보존해요. 원본이 없는 새 문서·백업·캡처·QR은 사용자가 폴더를 선택해요.
+
+이미지 자르기·리사이즈·고급 편집의 이미지 내보내기는 원본 JPG·JPEG·PNG·WebP 형식과 확장자를 기본으로 유지해요. 출력 형식을 직접 선택하면 선택한 형식으로 저장해요. 고급 편집기의 새 문서·PSD·작업 파일은 이미지 내보내기에서 PNG를 기본으로 사용하며, 레이어와 편집 상태를 보관하는 작업 저장은 `.deckimage`예요.
+
+작업 유지 기능이 있는 도구는 다른 화면으로 이동해도 그대로 이어서 쓸 수 있어요. 동시에 유지하는 도구는 최대 3개이며 실행 중이거나 저장하지 않은 작업을 먼저 유지해요. 실제로 도구를 닫아야 하거나 앱을 종료할 때는 저장 여부를 확인해요. 강제 종료·PC 중단 후 복구 가능 여부는 도구마다 달라요.
+
 ## 개발 환경
 
 Windows 10/11에서 개발해요.
@@ -80,7 +86,7 @@ CoolReserve 원작의 커밋된 소스를 가져오는 명령과 파일 잠금 �
 도구별 사용법과 지원 범위예요.
 
 - 파일·문서: [파일명 작업기](modules/file-rename/README.md), [문서 변환](modules/office-convert/README.md), [PDF 압축](modules/pdf-compress/README.md), [PDF 개인정보 지우기](modules/pdf-mask/README.md)
-- 이미지: [이미지 압축](modules/image-compress/README.md), [명렬표 사진 추출](modules/photo-extract/README.md), [이미지 자르기](modules/image-crop/README.md), [퀵캡처](modules/quick-capture/README.md)
+- 이미지: [이미지 압축](modules/image-compress/README.md), [명렬표 사진 추출](modules/photo-extract/README.md), [이미지 자르기](modules/image-crop/README.md), [고급 이미지 편집](modules/advanced-image-editor/README.md), [퀵캡처](modules/quick-capture/README.md)
 - 수업·업무: [회의록](modules/meeting-note/README.md), [지도일 배정](modules/duty-planner/README.md), [발표자 뽑기](modules/presenter-picker/README.md), [모둠 편성](modules/group-planner/README.md), [자리 배치](modules/seat-planner/README.md), [역할·당번 배정](modules/role-planner/README.md)
 - 작은 도구: [빠른 메모](modules/quick-note/README.md), [D-day](modules/dday/README.md), [QR 코드 만들기](modules/qr-maker/README.md)
 - 보류: [영상 다운로드](modules/youtube-download/README.md)는 기본 모듈에서 빠져 덱에 나타나지 않아요([#15](https://github.com/TeacherDeck/teacherdeck/issues/15)).

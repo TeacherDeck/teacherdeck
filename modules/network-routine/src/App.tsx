@@ -107,6 +107,7 @@ export function App({ deck }: { deck: Deck }) {
     [externalText, setExternalText] = useState(""),
     [baseStart, setBaseStart] = useState("08:20"),
     [baseEnd, setBaseEnd] = useState("16:20");
+  const [now, setNow] = useState(localTimestamp);
   const locked = useRef(false),
     mounted = useRef(true),
     signature = JSON.stringify([settings, selected]);
@@ -171,6 +172,17 @@ export function App({ deck }: { deck: Deck }) {
       mounted.current = false;
     };
   }, [deck]);
+  useEffect(() => {
+    const refresh = () => setNow(localTimestamp());
+    const interval = setInterval(refresh, 1_000);
+    const off = deck.on("module.visibility", ({ visible }) => {
+      if (visible) refresh();
+    });
+    return () => {
+      clearInterval(interval);
+      off();
+    };
+  }, [deck]);
   function edit(change: (previous: Settings) => Settings) {
     if (locked.current) return;
     setSettings(change);
@@ -187,11 +199,11 @@ export function App({ deck }: { deck: Deck }) {
   }
   const decision = useMemo(() => {
     try {
-      return currentDecisionInfo(settings, localTimestamp(), wifiFor(snapshot));
+      return currentDecisionInfo(settings, now, wifiFor(snapshot));
     } catch {
       return null;
     }
-  }, [settings, snapshot]);
+  }, [settings, snapshot, now]);
   async function inspect(scanWifi: boolean) {
     if (locked.current || !selected) return;
     locked.current = true;
@@ -249,6 +261,23 @@ export function App({ deck }: { deck: Deck }) {
       setBusy(false);
     }
   }
+  async function refreshAfterFailure(error: unknown) {
+    const [status, current] = await Promise.allSettled([
+      deck.network.status(saved ? { routineHandle: saved.routineHandle } : undefined),
+      deck.network.inspect({ adapterHandle: selected, scanWifi: false }),
+    ]);
+    if (!mounted.current) return;
+    if (status.status === "fulfilled" && status.value) setSaved(status.value);
+    // A stored pre-apply snapshot must never stand in for a failed live readback.
+    setSnapshot(current.status === "fulfilled" ? current.value : null);
+    setMessage(
+      `${advice(error)} 일부 설정이 바뀌었을 수 있어요. ${
+        current.status === "fulfilled"
+          ? "실제 IP와 DNS를 다시 읽었어요. 확인한 뒤 원하는 망으로 다시 전환해 주세요."
+          : "현재 상태도 읽지 못했어요. 연결 상태를 확인한 뒤 현재 상태 확인을 눌러 주세요."
+      }`,
+    );
+  }
   async function evaluate() {
     if (locked.current || dirty || !saved || saved.error === "RECONFIGURE_REQUIRED") return;
     locked.current = true;
@@ -264,7 +293,7 @@ export function App({ deck }: { deck: Deck }) {
             : "저장한 조건으로 지금 상태를 검사했어요.",
       );
     } catch (error) {
-      setMessage(advice(error));
+      await refreshAfterFailure(error);
     } finally {
       locked.current = false;
       setBusy(false);
@@ -287,7 +316,7 @@ export function App({ deck }: { deck: Deck }) {
         `${mode === "internal" ? "내부망으로" : "외부망 DHCP로"} 전환했어요. 현재 판단 구간에서는 수동 선택을 유지해요.`,
       );
     } catch (error) {
-      setMessage(advice(error));
+      await refreshAfterFailure(error);
     } finally {
       locked.current = false;
       setBusy(false);

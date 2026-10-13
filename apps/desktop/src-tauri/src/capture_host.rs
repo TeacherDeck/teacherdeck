@@ -1245,7 +1245,12 @@ fn tray_target(app: &AppHandle) -> Option<(String, String, String)> {
 }
 fn tray_action(app: &AppHandle, id: &str) {
     if id == "capture-exit" {
-        app.exit(0);
+        if !crate::document_host::request_exit(
+            app,
+            deck_core::caps::window::DocumentExitAction::Exit,
+        ) {
+            app.exit(0);
+        }
         return;
     }
     let Some((owner, session, overlay)) = tray_target(app) else {

@@ -4,7 +4,7 @@
 import { connect } from "@deck/sdk";
 import { createMockHost } from "@deck/sdk/testing";
 import { DeckProvider, createDeckTheme } from "@deck/ui";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App.tsx";
 afterEach(() => {
@@ -12,17 +12,26 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
 });
-async function open() {
+async function open(saved: unknown = null) {
+  const values = new Map<string, unknown>([["timer.v1", saved]]);
   const fullscreen = vi.fn();
   const host = createMockHost({
     granted: ["storage", "window"],
     handlers: {
-      "storage.get": () => null,
+      "window.registerDocument": () => ({ documentHandle: "document" }),
+      "window.setDocumentState": () => null,
+      "window.completeDocumentSave": () => null,
+      "storage.set": (args) => {
+        const a = args as { key: string; value: unknown };
+        values.set(a.key, a.value);
+        return null;
+      },
+      "storage.get": (args) => values.get((args as { key: string }).key) ?? null,
       "window.setFullscreen": fullscreen,
     },
   });
   const deck = await connect({ window: host.window });
-  render(
+  const view = render(
     <DeckProvider theme={createDeckTheme("light")}>
       <App deck={deck} />
     </DeckProvider>,
@@ -30,12 +39,14 @@ async function open() {
   await act(async () => {
     await Promise.resolve();
   });
-  return { fullscreen };
+  return { fullscreen, host, deck, view, values };
 }
 describe("timer keyboard and monotonic time", () => {
   it("keeps edited controls in place through blur and starts the edited time on the first click", async () => {
     await open();
-    fireEvent.click(screen.getByRole("button", { name: /눌러서 시간 입력/ }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /눌러서 시간 입력/ }));
+    });
     const minutes = screen.getByRole("textbox", { name: /^분$/ });
     fireEvent.change(minutes, { target: { value: "1" } });
     const start = screen.getByRole("button", { name: /^시작$/ });
@@ -43,7 +54,9 @@ describe("timer keyboard and monotonic time", () => {
     fireEvent.blur(minutes, { relatedTarget: start });
     expect(screen.getByRole("textbox", { name: /^분$/ })).toBeTruthy();
     fireEvent.pointerUp(start);
-    fireEvent.click(start);
+    await act(async () => {
+      fireEvent.click(start);
+    });
     expect(screen.getByRole("button", { name: /^일시정지$/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /남은 시간 1:00/ })).toBeTruthy();
   });
@@ -54,21 +67,37 @@ describe("timer keyboard and monotonic time", () => {
     fireEvent(reset, nativeSpace);
     expect(nativeSpace.defaultPrevented).toBe(false);
     expect(screen.getByRole("button", { name: "시작" })).toBeTruthy();
-    fireEvent.keyDown(window, { code: "Space", repeat: true });
-    fireEvent.keyDown(window, { code: "Space", isComposing: true });
+    await act(async () => {
+      fireEvent.keyDown(window, { code: "Space", repeat: true });
+    });
+    await act(async () => {
+      fireEvent.keyDown(window, { code: "Space", isComposing: true });
+    });
     expect(screen.getByRole("button", { name: "시작" })).toBeTruthy();
-    fireEvent.keyDown(window, { code: "Space" });
+    await act(async () => {
+      fireEvent.keyDown(window, { code: "Space" });
+    });
     expect(screen.getByRole("button", { name: "일시정지" })).toBeTruthy();
   });
   it("does not reset or enter presentation when typing or using modified shortcuts", async () => {
     const { fullscreen } = await open();
-    fireEvent.click(screen.getByRole("button", { name: /눌러서 시간 입력/ }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /눌러서 시간 입력/ }));
+    });
     const input = screen.getByRole("textbox", { name: "분" });
-    fireEvent.keyDown(input, { key: "f" });
-    fireEvent.keyDown(window, { key: "f", ctrlKey: true });
-    fireEvent.keyDown(window, { key: "f", repeat: true });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "f" });
+    });
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    });
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "f", repeat: true });
+    });
     expect(fullscreen).not.toHaveBeenCalled();
-    fireEvent.keyDown(window, { key: "f" });
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "f" });
+    });
     await act(async () => {
       await Promise.resolve();
     });
@@ -76,16 +105,24 @@ describe("timer keyboard and monotonic time", () => {
   });
   it("exits presentation with Escape while a control is focused", async () => {
     const { fullscreen } = await open();
-    fireEvent.keyDown(window, { key: "f" });
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "f" });
+    });
     await act(async () => {
       await Promise.resolve();
     });
     const reset = screen.getByRole("button", { name: "리셋" });
     reset.focus();
-    fireEvent.keyDown(reset, { key: "Escape", repeat: true });
-    fireEvent.keyDown(reset, { key: "Escape", isComposing: true });
+    await act(async () => {
+      fireEvent.keyDown(reset, { key: "Escape", repeat: true });
+    });
+    await act(async () => {
+      fireEvent.keyDown(reset, { key: "Escape", isComposing: true });
+    });
     expect(fullscreen).toHaveBeenCalledExactlyOnceWith({ value: true });
-    fireEvent.keyDown(reset, { key: "Escape" });
+    await act(async () => {
+      fireEvent.keyDown(reset, { key: "Escape" });
+    });
     await act(async () => {
       await Promise.resolve();
     });
@@ -99,7 +136,9 @@ describe("timer keyboard and monotonic time", () => {
     vi.spyOn(Date, "now").mockImplementation(() => wall);
     await open();
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-    fireEvent.click(screen.getByRole("button", { name: "시작" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "시작" }));
+    });
     monotonic += 10000;
     wall -= 1000000;
     act(() => vi.advanceTimersByTime(200));
@@ -112,4 +151,38 @@ describe("timer keyboard and monotonic time", () => {
     act(() => vi.advanceTimersByTime(200));
     expect(screen.getByText("시간이 끝났어요")).toBeTruthy();
   });
+});
+
+it("keeps a running timer dirty, saves a paused remaining time on exit and restores it", async () => {
+  let now = 1000;
+  vi.spyOn(performance, "now").mockImplementation(() => now);
+  const f = await open();
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "시작" }));
+  });
+  expect(f.host.requests.filter((r) => r.method === "setDocumentState").at(-1)?.args).toEqual({
+    documentHandle: "document",
+    dirty: true,
+    saving: false,
+  });
+  now = 11000;
+  await act(async () => {
+    f.host.emit("window.documentSaveRequested", { documentHandle: "document", requestId: "leave" });
+  });
+  await waitFor(() =>
+    expect(f.host.requests.find((r) => r.method === "completeDocumentSave")?.args).toEqual({
+      documentHandle: "document",
+      requestId: "leave",
+      saved: true,
+    }),
+  );
+  const saved = f.values.get("timer.v1");
+  expect(saved).toMatchObject({ status: "paused", elapsedMs: 10000, durationMs: 300000 });
+  f.view.unmount();
+  f.deck.dispose();
+  const next = await open(saved);
+  await screen.findByRole("button", { name: /남은 시간 4:50/ });
+  expect(screen.getByRole("button", { name: "시작" })).toBeTruthy();
+  next.view.unmount();
+  next.deck.dispose();
 });

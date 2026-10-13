@@ -5,6 +5,7 @@ import {
   Body,
   Button,
   CheckBox,
+  ComboBox,
   DropZone,
   InfoBar,
   ListView,
@@ -58,6 +59,10 @@ export function App({ deck }: { deck: Deck }) {
   useEffect(
     () =>
       deck.on("fs.dropped", (incoming) => {
+        if (!incoming.files.length) {
+          setMessage("폴더나 읽을 수 없는 파일은 추가하지 않았어요. 지원하는 파일을 놓아주세요.");
+          return;
+        }
         void addFiles(incoming.files);
       }),
     [deck],
@@ -68,17 +73,18 @@ export function App({ deck }: { deck: Deck }) {
       (file) => !filesRef.current.some((existing) => existing.handle === file.handle),
     );
     if (!accepted.length) {
-      if (incoming.some((file) => !supported(file)))
-        setMessage("JPG, PNG, WebP만 추가해요. 움직이는 이미지와 HEIC는 지원하지 않아요.");
+      setMessage(
+        incoming.every(supported)
+          ? "이미 추가한 이미지예요. 입력 목록에서 확인해 주세요."
+          : "JPG, PNG, WebP만 추가해요. 움직이는 이미지와 HEIC는 지원하지 않아요.",
+      );
       return;
     }
     // Drop events can arrive in one React batch; reserve handles synchronously.
     filesRef.current = [...filesRef.current, ...accepted];
     setFiles(filesRef.current);
     setMessage(
-      incoming.some((file) => !supported(file))
-        ? "JPG, PNG, WebP만 추가해요. 움직이는 이미지와 HEIC는 지원하지 않아요."
-        : "",
+      `${accepted.length}개 이미지를 추가했어요.${incoming.some((file) => !supported(file)) ? " JPG, PNG, WebP만 추가해요." : ""}`,
     );
     if (latest.current.automatic) await run(accepted);
   }
@@ -130,25 +136,7 @@ export function App({ deck }: { deck: Deck }) {
     const abort = new AbortController();
     controller.current = abort;
     setRunning(true);
-    let target = parentRef.current;
-    try {
-      if (!target) target = await deck.fs.pickFolder();
-    } catch {
-      setMessage("폴더를 선택하지 못했어요. 다시 선택해 주세요.");
-    }
-    if (!target || abort.signal.aborted) {
-      queued.current.clear();
-      busy.current = false;
-      controller.current = null;
-      setRunning(false);
-      setMessage(
-        "폴더 선택을 취소했어요. 추가한 파일과 이전 결과는 유지해요. 압축하여 저장으로 다시 시작할 수 있어요.",
-      );
-      return;
-    }
-    parentRef.current = target;
-    setParent(target);
-    setMessage("");
+    const target = parentRef.current;
     const runOptions = latest.current.options;
     void saveOptions(deck, runOptions).catch(() => undefined);
     try {
@@ -164,7 +152,7 @@ export function App({ deck }: { deck: Deck }) {
         queued.current.clear();
         setTotal(batch.length);
         setProcessed(0);
-        const output = await runBatch(deck, batch, target.handle, runOptions, abort.signal, encode, (current) => {
+        const output = await runBatch(deck, batch, target?.handle, runOptions, abort.signal, encode, (current) => {
           setProcessed(current.length);
           mergeResults(current);
         });
@@ -187,16 +175,17 @@ export function App({ deck }: { deck: Deck }) {
     }
   }
   return (
-    <ToolLayout
-      title="이미지 용량 줄이기"
-      description="여러 이미지를 한 번에 줄여 새 폴더에 저장해요. 원본은 그대로 남아요."
-    >
+    <ToolLayout title="이미지 용량 줄이기" description="여러 이미지를 줄여 원본과 같은 폴더에 새 파일로 저장해요.">
       <ToolLayout.Section step="input" title="1. 이미지 추가">
         <DropZone
           onPick={() => {
             void pickFiles();
           }}
-          description="JPG · PNG · WebP를 끌어 놓거나 파일을 선택해 주세요."
+          description={
+            files.length
+              ? `이미지 ${files.length}개를 입력했어요. 추가할 사진을 놓거나 선택해 주세요.`
+              : "JPG · PNG · WebP를 끌어 놓거나 파일을 선택해 주세요."
+          }
         />
         <div className={styles.actions}>
           <Button
@@ -213,8 +202,8 @@ export function App({ deck }: { deck: Deck }) {
           </Button>
         </div>
         <CheckBox content="파일 추가 시 바로 압축" checked={automatic} disabled={running} onChange={setAutomatic} />
-        <Body secondary>처음에는 저장 폴더를 선택해요. 바로 압축은 이 화면에서만 적용돼요.</Body>
-        <Body>
+        <Body secondary>기본은 원본과 같은 폴더에 저장해요. 바로 압축은 이 화면에서만 적용돼요.</Body>
+        <Body aria-live="polite">
           {files.length}개 · {bytes(files.reduce((sum, file) => sum + file.size, 0))} · 대기{" "}
           {files.filter((file) => !results.some((result) => result.file.handle === file.handle)).length}개
         </Body>
@@ -235,6 +224,21 @@ export function App({ deck }: { deck: Deck }) {
       <ToolLayout.Section step="options" title="2. 압축 설정">
         <SettingsExpander header="압축 설정" description={`품질 ${options.quality}% · 긴 변 ${options.maxEdge}px`}>
           <div className={styles.options}>
+            <ComboBox
+              header="저장 형식"
+              value={options.format}
+              disabled={running}
+              options={[
+                { value: "original", label: "원본 형식 유지" },
+                { value: "png", label: "PNG · 투명도 유지" },
+                { value: "jpeg", label: "JPG · 흰 배경" },
+                { value: "webp", label: "WebP · 투명도 유지" },
+              ]}
+              onChange={(format) => {
+                if (!running && (format === "original" || format === "png" || format === "jpeg" || format === "webp"))
+                  setOptions({ ...options, format });
+              }}
+            />
             <NumberBox
               header="품질 (%)"
               value={options.quality}
@@ -256,7 +260,9 @@ export function App({ deck }: { deck: Deck }) {
           </div>
         </SettingsExpander>
         <Body secondary>
-          작은 이미지는 확대하지 않아요. 투명도를 유지하는 WebP로 저장해요. 용량이 줄지 않으면 원본을 복사해요.
+          기본은 각 원본의 형식과 확장자를 유지해요. 다른 형식으로 바꾸려면 저장 형식을 선택해 주세요. 작은 이미지는
+          확대하지 않아요. 용량이 커져도 선택한 크기와 형식으로 저장해요. JPG를 선택하면 투명한 부분은 흰 배경으로
+          저장해요.
         </Body>
         <Button
           disabled={running}
@@ -266,7 +272,16 @@ export function App({ deck }: { deck: Deck }) {
         >
           저장 폴더 선택
         </Button>
-        <Body>{parent ? parent.name : "저장할 상위 폴더를 선택해 주세요."}</Body>
+        <Button
+          disabled={running || !parent}
+          onClick={() => {
+            parentRef.current = null;
+            setParent(null);
+          }}
+        >
+          원본 폴더에 저장
+        </Button>
+        <Body>{parent ? `저장 위치: ${parent.name}` : "원본 파일과 같은 폴더에 저장해요."}</Body>
       </ToolLayout.Section>
       <ToolLayout.Section step="preview" title="3. 입력 확인">
         <div className={styles.list}>
@@ -284,8 +299,7 @@ export function App({ deck }: { deck: Deck }) {
           />
         </div>
         <Body secondary>
-          64 MB 또는 4,800만 화소를 넘는 이미지는 건너뛰어요. 압축된 파일에서는 촬영 정보가 제거돼요. 원본 복사에는 촬영
-          정보가 남아요.
+          64 MB 또는 4,800만 화소를 넘는 이미지는 건너뛰어요. 저장한 결과에서는 촬영 정보가 제거돼요.
         </Body>
       </ToolLayout.Section>
       <ToolLayout.Section step="run" title="4. 압축">
@@ -313,8 +327,10 @@ export function App({ deck }: { deck: Deck }) {
                 <Body>
                   {result.file.name} ·{" "}
                   {result.status === "failed"
-                    ? "처리하지 못했어요. 형식과 크기를 확인해 주세요."
-                    : `${result.status === "original" ? "원본 복사" : "압축"} · ${bytes(result.file.size)} → ${bytes(result.outputSize ?? 0)}`}
+                    ? result.formatUnavailable
+                      ? "이 PC에서 지원하지 않는 저장 형식이에요. 저장 형식을 직접 선택해 다시 시도해 주세요."
+                      : "처리하지 못했어요. 형식과 크기를 확인해 주세요."
+                    : `압축 · ${bytes(result.file.size)} → ${bytes(result.outputSize ?? 0)}`}
                 </Body>
                 {result.folder && (
                   <Button

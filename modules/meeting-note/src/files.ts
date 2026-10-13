@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-import type { Deck } from "@deck/sdk";
+import type { Deck, FileHandleInfo } from "@deck/sdk";
 import { type Entry, type Meeting, emptyMeeting, readMeeting } from "./meeting.ts";
 import { structuredExport } from "./export.ts";
 export type ExportFormat = "txt" | "md" | "summary" | "html";
@@ -94,9 +94,14 @@ export function importMeeting(value: unknown): Meeting {
     startedAt: typeof data["startedAt"] === "string" ? data["startedAt"] : "",
   });
 }
-export async function pickMeeting(deck: Deck): Promise<Meeting | null> {
-  const files = await deck.fs.pickFiles({ multiple: false, filters: [{ name: "회의록 백업", extensions: ["json"] }] });
-  const file = files[0];
+export async function pickMeeting(
+  deck: Deck,
+  provided?: FileHandleInfo,
+  onSource?: (file: FileHandleInfo) => void,
+): Promise<Meeting | null> {
+  const file =
+    provided ??
+    (await deck.fs.pickFiles({ multiple: false, filters: [{ name: "회의록 백업", extensions: ["json"] }] }))[0];
   if (!file) return null;
   const limit = 2 * 1024 * 1024;
   if (file.size > limit) throw new Error("INVALID_MEETING");
@@ -109,12 +114,24 @@ export async function pickMeeting(deck: Deck): Promise<Meeting | null> {
     text += decoder.decode(chunk, { stream: true });
   }
   text += decoder.decode();
-  return importMeeting(JSON.parse(text.replace(/^\uFEFF/, "")));
+  const meeting = importMeeting(JSON.parse(text.replace(/^\uFEFF/, "")));
+  onSource?.(file);
+  return meeting;
 }
-export async function saveFile(deck: Deck, meeting: Meeting, backup: boolean, format: ExportFormat): Promise<boolean> {
-  const parent = await deck.fs.pickFolder();
-  if (!parent) return false;
-  const batch = await deck.fs.createOutputFolder({ parentHandle: parent.handle, suggestedName: "회의록 내보내기" });
+export async function saveFile(
+  deck: Deck,
+  meeting: Meeting,
+  backup: boolean,
+  format: ExportFormat,
+  source?: FileHandleInfo,
+  chooseFolder = false,
+): Promise<boolean> {
+  const location =
+    source && !chooseFolder
+      ? { sourceHandle: source.handle }
+      : await deck.fs.pickFolder().then((folder) => (folder ? { parentHandle: folder.handle } : null));
+  if (!location) return false;
+  const batch = await deck.fs.openOutputFolder(location);
   try {
     await deck.fs.writeBlob({
       batchId: batch.batchId,

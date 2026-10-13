@@ -4,7 +4,9 @@
 //! `window` capability (capabilities.md §2.3). The first change a module makes records the
 //! original state; [`restore`] puts it back when the module hides or unloads.
 
-use deck_core::caps::window::{ToggleArgs, WindowOverrides};
+use deck_core::caps::window::{
+    CompleteDocumentSaveArgs, DocumentState, ToggleArgs, WindowOverrides,
+};
 use deck_core::error::DeckError;
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
@@ -16,6 +18,12 @@ use crate::state::AppState;
 /// window methods.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Op {
+    /// Register an owner-scoped editable document.
+    RegisterDocument,
+    /// Publish unsaved and saving state.
+    SetDocumentState,
+    /// Complete only a host-requested document save.
+    CompleteDocumentSave,
     /// Enumerate owner-scoped display choices.
     ListDisplays,
     /// Open a public-only local window.
@@ -34,6 +42,9 @@ impl Op {
     /// Maps a method name.
     pub fn parse(method: &str) -> Option<Self> {
         Some(match method {
+            "registerDocument" => Self::RegisterDocument,
+            "setDocumentState" => Self::SetDocumentState,
+            "completeDocumentSave" => Self::CompleteDocumentSave,
             "listDisplays" => Self::ListDisplays,
             "openPresentation" => Self::OpenPresentation,
             "updatePresentation" => Self::UpdatePresentation,
@@ -54,6 +65,33 @@ pub fn call(
     args: Value,
 ) -> Result<Value, DeckError> {
     match op {
+        Op::RegisterDocument => {
+            let _: deck_core::caps::NoArgs = parse_args(args)?;
+            let result = state
+                .documents
+                .lock()
+                .map_err(|_| internal())?
+                .register(module_id, crate::document_host::token()?);
+            return super::to_value(&result);
+        }
+        Op::SetDocumentState => {
+            let args: DocumentState = parse_args(args)?;
+            state
+                .documents
+                .lock()
+                .map_err(|_| internal())?
+                .update(module_id, args)?;
+            return Ok(Value::Null);
+        }
+        Op::CompleteDocumentSave => {
+            let args: CompleteDocumentSaveArgs = parse_args(args)?;
+            state.documents.lock().map_err(|_| internal())?.complete(
+                module_id,
+                args,
+                crate::document_host::now(),
+            )?;
+            return Ok(Value::Null);
+        }
         Op::ListDisplays => {
             let _: deck_core::caps::NoArgs = parse_args(args)?;
             return super::to_value(&crate::presentation_host::list_displays(app, module_id)?);

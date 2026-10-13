@@ -2,11 +2,12 @@
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import { imageHeader, MAX_PIXELS } from "./header.ts";
 import { clampRect, orientedSize, outputSize, type Edit } from "./edit.ts";
+import type { ImageFormat } from "./output-format.ts";
 export interface CropRequest {
   bytes: Uint8Array<ArrayBuffer>;
   edit: Edit;
   preview: boolean;
-  format: "png" | "jpeg";
+  format: ImageFormat;
 }
 export interface CropResponse {
   blob: Blob;
@@ -67,10 +68,12 @@ self.onmessage = async (event: MessageEvent<CropRequest & { fontFamily: string }
         ctx.strokeRect(x, y, ((size.width * a.width) / 100) * sx, ((size.height * a.height) / 100) * sy);
       }
     }
+    const type = preview ? "image/png" : `image/${format}`;
     const blob = await canvas.convertToBlob({
-      type: preview || format === "png" ? "image/png" : "image/jpeg",
+      type,
       quality: 0.95,
     });
+    if (blob.type !== type) throw new Error("ENCODER_UNAVAILABLE");
     self.postMessage({
       blob,
       sourceWidth: bitmap.width,
@@ -78,8 +81,11 @@ self.onmessage = async (event: MessageEvent<CropRequest & { fontFamily: string }
       imageWidth: size.width,
       imageHeight: size.height,
     } satisfies CropResponse);
-  } catch {
-    self.postMessage({ error: "INVALID_IMAGE" });
+  } catch (error) {
+    self.postMessage({
+      error:
+        error instanceof Error && error.message === "ENCODER_UNAVAILABLE" ? "ENCODER_UNAVAILABLE" : "INVALID_IMAGE",
+    });
   } finally {
     bitmap?.close();
   }

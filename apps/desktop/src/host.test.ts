@@ -18,6 +18,18 @@ it("requests handshake grants without activating the module", async () => {
     { command: "module_activated", args: { moduleId: null } },
   ]);
 });
+it("keeps single unload IPC and sends bounded eviction groups through the same main command", async () => {
+  const calls: unknown[] = [];
+  mockIPC((command, args) => {
+    calls.push({ command, args });
+  });
+  await host.moduleUnloaded("synthetic-one");
+  await host.modulesUnloaded(["synthetic-one", "synthetic-two"]);
+  expect(calls).toEqual([
+    { command: "module_unloaded", args: { moduleId: "synthetic-one" } },
+    { command: "module_unloaded", args: { moduleId: "", moduleIds: ["synthetic-one", "synthetic-two"] } },
+  ]);
+});
 it("real Tauri event API scopes every host listener to its current window", async () => {
   for (const label of ["main", "capture-overlay-synthetic", "presentation-synthetic"]) {
     const subscriptions: unknown[] = [];
@@ -33,7 +45,8 @@ it("real Tauri event API scopes every host listener to its current window", asyn
     await host.onModuleEvent(() => undefined);
     await host.onShowModule(() => undefined);
     await host.onFsDropped(() => undefined);
+    await host.onDocumentExit(() => undefined);
     await presentationControls.onChanged(() => undefined);
-    expect(subscriptions).toEqual(Array.from({ length: 5 }, () => ({ kind: "Window", label })));
+    expect(subscriptions).toEqual(Array.from({ length: 6 }, () => ({ kind: "Window", label })));
   }
 });

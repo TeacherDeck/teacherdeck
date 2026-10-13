@@ -120,7 +120,7 @@ export const CAPABILITIES = {
     },
   },
   "fs": {
-    version: "1.3.0",
+    version: "1.4.0",
     methods: {
       listFiles: { long: true },
       pickDestination: { long: true },
@@ -134,6 +134,7 @@ export const CAPABILITIES = {
       openRead: { long: true },
       closeRead: { long: false },
       createOutputFolder: { long: true },
+      openOutputFolder: { long: true },
       beginWrite: { long: true },
       writeChunk: { long: false },
       commitWrite: { long: true },
@@ -142,8 +143,11 @@ export const CAPABILITIES = {
     },
   },
   "window": {
-    version: "1.1.0",
+    version: "1.2.0",
     methods: {
+      registerDocument: { long: false },
+      setDocumentState: { long: false },
+      completeDocumentSave: { long: false },
       listDisplays: { long: false },
       openPresentation: { long: false },
       updatePresentation: { long: false },

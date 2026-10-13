@@ -182,6 +182,35 @@ impl FileTransfers {
         Ok((id, path))
     }
 
+    /// Opens an already authorized ordinary folder for append-new-only output.
+    pub fn open_output(
+        &mut self,
+        owner: &str,
+        generation: u64,
+        folder: &Path,
+    ) -> Result<(String, PathBuf), DeckError> {
+        self.ready(owner, generation)?;
+        if self.batches.values().filter(|v| v.owner == owner).count() >= 4 {
+            return Err(busy());
+        }
+        let output = OutputBatch::append_destination(folder)?;
+        let path = output.folder_path().to_path_buf();
+        let id = self.token();
+        self.batches.insert(
+            id.clone(),
+            grant(
+                owner,
+                generation,
+                Batch {
+                    output,
+                    files: 0,
+                    bytes: 0,
+                },
+            ),
+        );
+        Ok((id, path))
+    }
+
     /// Checks an output batch before a native worker starts without reserving a file.
     pub fn validate_output_batch(
         &mut self,

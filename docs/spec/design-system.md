@@ -102,6 +102,9 @@ GPLv3의 Appropriate Legal Notices를 겸한다. 다음을 모두 보여 준다.
 | `ListView`                          | ListView                                                             | 파일 목록 등. 선택 없음/하나/여러 개, 빈 목록 안내                          |
 | `Image`                             | Image                                                                | 로컬 이미지 미리보기. 대체 설명 필수, 크기·채우기 방식 선택                 |
 | `ImageCropPreview`                  | Canvas + Image + Thumb                                               | 이미지 좌표의 사각형 선택·이동·크기 조절. 드래그와 방향키, 대체 설명·머리글 |
+| `Slider`                            | Slider                                                               | 범위 안의 연속 값. 머리글·현재 값·키보드 조작                               |
+| `CanvasSurface`                     | Canvas + ScrollViewer + Thumb                                        | 로컬 편집 캔버스, 확대·이동·좌표 입력, 선택/꼭짓점 표시와 키보드 포인터     |
+| `CurveEditor`                       | Canvas + Thumb + NumberBox                                           | 곡선 제어점 추가·이동·삭제. 좌표 입력과 키보드 대체 조작                    |
 
 **타입 램프**: `Caption`, `Body`, `BodyStrong`, `Subtitle`, `Title`, `TitleLarge`, `Display`([4절](#4-폰트)). `secondary`로 보조 글자색을 쓴다.
 

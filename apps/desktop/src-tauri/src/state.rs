@@ -39,6 +39,8 @@ pub struct AppState {
     pub storage: StorageService,
     /// Window state each module changed, restored when it hides.
     pub overrides: Mutex<HashMap<String, WindowOverrides>>,
+    /// Content-free owner document references and pending save/exit decisions.
+    pub documents: Mutex<deck_core::document_lifecycle::DocumentRegistry>,
     /// Module currently shown in the shell (receives `fs.dropped`).
     pub active: Mutex<Option<String>>,
     /// Mica applied to the main window.
@@ -58,8 +60,10 @@ pub struct AppState {
 pub enum FileHandleKind {
     /// Read the selected file; no writes.
     ReadFile,
-    /// Create a new output directory or list children; no existing child writes.
+    /// Selected folder: append new files, create an output directory or list children.
     OutputParent,
+    /// Output location display/reveal only; does not authorize listing sibling inputs.
+    OutputLocation,
 }
 
 /// Host-private target of an opaque picked or created handle.

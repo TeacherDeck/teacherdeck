@@ -108,6 +108,8 @@ module                     shell
 
 `window.presentationClosed`와 `window.presentationDisconnected`는 `{ presentationHandle: string }`만 담는다. 살아 있는 소유 iframe에만 전달한다. 공개할 결과 데이터는 이벤트에 넣지 않는다. 계약과 최소 창 권한은 [presentation.md](presentation.md)에 정의한다. `deck:1` envelope와 기존 이벤트는 유지한다.
 
+window 1.2의 `window.documentSaveRequested`는 `{ documentHandle: string, requestId: string }`만 담고 살아 있는 소유 iframe에만 전달한다. 저장 응답·타임아웃·종료 보호는 [문서 수명 보호](document-lifecycle.md)를 따른다. 기존 deck:1 envelope는 유지한다.
+
 ### 캡처 이벤트 계약
 
 기존 deck:1 envelope를 유지하며 capture.completed({sessionHandle,result}), capture.failed({sessionHandle,error}), overlay.changed(OverlayInfo), shortcut.triggered({shortcutHandle})를 추가한다. Rust 캡 원천 타입을 pnpm gen으로 SDK에 생성한다. 이벤트는 살아 있는 소유 iframe에만 전달하며 inactive broadcast나 pixels는 포함하지 않는다. 다시 연 모듈은 capture.status({})로 상태를 복원한다. 별도 셸 창의 deck://overlay-state는 OverlayUiState이며 region/toolbar label 매핑으로 소유자를 판정한다. overlay_ui_state와 overlay_ui_action은 payload의 자기 신고 owner를 받지 않는다.

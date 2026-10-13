@@ -56,6 +56,8 @@
 
 ## 완료 체크리스트
 
+드래그 입력 확인과 기본 저장 위치는 [ADR-0031](../docs/adr/0031-file-input-direct-output.md)과 [파일 입력·출력 명세](../docs/spec/modules.md#파일-입력과-결과-저장)를 따른다(UI-007, CAP-002, PRV-006).
+
 모듈 아이콘과 공통 작업 화면의 기준은 [디자인 시스템](../docs/spec/design-system.md)과 [ADR-0029](../docs/adr/0029-compact-tool-workspaces.md)를 따른다(UI-003·005·008).
 
 - [ ] `pnpm new:module`로 생성했다

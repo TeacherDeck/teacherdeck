@@ -13,8 +13,8 @@ use std::time::UNIX_EPOCH;
 
 use deck_core::caps::fs::{
     BatchIdArgs, BeginWriteArgs, CloseReadArgs, CreateOutputFolderArgs, DroppedFiles,
-    FileHandleInfo, FolderHandleInfo, HandleArgs, OutputBatch, PickFilesArgs, WriteChunkArgs,
-    WriteChunkResult, WriteIdArgs, extension_of,
+    FileHandleInfo, FolderHandleInfo, HandleArgs, OpenOutputFolderArgs, OutputBatch, PickFilesArgs,
+    WriteChunkArgs, WriteChunkResult, WriteIdArgs, extension_of,
 };
 use deck_core::error::{DeckError, ErrorCode};
 use serde_json::Value;
@@ -52,6 +52,8 @@ pub enum Op {
     CloseRead,
     /// `createOutputFolder`
     CreateOutputFolder,
+    /// Open an existing source parent or selected folder for new files (fs 1.4).
+    OpenOutputFolder,
     /// `beginWrite`
     BeginWrite,
     /// `writeChunk`
@@ -80,6 +82,7 @@ impl Op {
             "openRead" => Self::OpenRead,
             "closeRead" => Self::CloseRead,
             "createOutputFolder" => Self::CreateOutputFolder,
+            "openOutputFolder" => Self::OpenOutputFolder,
             "beginWrite" => Self::BeginWrite,
             "writeChunk" => Self::WriteChunk,
             "commitWrite" => Self::CommitWrite,
@@ -376,6 +379,7 @@ impl Op {
             Self::OpenRead => "openRead",
             Self::CloseRead => "closeRead",
             Self::CreateOutputFolder => "createOutputFolder",
+            Self::OpenOutputFolder => "openOutputFolder",
             Self::BeginWrite => "beginWrite",
             Self::WriteChunk => "writeChunk",
             Self::CommitWrite => "commitWrite",
@@ -438,6 +442,53 @@ fn transfer_call(
             let folder = FolderHandleInfo {
                 name: display_name(&path),
                 handle: issue(state, owner, path, FileHandleKind::OutputParent, generation)?,
+            };
+            to_value(&OutputBatch { batch_id, folder })
+        }
+        Op::OpenOutputFolder => {
+            let a: OpenOutputFolderArgs = parse_args(args)?;
+            let (batch_id, path) = match (a.source_handle, a.parent_handle) {
+                (Some(handle), None) => {
+                    let source = resolve(
+                        state,
+                        owner,
+                        &handle,
+                        generation,
+                        Some(FileHandleKind::ReadFile),
+                    )?;
+                    // Retain the ordinary source and ancestor guards while authorizing its parent.
+                    let _source_guard = crate::file_read::FileReadSession::open(&source)?;
+                    let parent = source.parent().ok_or_else(internal)?;
+                    transfers.open_output(owner, generation, parent)?
+                }
+                (None, Some(handle)) => {
+                    let parent = resolve(
+                        state,
+                        owner,
+                        &handle,
+                        generation,
+                        Some(FileHandleKind::OutputParent),
+                    )?;
+                    transfers.open_output(owner, generation, &parent)?
+                }
+                _ => {
+                    return Err(DeckError::new(
+                        ErrorCode::InvalidArgs,
+                        "원본 파일 또는 저장 폴더 하나를 지정해 주세요.",
+                    ));
+                }
+            };
+            // A source-parent destination must not grant reads of its other files.
+            // This handle can be revealed; only an explicitly picked folder can be listed.
+            let folder = FolderHandleInfo {
+                name: display_name(&path),
+                handle: issue(
+                    state,
+                    owner,
+                    path,
+                    FileHandleKind::OutputLocation,
+                    generation,
+                )?,
             };
             to_value(&OutputBatch { batch_id, folder })
         }

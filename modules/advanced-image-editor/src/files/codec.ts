@@ -1,0 +1,111 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms: see LICENSE-ADDITIONAL-TERMS
+import { assertMemoryBudget, createDocument, createPixelLayer, validateDocument } from "../core/model.ts";
+import type { EditorDocument } from "../core/model.ts";
+import { renderDocumentPixels, renderLayerTransformed, rasterizeLayer } from "../core/render.ts";
+import { decodeProject, encodeProjectBlob } from "./project.ts";
+import { decodePsd, encodePsd } from "./psd.ts";
+import type { ImportedDocument, ImportOptions } from "./psd.ts";
+import { imageHeader } from "./header.ts";
+import { checkDimensions, MAX_INPUT_BYTES } from "./limits.ts";
+import { requireInputBudget } from "./budget.ts";
+import { rasterEncodingScratch } from "./export-budget.ts";
+
+export type RasterFormat = "png" | "jpeg" | "webp";
+export type ExportFormat = "deckimage" | "psd" | RasterFormat;
+export interface EncodeResult {
+  blob: Blob;
+  revision: number;
+  format: ExportFormat;
+}
+export function inputKind(bytes: Uint8Array): "deckimage" | "psd" | "image" {
+  if (bytes[0] === 0x50 && bytes[1] === 0x4b) return "deckimage";
+  if (bytes[0] === 0x38 && bytes[1] === 0x42 && bytes[2] === 0x50 && bytes[3] === 0x53) return "psd";
+  return "image";
+}
+export async function decodeDocument(
+  bytes: Uint8Array<ArrayBuffer>,
+  options: ImportOptions = {},
+): Promise<ImportedDocument> {
+  if (!bytes.length || bytes.length > MAX_INPUT_BYTES) throw new Error("INPUT_LIMIT");
+  requireInputBudget(bytes, options);
+  const kind = inputKind(bytes);
+  if (kind === "psd") return decodePsd(bytes, options);
+  if (kind === "deckimage") {
+    const document = decodeProject(bytes);
+    return {
+      document,
+      warnings: [],
+      fonts: [...new Set(document.layers.filter((l) => l.kind === "text").map((l) => l.text.fontFamily))],
+      flattened: false,
+    };
+  }
+  const header = imageHeader(bytes);
+  const document = createDocument(header.width, header.height);
+  assertMemoryBudget(document, header.width * header.height * 12 + bytes.length);
+  let bitmap: ImageBitmap | undefined;
+  try {
+    // Chromium applies EXIF orientation. Never rotate the decoded pixels a second time.
+    bitmap = await createImageBitmap(new Blob([bytes], { type: header.mime }), { imageOrientation: "from-image" });
+    checkDimensions(bitmap.width, bitmap.height);
+    document.width = bitmap.width;
+    document.height = bitmap.height;
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height),
+      context = canvas.getContext("2d");
+    if (!context) throw new Error("INVALID_IMAGE");
+    context.drawImage(bitmap, 0, 0);
+    const image = context.getImageData(0, 0, bitmap.width, bitmap.height);
+    document.layers.push(createPixelLayer({ width: bitmap.width, height: bitmap.height, data: image.data }));
+    canvas.width = 1;
+    canvas.height = 1;
+    const rasterFormat = header.mime === "image/jpeg" ? "jpeg" : header.mime === "image/webp" ? "webp" : "png";
+    return { document, warnings: [], fonts: [], flattened: false, rasterFormat };
+  } finally {
+    bitmap?.close();
+  }
+}
+export async function encodeDocument(document: EditorDocument, format: ExportFormat): Promise<EncodeResult> {
+  validateDocument(document);
+  if (format === "deckimage")
+    return {
+      blob: encodeProjectBlob(document),
+      revision: document.revision,
+      format,
+    };
+  if (format === "psd") {
+    const output = encodePsd(document, { renderDocumentPixels, renderLayerTransformed, rasterizeLayer });
+    return {
+      blob: new Blob([Uint8Array.from(output)], { type: "image/vnd.adobe.photoshop" }),
+      revision: document.revision,
+      format,
+    };
+  }
+  assertMemoryBudget(document, rasterEncodingScratch(document));
+  const image = renderDocumentPixels(document),
+    canvas = new OffscreenCanvas(document.width, document.height),
+    context = canvas.getContext("2d");
+  if (!context) throw new Error("INVALID_IMAGE");
+  try {
+    // Only the rendered output is changed. Blend JPEG transparency into white in place,
+    // avoiding a second full-sized canvas and a copied ImageData pixel plane.
+    if (format === "jpeg") {
+      for (let at = 0; at < image.data.length; at += 4) {
+        const alpha = (image.data[at + 3] ?? 0) / 255;
+        for (let channel = 0; channel < 3; channel++)
+          image.data[at + channel] = (image.data[at + channel] ?? 0) * alpha + 255 * (1 - alpha);
+        image.data[at + 3] = 255;
+      }
+    }
+    if (!(image.data.buffer instanceof ArrayBuffer)) throw new Error("INVALID_IMAGE");
+    const pixels = new Uint8ClampedArray(image.data.buffer, image.data.byteOffset, image.data.byteLength);
+    context.putImageData(new ImageData(pixels, image.width, image.height), 0, 0);
+    const mime = `image/${format}`;
+    const blob = await canvas.convertToBlob({ type: mime, quality: 0.95 });
+    // Canvas may silently return PNG when an encoder is unavailable. Never save it with a false extension.
+    if (blob.type !== mime) throw new Error("UNSUPPORTED_EXPORT");
+    return { blob, revision: document.revision, format };
+  } finally {
+    canvas.width = 1;
+    canvas.height = 1;
+  }
+}
