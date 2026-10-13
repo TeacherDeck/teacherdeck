@@ -31,7 +31,7 @@
 
 앱이 실행 중이지 않은 상태에서 NSIS 설치를 종료 코드 0으로 완료하고 설치 버전 0.9.0을 확인했다. 설치된 실행 파일은 NSIS 표식 3바이트를 제외하면 빌드와 같으며, 카탈로그·전체 모듈·전체 네이티브 자산의 목록과 해시가 일치한다. 삭제 대상으로 확인한 구버전 패키지와 0.8.1 설치 파일은 더 이상 남아 있지 않다. 앱을 직접 실행하거나 화면을 조작한 검수는 아니다.
 
-게시 작업본과 실제 빌드 작업본의 소스 1,457개도 대조했다. 로컬 근거는 `target/product-audit-2026-10-13/verify-090-pass.log`, `build-090-audit.json`, `installed-090-audit.json`, `cleanup-090-plan.json`, `cleanup-090-result.json`에 보관한다. 쿨 예약실 공개본 118파일·ZIP 검사는 원작 게시 커밋 `cef3b48`에 반영했으며, TeacherDeck의 실행 코드 핀은 `864de2b`다.
+게시 작업본과 실제 빌드 작업본의 소스 1,457개도 대조했다. 최종 대조에서 1,454개는 일치했고, 주 작업본의 `.claude/skills/{add-capability,add-module,change-spec}/SKILL.md` 세 파일에는 별도로 추가된 작업 지침이 있었다. 실행 코드 차이는 없으며 이 지침 변경은 덮어쓰거나 제품 PR에 포함하지 않았다. 로컬 근거는 `target/product-audit-2026-10-13/verify-090-pass.log`, `build-090-audit.json`, `installed-090-audit.json`, `cleanup-090-plan.json`, `cleanup-090-result.json`, `source-comparison-090.json`에 보관한다. 쿨 예약실 공개본 118파일·ZIP 검사는 원작 게시 커밋 `cef3b48`에 반영했으며, TeacherDeck의 실행 코드 핀은 `864de2b`다.
 
 첫 전체 실행에서는 JavaScript 1,738개·Rust 292개 테스트가 통과했지만, CoolReserve 버전이 바뀐 생성 파일을 갱신하지 않아 `check-gen`이 실패했다. 공식 `pnpm gen`으로 재생성한 뒤 `check:gen`을 통과했다. 두 번째 전체 실행에서는 지도일 편집창의 jsdom 시험 세 건이 접근성 조회에서 실패했다. 같은 실패를 단독 재현하자 정확한 제목의 대화상자는 생성됐지만 모의 포인터가 포커스를 옮기지 않아 `aria-hidden` 상태로 남아 있었다. 제품 코드는 바꾸지 않고 시험이 대화상자·Tabster 등록·포커스를 기다리도록 수정했다. 접근성·포커스 반환 검증을 유지한 대상 3건과 지도일 화면 27건이 통과했으며, 다른 빌드·검사를 겹쳐 실행하지 않은 세 번째 전체 실행에서도 모두 통과했다. 검사 억제·skip·제한 시간 확대는 하지 않았다.
 
