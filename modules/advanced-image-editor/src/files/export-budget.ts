@@ -5,6 +5,19 @@ import { layerSize } from "../core/model.ts";
 import type { EditorDocument } from "../core/model.ts";
 import { checkDimensions } from "./limits.ts";
 
+/** Full compositor plus one adjusted layer, or raster/canvas/encoder buffers during final output. */
+export function rasterEncodingScratch(document: EditorDocument): number {
+  const composite = checkDimensions(document.width, document.height) * 4;
+  const largestLayer = Math.max(
+    0,
+    ...document.layers.map((layer) => {
+      const size = layerSize(layer);
+      return checkDimensions(size.width, size.height) * 4;
+    }),
+  );
+  return Math.max(composite + largestLayer * 2, composite * 3) + 1024 * 1024;
+}
+
 /** Cached transformed layers/masks, compositor, writer growth and output copies all count before rendering. */
 export function psdEncodingScratch(document: EditorDocument): number {
   const bytes = document.layers.map((layer) => {

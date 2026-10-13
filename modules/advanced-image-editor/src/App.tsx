@@ -64,6 +64,7 @@ import {
   FileOperationError,
   importDocument,
   OutputSession,
+  projectSaveHeadroom,
   readInput,
 } from "./files/index.ts";
 import type { ExportSelection, ImportedDocument, ImportOptions } from "./files/index.ts";
@@ -262,7 +263,7 @@ export function errorText(error: unknown): string {
 export function App({ deck }: { deck: Deck }) {
   const s = useStyles();
   const documentRef = useRef<EditorDocument>(createDocument());
-  const history = useRef(new EditorHistory());
+  const history = useRef(new EditorHistory(undefined, projectSaveHeadroom));
   const output = useRef(new OutputSession(deck));
   const sourceHandle = useRef<string | undefined>(undefined);
   const parentRef = useRef<FolderHandleInfo | null>(null);
@@ -605,6 +606,8 @@ export function App({ deck }: { deck: Deck }) {
     return r === "primary" ? saveRef.current() : r === "secondary";
   };
   const install = async (imported: ImportedDocument, add: boolean, filename: string, originalHandle?: string) => {
+    // A new document must retain a safe editable-save path before replacing the current one.
+    if (!add) assertMemoryBudget(imported.document, projectSaveHeadroom(imported.document));
     if (add)
       edit("이미지 레이어 추가", (draft) => {
         for (const copy of cloneDocumentMetadata(imported.document).layers) {
@@ -1611,7 +1614,7 @@ export function App({ deck }: { deck: Deck }) {
             </div>
           </div>
           <section className={s.panel} hidden={panel !== "properties"} aria-label="레이어 속성 패널">
-            <TextBox header="출력 이름" value={name} onChange={setName} disabled={disabled} />
+            <TextBox header="출력 이름 (확장자 제외)" value={name} onChange={setName} disabled={disabled} />
             {layer && (
               <LayerInspector
                 layer={layer}

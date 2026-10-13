@@ -32,25 +32,16 @@ describe("image compression", () => {
     expect(dimensions(400, 200, 1600)).toEqual({ width: 400, height: 200 });
     expect(() => dimensions(10000, 10000, 1600)).toThrow();
   });
-  it("keeps originals when compression offers no saving and sanitizes names", () => {
-    const original = new Blob(["1234"]);
-    expect(chooseOutput(original, new Blob(["1234"], { type: "image/png" }), "sample.png", "png").blob).toBe(original);
-    expect(chooseOutput(original, new Blob(["12"], { type: "image/webp" }), "sample.png", "png").name).toBe(
-      "sample_작게.webp",
-    );
+  it("keeps the encoded output even when it is larger and sanitizes names", () => {
+    const compressed = new Blob(["12345678"], { type: "image/png" });
+    expect(chooseOutput(compressed, "sample.png", "png").blob).toBe(compressed);
+    expect(chooseOutput(new Blob(["12"], { type: "image/webp" }), "sample.png", "png").name).toBe("sample_작게.webp");
     expect(outputName("../sample", "webp")).not.toContain("/");
   });
-  it("names an unchanged PNG copy by its bytes even when the picked extension is JPG", () => {
+  it("names a PNG output by its actual encoding even when the picked extension is JPG", () => {
     const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
-    const original = new Blob([bytes]);
-    const output = chooseOutput(
-      original,
-      new Blob([bytes], { type: "image/png" }),
-      "sample.jpg",
-      signatureExtension(bytes),
-    );
+    const output = chooseOutput(new Blob([bytes], { type: "image/png" }), "sample.jpg", signatureExtension(bytes));
     expect(output.name).toBe("sample_작게.png");
-    expect(output.keptOriginal).toBe(true);
     expect(signatureExtension(new Uint8Array([255, 216, 255]))).toBe("jpg");
     expect(() => signatureExtension(new Uint8Array([0, 1, 2]))).toThrow("INVALID_IMAGE");
   });
@@ -159,6 +150,32 @@ describe("image compression", () => {
     );
     expect(output.results[0]).toMatchObject({ status: "failed", formatUnavailable: true });
     expect(write).not.toHaveBeenCalled();
+    deck.dispose();
+  });
+  it("writes larger same-format output so the encoder's resize and metadata removal are not discarded", async () => {
+    const { host } = setup();
+    const deck = await connect({ window: host.window });
+    const source = new Blob([pngSignature, "synthetic EXIF metadata"]);
+    vi.spyOn(deck.fs, "readChunks").mockImplementation(async function* () {
+      yield new Uint8Array(await source.arrayBuffer());
+    });
+    const encoded = new Blob([new Uint8Array(128)], { type: "image/png" });
+    const encoder = vi.fn<(blob: Blob, options: typeof DEFAULT_OPTIONS) => Promise<Blob>>(async () => encoded);
+    const write = vi.spyOn(deck.fs, "writeBlob").mockImplementation(async ({ blob }) => ({ ...file, size: blob.size }));
+    const options = { ...DEFAULT_OPTIONS, maxEdge: 800 };
+    const result = await runBatch(
+      deck,
+      [file],
+      undefined,
+      options,
+      new AbortController().signal,
+      encoder,
+      () => undefined,
+    );
+    expect(encoder.mock.calls[0]?.[1]).toEqual(options);
+    expect(write.mock.calls[0]?.[0].blob).toBe(encoded);
+    expect(result.results[0]).toMatchObject({ status: "compressed", outputSize: 128 });
+    expect(await write.mock.calls[0]?.[0].blob.text()).not.toContain("EXIF");
     deck.dispose();
   });
   it("loads and saves settings through the mock host", async () => {

@@ -27,11 +27,9 @@ export async function saveOptions(deck: Deck, options: Options) {
 export function supported(file: FileHandleInfo) {
   return ["jpg", "jpeg", "png", "webp"].includes(file.ext.toLowerCase());
 }
-export function chooseOutput(original: Blob, compressed: Blob, name: string, originalExt: string) {
+export function chooseOutput(compressed: Blob, name: string, originalExt: string) {
   const originalMime = extensionMime(originalExt);
   if (!["image/png", "image/jpeg", "image/webp"].includes(compressed.type)) throw new Error("ENCODER_UNAVAILABLE");
-  if (compressed.size >= original.size && compressed.type === originalMime)
-    return { blob: original, name: outputName(name, originalExt), keptOriginal: true };
   const extension =
     compressed.type === originalMime
       ? originalExt
@@ -41,12 +39,11 @@ export function chooseOutput(original: Blob, compressed: Blob, name: string, ori
   return {
     blob: compressed,
     name: outputName(name, extension),
-    keptOriginal: false,
   };
 }
 export interface Result {
   file: FileHandleInfo;
-  status: "compressed" | "original" | "failed";
+  status: "compressed" | "failed";
   outputSize?: number;
   folder?: FolderHandleInfo;
   formatUnavailable?: boolean;
@@ -119,14 +116,14 @@ export async function runBatch(
         const compressed = await encoder(original, options, signal);
         const expectedMime = options.format === "original" ? extensionMime(originalExt) : `image/${options.format}`;
         if (compressed.type !== expectedMime) throw new Error("ENCODER_UNAVAILABLE");
-        const output = chooseOutput(original, compressed, file.name, originalExt);
+        const output = chooseOutput(compressed, file.name, originalExt);
         const saved = await deck.fs.writeBlob(
           { batchId: batch.batchId, suggestedName: output.name, blob: output.blob },
           { signal },
         );
         results.push({
           file,
-          status: output.keptOriginal ? "original" : "compressed",
+          status: "compressed",
           outputSize: saved.size,
           folder: batch.folder,
         });

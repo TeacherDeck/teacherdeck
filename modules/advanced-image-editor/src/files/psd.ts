@@ -9,6 +9,7 @@ import {
   createDocument,
   createPixelLayer,
   createTextLayer,
+  LIMITS,
   validateDocument,
 } from "../core/model.ts";
 import type { EditorDocument, Layer, PixelLayer, Raster, TextLayer, Transform, Color } from "../core/model.ts";
@@ -272,7 +273,7 @@ function readText(layer: PsdLayer, options: ImportOptions): { layer: TextLayer; 
     fill = [0, 0, 0, 255];
   }
   const content = t.text.replace(/\r\n?/g, "\n").split(String.fromCharCode(0)).join("");
-  if (content.length > 20_000) throw new Error("TEXT_LIMIT");
+  if (content.length > LIMITS.maxTextLength) throw new Error("TEXT_LIMIT");
   const result = createTextLayer(
     {
       content,

@@ -106,6 +106,9 @@ export const LIMITS = {
   maxPixels: 24000000,
   maxDimension: 10000,
   maxLayers: 16,
+  maxTextLength: 20_000,
+  minScale: 1 / 10_000,
+  maxScale: 10_000,
   managedBytes: 256 * 1024 * 1024,
   historyBytes: 64 * 1024 * 1024,
 } as const;
@@ -268,8 +271,9 @@ export function validateDocument(doc: EditorDocument): void {
       ![layer.opacity, ...Object.values(layer.transform)].every(Number.isFinite) ||
       layer.opacity < 0 ||
       layer.opacity > 1 ||
-      layer.transform.scaleX === 0 ||
-      layer.transform.scaleY === 0 ||
+      [layer.transform.scaleX, layer.transform.scaleY].some(
+        (scale) => Math.abs(scale) < LIMITS.minScale || Math.abs(scale) > LIMITS.maxScale,
+      ) ||
       Math.abs(layer.transform.shear ?? 0) > 100
     )
       throw new EditorError("geometry", "레이어 위치와 크기를 확인해주세요.");
@@ -286,7 +290,7 @@ export function validateDocument(doc: EditorDocument): void {
         !Number.isFinite(layer.text.lineHeight) ||
         layer.text.lineHeight < 0.5 ||
         layer.text.lineHeight > 10 ||
-        layer.text.content.length > 100000)
+        layer.text.content.length > LIMITS.maxTextLength)
     )
       throw new EditorError("layer", "글자 크기와 줄 간격을 확인해주세요.");
     if (

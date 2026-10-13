@@ -261,8 +261,8 @@ export function App({ deck }: { deck: Deck }) {
         </SettingsExpander>
         <Body secondary>
           기본은 각 원본의 형식과 확장자를 유지해요. 다른 형식으로 바꾸려면 저장 형식을 선택해 주세요. 작은 이미지는
-          확대하지 않아요. 같은 형식으로 처리한 용량이 줄지 않으면 원본을 복사해요. JPG를 선택하면 투명한 부분은 흰
-          배경으로 저장해요.
+          확대하지 않아요. 용량이 커져도 선택한 크기와 형식으로 저장해요. JPG를 선택하면 투명한 부분은 흰 배경으로
+          저장해요.
         </Body>
         <Button
           disabled={running}
@@ -299,8 +299,7 @@ export function App({ deck }: { deck: Deck }) {
           />
         </div>
         <Body secondary>
-          64 MB 또는 4,800만 화소를 넘는 이미지는 건너뛰어요. 압축된 파일에서는 촬영 정보가 제거돼요. 원본 복사에는 촬영
-          정보가 남아요.
+          64 MB 또는 4,800만 화소를 넘는 이미지는 건너뛰어요. 저장한 결과에서는 촬영 정보가 제거돼요.
         </Body>
       </ToolLayout.Section>
       <ToolLayout.Section step="run" title="4. 압축">
@@ -331,7 +330,7 @@ export function App({ deck }: { deck: Deck }) {
                     ? result.formatUnavailable
                       ? "이 PC에서 지원하지 않는 저장 형식이에요. 저장 형식을 직접 선택해 다시 시도해 주세요."
                       : "처리하지 못했어요. 형식과 크기를 확인해 주세요."
-                    : `${result.status === "original" ? "원본 복사" : "압축"} · ${bytes(result.file.size)} → ${bytes(result.outputSize ?? 0)}`}
+                    : `압축 · ${bytes(result.file.size)} → ${bytes(result.outputSize ?? 0)}`}
                 </Body>
                 {result.folder && (
                   <Button

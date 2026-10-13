@@ -132,6 +132,55 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe("dropped editor inputs", () => {
+  it("keeps the current document when a new image workspace cannot be safely saved", async () => {
+    const { deck, view } = await setup();
+    await openText();
+    const document = createDocument(4000, 3000);
+    const pixels = createRaster(4000, 3000);
+    document.layers.push(createPixelLayer(pixels), createPixelLayer(pixels));
+    files.import.mockResolvedValueOnce({ document, fonts: [], warnings: [], flattened: false });
+    fireEvent.click(button("파일 열기"));
+    await screen.findByText("작업 파일을 안전하게 저장할 크기를 넘어요. 이미지나 레이어 크기를 줄여주세요.");
+    expect(screen.getByDisplayValue("합성 원문")).toBeTruthy();
+    expect(files.save).not.toHaveBeenCalled();
+    view.unmount();
+    deck.dispose();
+  });
+  it("preserves multi-dot document names through project and source-format exports", async () => {
+    const { deck, view } = await setup({
+      "fs.pickFiles": () => [{ ...syntheticFile, name: "합성.수업.자료.jpeg", ext: "jpeg" }],
+    });
+    files.import.mockResolvedValue({ ...importedText(), rasterFormat: "jpeg" });
+    await openText();
+    fireEvent.click(button("작업 저장"));
+    await waitFor(() => expect(files.save).toHaveBeenCalledOnce());
+    expect(files.save.mock.calls[0]?.[1]).toBe("합성.수업.자료.deckimage");
+    view.unmount();
+    deck.dispose();
+  });
+  it("edits a 20,000-character imported text without slicing its tail and rejects excess input", async () => {
+    const { deck, view } = await setup();
+    const imported = importedText();
+    const layer = imported.document.layers[0];
+    if (layer?.kind !== "text") throw new Error("fixture");
+    const original = "가".repeat(19_999) + "끝";
+    layer.text.content = original;
+    files.import.mockResolvedValue(imported);
+    fireEvent.click(button("파일 열기"));
+    await screen.findByDisplayValue(original);
+    await waitFor(() => expect(button("작업 저장").hasAttribute("disabled")).toBe(false));
+    const edited = "나" + original.slice(1);
+    fireEvent.change(screen.getByLabelText("글자 내용"), { target: { value: edited } });
+    await screen.findByText(/미저장 작업/);
+    fireEvent.change(screen.getByLabelText("글자 내용"), { target: { value: edited + "초과" } });
+    await screen.findByText("글자는 20,000자까지 입력할 수 있어요. 기존 내용은 유지해요.");
+    expect((screen.getByLabelText("글자 내용") as HTMLTextAreaElement).value).toBe(edited);
+    fireEvent.click(button("작업 저장"));
+    await waitFor(() => expect(files.save).toHaveBeenCalledOnce());
+    expect(files.export.mock.calls.at(-1)?.[0].layers[0].text.content).toBe(edited);
+    view.unmount();
+    deck.dispose();
+  });
   it("keeps the current document's input name after another dropped file fails to read", async () => {
     const { deck, host } = await setup();
     await openText();

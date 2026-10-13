@@ -84,8 +84,10 @@ export class EditorHistory {
   private index = 0;
   private revision = 0;
   readonly limit: number;
-  constructor(limit: number = LIMITS.historyBytes) {
+  private readonly saveHeadroom: (doc: EditorDocument) => number;
+  constructor(limit: number = LIMITS.historyBytes, saveHeadroom: (doc: EditorDocument) => number = () => 0) {
     this.limit = limit;
+    this.saveHeadroom = saveHeadroom;
   }
   get canUndo(): boolean {
     return this.index > 0;
@@ -103,7 +105,9 @@ export class EditorHistory {
   reserve(doc: EditorDocument, bytes: number, transient = 0): void {
     if (bytes > this.limit)
       throw new EditorError("history", "이 작업을 안전하게 되돌릴 메모리가 부족해요. 영역이나 크기를 줄여주세요.");
-    const transientHeadroom = previewMemoryHeadroom(doc) + transient;
+    const transientHeadroom = Math.max(previewMemoryHeadroom(doc), this.saveHeadroom(doc)) + transient;
+    // Reject an impossible next state before trimming the existing undo chain.
+    assertMemoryBudget(doc, transientHeadroom + bytes);
     while (
       this.entries.length &&
       (this.memoryBytes + bytes > this.limit ||

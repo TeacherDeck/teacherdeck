@@ -7,6 +7,7 @@ import {
   CheckBox,
   ColorPicker,
   ComboBox,
+  InfoBar,
   NumberBox,
   SettingsExpander,
   Slider,
@@ -15,7 +16,7 @@ import {
   tokens,
 } from "@deck/ui";
 import type { EditorDocument, Layer } from "./core/model.ts";
-import { layerSize } from "./core/model.ts";
+import { layerSize, LIMITS } from "./core/model.ts";
 import { localToDocument } from "./core/geometry.ts";
 import { colorHex, parseColor } from "./editor-ui.ts";
 import { EditorAction } from "./EditorAction.tsx";
@@ -67,6 +68,7 @@ export function LayerInspector({
     return () => cancelAnimationFrame(frame);
   }, [textFocusRequest]);
   const [content, setContent] = useState(draftContent ?? (layer.kind === "text" ? layer.text.content : ""));
+  const [textLimit, setTextLimit] = useState(false);
   const request = useRef(0);
   const pendingEdit = useRef<{ id: string; sequence: number } | null>(null);
   const current = useRef({ id: layer.id, content: draftContent ?? (layer.kind === "text" ? layer.text.content : "") });
@@ -74,6 +76,7 @@ export function LayerInspector({
   useEffect(() => {
     if (pendingEdit.current?.id === layer.id) return;
     pendingEdit.current = null;
+    setTextLimit(false);
     setContent(draftContent ?? (layer.kind === "text" ? layer.text.content : ""));
   }, [layer.id, layer.kind === "text" ? layer.text.content : "", draftContent]);
   const change = (label: string, fn: (item: Layer) => void) =>
@@ -255,7 +258,12 @@ export function LayerInspector({
                 rows={3}
                 value={content}
                 onChange={(value) => {
-                  const next = value.slice(0, 10000);
+                  if (value.length > LIMITS.maxTextLength) {
+                    setTextLimit(true);
+                    return;
+                  }
+                  setTextLimit(false);
+                  const next = value;
                   setContent(next);
                   const sequence = ++request.current;
                   pendingEdit.current = { id: layer.id, sequence };
@@ -269,6 +277,9 @@ export function LayerInspector({
                 disabled={locked}
                 description="입력한 내용도 작업 저장에 포함돼요."
               />
+              {textLimit && (
+                <InfoBar severity="warning" message="글자는 20,000자까지 입력할 수 있어요. 기존 내용은 유지해요." />
+              )}
               <div className={s.actions}>
                 <EditorAction
                   icon="apply"

@@ -4,6 +4,12 @@ import { describe, expect, it } from "vitest";
 import { exportName, exportTarget } from "./export-format.ts";
 
 describe("source-aware image exports", () => {
+  it("keeps periods in the already extension-free document title", () => {
+    const title = "합성.수업.자료";
+    expect(exportName(title, exportTarget("source", `${title}.JPEG`))).toBe(`${title}.JPEG`);
+    expect(exportName(title, "deckimage")).toBe(`${title}.deckimage`);
+    expect(exportName(title, "png")).toBe(`${title}.png`);
+  });
   it.each([
     ["합성.jpg", "jpeg", "jpg"],
     ["합성.jpeg", "jpeg", "jpeg"],

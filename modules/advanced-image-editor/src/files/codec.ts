@@ -3,12 +3,13 @@
 import { assertMemoryBudget, createDocument, createPixelLayer, validateDocument } from "../core/model.ts";
 import type { EditorDocument } from "../core/model.ts";
 import { renderDocumentPixels, renderLayerTransformed, rasterizeLayer } from "../core/render.ts";
-import { decodeProject, encodeProject } from "./project.ts";
+import { decodeProject, encodeProjectBlob } from "./project.ts";
 import { decodePsd, encodePsd } from "./psd.ts";
 import type { ImportedDocument, ImportOptions } from "./psd.ts";
 import { imageHeader } from "./header.ts";
 import { checkDimensions, MAX_INPUT_BYTES } from "./limits.ts";
 import { requireInputBudget } from "./budget.ts";
+import { rasterEncodingScratch } from "./export-budget.ts";
 
 export type RasterFormat = "png" | "jpeg" | "webp";
 export type ExportFormat = "deckimage" | "psd" | RasterFormat;
@@ -67,7 +68,7 @@ export async function encodeDocument(document: EditorDocument, format: ExportFor
   validateDocument(document);
   if (format === "deckimage")
     return {
-      blob: new Blob([Uint8Array.from(encodeProject(document))], { type: "application/vnd.teacherdeck.image" }),
+      blob: encodeProjectBlob(document),
       revision: document.revision,
       format,
     };
@@ -79,21 +80,25 @@ export async function encodeDocument(document: EditorDocument, format: ExportFor
       format,
     };
   }
-  assertMemoryBudget(document, document.width * document.height * 16);
+  assertMemoryBudget(document, rasterEncodingScratch(document));
   const image = renderDocumentPixels(document),
     canvas = new OffscreenCanvas(document.width, document.height),
     context = canvas.getContext("2d");
   if (!context) throw new Error("INVALID_IMAGE");
-  const raw = new OffscreenCanvas(document.width, document.height),
-    rawContext = raw.getContext("2d");
-  if (!rawContext) throw new Error("INVALID_IMAGE");
   try {
-    rawContext.putImageData(new ImageData(Uint8ClampedArray.from(image.data), image.width, image.height), 0, 0);
+    // Only the rendered output is changed. Blend JPEG transparency into white in place,
+    // avoiding a second full-sized canvas and a copied ImageData pixel plane.
     if (format === "jpeg") {
-      context.fillStyle = "white";
-      context.fillRect(0, 0, document.width, document.height);
+      for (let at = 0; at < image.data.length; at += 4) {
+        const alpha = (image.data[at + 3] ?? 0) / 255;
+        for (let channel = 0; channel < 3; channel++)
+          image.data[at + channel] = (image.data[at + channel] ?? 0) * alpha + 255 * (1 - alpha);
+        image.data[at + 3] = 255;
+      }
     }
-    context.drawImage(raw, 0, 0);
+    if (!(image.data.buffer instanceof ArrayBuffer)) throw new Error("INVALID_IMAGE");
+    const pixels = new Uint8ClampedArray(image.data.buffer, image.data.byteOffset, image.data.byteLength);
+    context.putImageData(new ImageData(pixels, image.width, image.height), 0, 0);
     const mime = `image/${format}`;
     const blob = await canvas.convertToBlob({ type: mime, quality: 0.95 });
     // Canvas may silently return PNG when an encoder is unavailable. Never save it with a false extension.
@@ -102,7 +107,5 @@ export async function encodeDocument(document: EditorDocument, format: ExportFor
   } finally {
     canvas.width = 1;
     canvas.height = 1;
-    raw.width = 1;
-    raw.height = 1;
   }
 }

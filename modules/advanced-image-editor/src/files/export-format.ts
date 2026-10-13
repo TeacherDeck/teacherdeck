@@ -20,7 +20,8 @@ export function exportTarget(selection: ExportSelection, sourceName = "", source
 }
 
 export function exportName(name: string, target: ExportTarget | ExportFormat): string {
-  const base = name.replace(/\.[^.]+$/, "") || "편집한 이미지";
+  // The document title has already had its source extension removed when opened.
+  const base = name || "편집한 이미지";
   const { extension } = typeof target === "string" ? exportTarget(target) : target;
   return `${base}.${extension}`;
 }

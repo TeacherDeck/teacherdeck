@@ -9,7 +9,8 @@ import type { ImportedDocument, ImportOptions } from "./psd.ts";
 import { MAX_INPUT_BYTES, MAX_WORKING_BYTES } from "./limits.ts";
 import { requireInputBudget } from "./budget.ts";
 import { projectEncodingScratch } from "./project.ts";
-import { psdEncodingScratch } from "./export-budget.ts";
+import { psdEncodingScratch, rasterEncodingScratch } from "./export-budget.ts";
+export { projectSaveHeadroom } from "./project.ts";
 export { inspectInputBudget } from "./budget.ts";
 export { OutputSession } from "./output-session.ts";
 export { exportName, exportTarget } from "./export-format.ts";
@@ -125,15 +126,16 @@ export async function exportDocument(
   const runner = typeof optionsOrRunner === "function" ? optionsOrRunner : runCodec;
   const reservedBytes = typeof optionsOrRunner === "function" ? 0 : (optionsOrRunner.reservedBytes ?? 0);
   if (!Number.isSafeInteger(reservedBytes) || reservedBytes < 0) throw new FileOperationError("MEMORY_LIMIT");
-  const cloneBytes = managedDocumentBytes(document);
-  const compositeBytes = document.width * document.height * 4;
+  // Selection is an editor-only overlay. It is not serialized by any export format.
+  const snapshot = { ...document, selection: null };
+  const cloneBytes = managedDocumentBytes(snapshot);
   const scratch =
     format === "deckimage"
       ? projectEncodingScratch(document)
       : format === "psd"
         ? psdEncodingScratch(document)
-        : compositeBytes * 4;
+        : rasterEncodingScratch(document);
   // Main-thread live document + the Worker snapshot + codec/canvas/writer buffers coexist until completion.
   assertMemoryBudget(document, cloneBytes + scratch + reservedBytes);
-  return (await runner({ kind: "encode", document, format }, signal)) as EncodeResult;
+  return (await runner({ kind: "encode", document: snapshot, format }, signal)) as EncodeResult;
 }

@@ -79,11 +79,11 @@ describe("raster encoders", () => {
     expect(result.blob.type).toBe(`image/${format}`);
     expect(result.format).toBe(format);
     expect(convertToBlob).toHaveBeenCalledWith({ type: `image/${format}`, quality: 0.95 });
-    expect(canvases[0]?.context.fillRect).toHaveBeenCalledTimes(format === "jpeg" ? 1 : 0);
-    if (format === "jpeg") expect(canvases[0]?.context.fillStyle).toBe("white");
-    const image = canvases[1]?.context.putImageData.mock.calls[0]?.[0] as TestImageData;
-    expect(image.data[3]).toBe(128);
-    expect(image.data[7]).toBe(0);
+    expect(canvases).toHaveLength(1);
+    const image = canvases[0]?.context.putImageData.mock.calls[0]?.[0] as TestImageData;
+    expect([...image.data]).toEqual(
+      format === "jpeg" ? [255, 127, 127, 255, 255, 255, 255, 255] : [255, 0, 0, 128, 0, 0, 0, 0],
+    );
     expect(document).toEqual(original);
     expect(canvases.every((canvas) => canvas.width === 1 && canvas.height === 1)).toBe(true);
   });

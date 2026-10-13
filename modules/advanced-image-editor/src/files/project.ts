@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
-import { assertMemoryBudget, validateDocument } from "../core/model.ts";
+import { strFromU8, strToU8, unzipSync, Zip, ZipDeflate } from "fflate";
+import { assertMemoryBudget, EditorError, LIMITS, managedDocumentBytes, validateDocument } from "../core/model.ts";
 import type { EditorDocument, Layer } from "../core/model.ts";
 import { checkBytes, checkDimensions, MAX_INPUT_BYTES, MAX_METADATA_BYTES, MAX_LAYERS } from "./limits.ts";
 
@@ -65,8 +65,8 @@ function validateLayer(value: unknown): ObjectValue {
   number(transform["x"], -100_000, 100_000);
   number(transform["y"], -100_000, 100_000);
   for (const axis of ["scaleX", "scaleY"]) {
-    const scale = number(transform[axis], -100, 100);
-    if (Math.abs(scale) < 0.001) throw new Error("INVALID_PROJECT");
+    const scale = number(transform[axis], -LIMITS.maxScale, LIMITS.maxScale);
+    if (Math.abs(scale) < LIMITS.minScale) throw new Error("INVALID_PROJECT");
   }
   number(transform["rotation"], -360_000, 360_000);
   if (transform["shear"] !== undefined) number(transform["shear"], -100, 100);
@@ -76,7 +76,7 @@ function validateLayer(value: unknown): ObjectValue {
     adjustments(l["adjustments"]);
   } else if (l["kind"] === "text") {
     const descriptor = object(l["text"]);
-    text(descriptor["content"], 20_000);
+    text(descriptor["content"], LIMITS.maxTextLength);
     text(descriptor["fontFamily"], 200);
     number(descriptor["fontSize"], 1, 1_000);
     number(descriptor["lineHeight"], 0.5, 5);
@@ -225,41 +225,8 @@ export function decodeProject(bytes: Uint8Array): EditorDocument {
   return document;
 }
 
-/** Conservative fflate peak: compressed entries, archive/result copies, largest entry and deflate workspace. */
-export function projectEncodingScratch(document: EditorDocument): number {
-  const layers = document.layers.map((layer, index) =>
-    layer.kind === "pixel"
-      ? {
-          ...layer,
-          pixels: { width: layer.pixels.width, height: layer.pixels.height, entry: `pixels/${index}.rgba` },
-          mask: layer.mask ? `masks/${index}.gray` : null,
-        }
-      : layer,
-  );
-  const metadata = JSON.stringify({
-    format: "teacherdeck-image",
-    version: 1,
-    width: document.width,
-    height: document.height,
-    layers,
-  });
-  const metadataBytes = strToU8(metadata).length;
-  checkBytes(metadataBytes, MAX_METADATA_BYTES);
-  const planes = document.layers.flatMap((layer) =>
-    layer.kind === "pixel" ? [layer.pixels.data.byteLength, layer.mask?.byteLength ?? 0] : [],
-  );
-  const payload = metadataBytes + planes.reduce((sum, size) => sum + size, 0);
-  // Deflate's stored-block upper bound plus ZIP headers keeps incompressible data in the reservation.
-  const bound = payload + Math.ceil(payload / 7_000) * 5 + (planes.length + 1) * 256;
-  return bound * 3 + Math.max(metadataBytes, ...planes) + 1024 * 1024;
-}
-
-export function encodeProject(document: EditorDocument): Uint8Array {
-  validateDocument(document);
-  // Worker holds a snapshot as well as compressed writer scratch and the final archive.
-  assertMemoryBudget(document, projectEncodingScratch(document));
-  checkDimensions(document.width, document.height);
-  if (document.layers.length > MAX_LAYERS) throw new Error("LAYER_LIMIT");
+/** Shared serialization keeps validation, size reservations and streamed output in agreement. */
+function projectFiles(document: EditorDocument): Record<string, Uint8Array> {
   const files: Record<string, Uint8Array> = {};
   let managed = document.width * document.height * 4;
   const layers = document.layers.map((layer, index) => {
@@ -280,7 +247,85 @@ export function encodeProject(document: EditorDocument): Uint8Array {
     JSON.stringify({ format: "teacherdeck-image", version: 1, width: document.width, height: document.height, layers }),
   );
   checkBytes(files["document.json"].length, MAX_METADATA_BYTES);
-  const result = zipSync(files, { level: 6 });
-  checkBytes(result.length, MAX_INPUT_BYTES);
+  return files;
+}
+const ZIP_CHUNK_BYTES = 64 * 1024;
+const ZIP_WORKSPACE_BYTES = 8 * 1024 * 1024;
+function projectOutputBound(document: EditorDocument): { bound: number; metadataBytes: number; payload: number } {
+  const layers = document.layers.map((layer, index) => {
+    validateLayer(layer);
+    return layer.kind === "pixel"
+      ? {
+          ...layer,
+          pixels: { width: layer.pixels.width, height: layer.pixels.height, entry: `pixels/${index}.rgba` },
+          mask: layer.mask ? `masks/${index}.gray` : null,
+        }
+      : layer;
+  });
+  const metadata = JSON.stringify({
+    format: "teacherdeck-image",
+    version: 1,
+    width: document.width,
+    height: document.height,
+    layers,
+  });
+  const metadataBytes = strToU8(metadata).length;
+  checkBytes(metadataBytes, MAX_METADATA_BYTES);
+  const planes = document.layers.flatMap((layer) =>
+    layer.kind === "pixel" ? [layer.pixels.data.byteLength, layer.mask?.byteLength ?? 0] : [],
+  );
+  const payload = metadataBytes + planes.reduce((sum, size) => sum + size, 0);
+  // Deflate's stored-block upper bound plus ZIP headers keeps incompressible data in the reservation.
+  const bound = payload + Math.ceil(payload / 7_000) * 5 + (planes.length + 1) * 256;
+  return { bound, metadataBytes, payload };
+}
+/** Sequential 64KiB compression retains output chunks, one final Blob/archive and bounded deflate workspace. */
+export function projectEncodingScratch(document: EditorDocument): number {
+  const { bound, metadataBytes } = projectOutputBound(document);
+  return bound * 2 + metadataBytes * 4 + ZIP_WORKSPACE_BYTES;
+}
+/** Reserve an editable project save before admitting an import or a new history state. */
+export function projectSaveHeadroom(document: EditorDocument): number {
+  const { bound, metadataBytes, payload } = projectOutputBound(document);
+  // Even incompressible pixels must produce a file that this module can reopen.
+  const reopenBytes = bound * 2 + payload + metadataBytes * 3 + document.width * document.height * 4;
+  if (bound > MAX_INPUT_BYTES || reopenBytes > LIMITS.managedBytes)
+    throw new EditorError("memory", "작업 파일을 안전하게 저장할 크기를 넘어요. 이미지나 레이어 크기를 줄여주세요.");
+  const scale = Math.min(1, 1400 / Math.max(document.width, document.height));
+  const visibleBytes = Math.ceil(document.width * scale) * Math.ceil(document.height * scale) * 12;
+  return managedDocumentBytes({ ...document, selection: null }) + projectEncodingScratch(document) + visibleBytes;
+}
+function streamProject(document: EditorDocument, accept: (chunk: Uint8Array) => void): void {
+  validateDocument(document);
+  assertMemoryBudget(document, projectEncodingScratch(document));
+  let size = 0;
+  const zip = new Zip((error, chunk) => {
+    if (error) throw error;
+    size += chunk.length;
+    checkBytes(size, MAX_INPUT_BYTES);
+    accept(chunk);
+  });
+  for (const [name, bytes] of Object.entries(projectFiles(document))) {
+    const entry = new ZipDeflate(name, { level: 6 });
+    zip.add(entry);
+    for (let at = 0; at < bytes.length; at += ZIP_CHUNK_BYTES)
+      entry.push(bytes.subarray(at, at + ZIP_CHUNK_BYTES), at + ZIP_CHUNK_BYTES >= bytes.length);
+  }
+  zip.end();
+}
+export function encodeProjectBlob(document: EditorDocument): Blob {
+  const chunks: Blob[] = [];
+  streamProject(document, (chunk) => chunks.push(new Blob([Uint8Array.from(chunk)])));
+  return new Blob(chunks, { type: "application/vnd.teacherdeck.image" });
+}
+export function encodeProject(document: EditorDocument): Uint8Array {
+  const chunks: Uint8Array[] = [];
+  streamProject(document, (chunk) => chunks.push(chunk));
+  const result = new Uint8Array(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
+  let at = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, at);
+    at += chunk.length;
+  }
   return result;
 }

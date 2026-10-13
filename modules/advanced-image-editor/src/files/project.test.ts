@@ -2,7 +2,14 @@
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import { describe, expect, it } from "vitest";
 import { strToU8, zipSync } from "fflate";
-import { createDocument, createPixelLayer, createShapeLayer, createTextLayer } from "../core/model.ts";
+import {
+  createDocument,
+  createPixelLayer,
+  createShapeLayer,
+  createTextLayer,
+  createRaster,
+  LIMITS,
+} from "../core/model.ts";
 import { decodeProject, encodeProject, inspectProjectZip } from "./project.ts";
 function document() {
   const imageFontSize = 2;
@@ -36,6 +43,23 @@ function document() {
   return doc;
 }
 describe("editable native project", () => {
+  it.each([120, -120, LIMITS.maxScale, -LIMITS.maxScale, LIMITS.minScale, -LIMITS.minScale])(
+    "round-trips accepted layer scale %s without limiting it to 100",
+    (scale) => {
+      const source = createDocument(1200, 1200);
+      const layer = createPixelLayer(createRaster(10, 10));
+      layer.transform.scaleX = layer.transform.scaleY = scale;
+      source.layers.push(layer);
+      expect(decodeProject(encodeProject(source)).layers[0]?.transform).toEqual(layer.transform);
+    },
+  );
+  it("round-trips 20,000-character edited text without truncation", () => {
+    const source = document();
+    const layer = source.layers[1];
+    if (layer?.kind !== "text") throw new Error("fixture");
+    layer.text.content = "가".repeat(LIMITS.maxTextLength - 1) + "끝";
+    expect(decodeProject(encodeProject(source)).layers[1]).toEqual(layer);
+  });
   it("round-trips base pixels, masks, descriptors and independent adjustments without applying them twice", () => {
     const source = document(),
       original = structuredClone(source);
