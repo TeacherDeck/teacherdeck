@@ -11,7 +11,7 @@
   "dependencies": {
     "@deck/sdk": "workspace:*",
     "@fluentui/react-components": "9.74.9",
-    "@fluentui/react-icons": "2.0.343"
+    "@fluentui/react-icons": "2.0.344"
   },
   "peerDependencies": {
     "react": "^19.0.0",
