@@ -14,8 +14,8 @@
     "@deck/sdk": "workspace:*",
     "@deck/ui": "workspace:*",
     "@fluentui/react-components": "9.74.9",
-    "@fluentui/react-icons": "2.0.343",
-    "@tauri-apps/api": "2.12.1",
+    "@fluentui/react-icons": "2.0.344",
+    "@tauri-apps/api": "2.12.3",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   }
