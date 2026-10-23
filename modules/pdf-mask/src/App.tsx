@@ -13,6 +13,7 @@ import {
   ListView,
   NumberBox,
   ProgressBar,
+  SettingsExpander,
   TextBox,
   ToolLayout,
   makeStyles,
@@ -414,62 +415,65 @@ export function App({ deck }: { deck: Deck }) {
             refresh(terms, next);
           }}
         />
-        <Caption>
-          명단·검색어 {terms.length}개 · 찾은 영역{" "}
-          {candidates.filter((candidate) => candidate.kind === "검색어").length}건
-        </Caption>
-        <div className={s.actions}>
-          <TextBox
-            header="제거할 검색어"
-            value={term}
-            disabled={busy}
-            onChange={setTerm}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.nativeEvent.isComposing) addTerm();
-            }}
-          />
-          <Button disabled={busy || !term.trim()} onClick={addTerm}>
-            검색어 추가
-          </Button>
-          <Button
-            disabled={busy}
-            onClick={() => {
-              void importTerms();
-            }}
-          >
-            목록 불러오기
-          </Button>
-          <Button
-            disabled={busy}
-            onClick={() => {
-              void template();
-            }}
-          >
-            CSV 양식 저장
-          </Button>
-        </div>
-        <CheckBox content="CSV 첫 줄은 제목이에요" checked={skipHeader} disabled={busy} onChange={setSkipHeader} />
-        <ListView
-          header={`검색어 ${terms.length}개`}
-          items={terms}
-          getKey={(value) => value}
-          renderItem={(value) => (
+        <SettingsExpander
+          header="명단·검색어"
+          description={`검색어 ${terms.length}개 · 찾은 영역 ${candidates.filter((candidate) => candidate.kind === "검색어").length}건`}
+        >
+          <div className={s.stack}>
             <div className={s.actions}>
-              <Body>{value}</Body>
+              <TextBox
+                header="제거할 검색어"
+                value={term}
+                disabled={busy}
+                onChange={setTerm}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.nativeEvent.isComposing) addTerm();
+                }}
+              />
+              <Button disabled={busy || !term.trim()} onClick={addTerm}>
+                검색어 추가
+              </Button>
               <Button
                 disabled={busy}
                 onClick={() => {
-                  const next = terms.filter((t) => t !== value);
-                  setTerms(next);
-                  refresh(next);
+                  void importTerms();
                 }}
               >
-                검색어 제거
+                목록 불러오기
+              </Button>
+              <Button
+                disabled={busy}
+                onClick={() => {
+                  void template();
+                }}
+              >
+                CSV 양식 저장
               </Button>
             </div>
-          )}
-          emptyText="이름·번호 등 찾을 내용을 추가하거나 TXT·CSV 목록을 불러와 주세요."
-        />
+            <CheckBox content="CSV 첫 줄은 제목이에요" checked={skipHeader} disabled={busy} onChange={setSkipHeader} />
+            <ListView
+              header={`검색어 ${terms.length}개`}
+              items={terms}
+              getKey={(value) => value}
+              renderItem={(value) => (
+                <div className={s.actions}>
+                  <Body>{value}</Body>
+                  <Button
+                    disabled={busy}
+                    onClick={() => {
+                      const next = terms.filter((t) => t !== value);
+                      setTerms(next);
+                      refresh(next);
+                    }}
+                  >
+                    검색어 제거
+                  </Button>
+                </div>
+              )}
+              emptyText="이름·번호 등 찾을 내용을 추가하거나 TXT·CSV 목록을 불러와 주세요."
+            />
+          </div>
+        </SettingsExpander>
         <Button disabled={busy || !input} onClick={() => refresh()}>
           자동 후보 다시 찾기
         </Button>
@@ -498,28 +502,31 @@ export function App({ deck }: { deck: Deck }) {
                 다음 페이지
               </Button>
             </div>
-            <div className={s.actions}>
-              <Button
-                disabled={busy}
-                onClick={() => {
-                  void scan(false);
-                }}
-              >
-                이 페이지 이미지 글자 읽기
-              </Button>
-              <Button
-                disabled={busy}
-                onClick={() => {
-                  void scan(true);
-                }}
-              >
-                전체 이미지 글자 읽기
-              </Button>
-            </div>
-            <Caption>
-              글자와 사진이 섞인 문서는 이미지 글자 읽기로 추가 확인해요. 인식이 끝나도 개인정보가 없다고 보장하지
-              않아요.
-            </Caption>
+            <SettingsExpander header="이미지 글자 다시 읽기" description="글자와 사진이 섞인 문서를 추가로 확인해요.">
+              <div className={s.stack}>
+                <div className={s.actions}>
+                  <Button
+                    disabled={busy}
+                    onClick={() => {
+                      void scan(false);
+                    }}
+                  >
+                    이 페이지 이미지 글자 읽기
+                  </Button>
+                  <Button
+                    disabled={busy}
+                    onClick={() => {
+                      void scan(true);
+                    }}
+                  >
+                    전체 이미지 글자 읽기
+                  </Button>
+                </div>
+                <Caption>
+                  인식이 끝나도 개인정보가 없다고 보장하지 않아요. 각 페이지와 제거 영역을 직접 확인해 주세요.
+                </Caption>
+              </div>
+            </SettingsExpander>
             {(!page.boxes.length || page.ocr === "empty") && (
               <InfoBar
                 severity="warning"
@@ -548,22 +555,29 @@ export function App({ deck }: { deck: Deck }) {
             ) : (
               <Caption>{previewing ? "페이지를 표시하는 중이에요." : "미리보기를 준비해 주세요."}</Caption>
             )}
-            <div className={s.coordinates}>
-              {(["x", "y", "width", "height"] as const).map((key) => (
-                <NumberBox
-                  key={key}
-                  header={{ x: "왼쪽", y: "위쪽", width: "너비", height: "높이" }[key]}
-                  value={rect[key]}
-                  min={key === "width" || key === "height" ? 1 : 0}
-                  max={key === "x" || key === "width" ? page.width : page.height}
-                  disabled={busy}
-                  onChange={(value) => setRect(boundRect({ ...rect, [key]: value }, page.width, page.height))}
-                />
-              ))}
-            </div>
-            <Button disabled={busy || candidates.length >= MAX_CANDIDATES} onClick={addArea}>
-              직접 지정 영역 추가
-            </Button>
+            <SettingsExpander
+              header="직접 지정 영역"
+              description="자동 후보가 빠졌을 때 사각형 위치와 크기를 지정해요."
+            >
+              <div className={s.stack}>
+                <div className={s.coordinates}>
+                  {(["x", "y", "width", "height"] as const).map((key) => (
+                    <NumberBox
+                      key={key}
+                      header={{ x: "왼쪽", y: "위쪽", width: "너비", height: "높이" }[key]}
+                      value={rect[key]}
+                      min={key === "width" || key === "height" ? 1 : 0}
+                      max={key === "x" || key === "width" ? page.width : page.height}
+                      disabled={busy}
+                      onChange={(value) => setRect(boundRect({ ...rect, [key]: value }, page.width, page.height))}
+                    />
+                  ))}
+                </div>
+                <Button disabled={busy || candidates.length >= MAX_CANDIDATES} onClick={addArea}>
+                  직접 지정 영역 추가
+                </Button>
+              </div>
+            </SettingsExpander>
             <div className={s.list}>
               <ListView
                 header={`${page.number}쪽 제거 후보`}

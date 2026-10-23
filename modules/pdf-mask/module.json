@@ -4,7 +4,7 @@
   "id": "pdf-mask",
   "name": "개인정보 지우기",
   "description": "PDF의 개인정보 후보를 확인하고 실제 정보를 제거한 새 문서를 만들어요.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "category": "document",
   "icon": "icon.svg",
   "entry": "index.html",
