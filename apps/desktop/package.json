@@ -13,10 +13,10 @@
   "dependencies": {
     "@deck/sdk": "workspace:*",
     "@deck/ui": "workspace:*",
-    "@fluentui/react-components": "9.74.9",
-    "@fluentui/react-icons": "2.0.343",
-    "@tauri-apps/api": "2.12.1",
-    "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "@fluentui/react-components": "9.74.10",
+    "@fluentui/react-icons": "2.0.344",
+    "@tauri-apps/api": "2.12.4",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   }
 }
