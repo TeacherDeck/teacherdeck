@@ -29,7 +29,7 @@ pub fn read(bytes: Vec<u8>) -> Result<SchoolWorkbookInput, DeckError> {
     let mut xml_total = 0;
     for n in 0..archive.len() {
         let mut file = archive.by_index(n).map_err(|_| invalid())?;
-        let name = file.name().to_owned();
+        let name = file.name().map_err(|_| invalid())?.into_owned();
         if name.len() > 240
             || name.starts_with('/')
             || name.chars().any(|c| c.is_control() || "\\:%?#".contains(c))

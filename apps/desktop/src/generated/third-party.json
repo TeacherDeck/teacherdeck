@@ -847,7 +847,7 @@
   },
   {
     "name": "minisign-verify",
-    "version": "0.2.5",
+    "version": "0.3.0",
     "license": "MIT",
     "source": "cargo"
   },
@@ -1111,7 +1111,7 @@
   },
   {
     "name": "rustls",
-    "version": "0.23.45",
+    "version": "0.23.46",
     "license": "Apache-2.0 OR ISC OR MIT",
     "source": "cargo"
   },
@@ -1129,7 +1129,7 @@
   },
   {
     "name": "rustls-webpki",
-    "version": "0.103.15",
+    "version": "0.103.16",
     "license": "ISC",
     "source": "cargo"
   },
@@ -1435,7 +1435,7 @@
   },
   {
     "name": "tauri-plugin-updater",
-    "version": "2.13.2",
+    "version": "2.14.1",
     "license": "Apache-2.0 OR MIT",
     "source": "cargo"
   },
@@ -1645,7 +1645,7 @@
   },
   {
     "name": "typed-path",
-    "version": "0.12.3",
+    "version": "0.13.0",
     "license": "MIT OR Apache-2.0",
     "source": "cargo"
   },
@@ -1975,13 +1975,7 @@
   },
   {
     "name": "zip",
-    "version": "4.6.1",
-    "license": "MIT",
-    "source": "cargo"
-  },
-  {
-    "name": "zip",
-    "version": "8.6.0",
+    "version": "9.1.3",
     "license": "MIT",
     "source": "cargo"
   },

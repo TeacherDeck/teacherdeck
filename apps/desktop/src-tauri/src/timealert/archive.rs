@@ -155,7 +155,7 @@ pub fn extract(zip: Vec<u8>, root: &Path) -> Result<BTreeMap<String, String>, De
     let mut database = false;
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index).map_err(|_| invalid())?;
-        let name = entry.name().to_owned();
+        let name = entry.name().map_err(|_| invalid())?.into_owned();
         if !seen.insert(name.clone())
             || !folded.insert(name.to_lowercase())
             || entry.is_symlink()
