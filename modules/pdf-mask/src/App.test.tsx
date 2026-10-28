@@ -115,6 +115,7 @@ it("does not replace the previous PDF when an automatic scan is cancelled", asyn
     await screen.findByText("읽기를 취소했어요. 이전 문서는 유지해요.");
     expect(input.doc.loadingTask.destroy).toHaveBeenCalledOnce();
     expect(screen.queryByText(/사진으로 된 1쪽의 글자/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "명단·검색어" }));
     fireEvent.change(screen.getByRole("textbox", { name: "제거할 검색어" }), { target: { value: "가상가" } });
     fireEvent.click(screen.getByRole("button", { name: "검색어 추가" }));
     expect(screen.getByRole("checkbox", { name: "검색어 · 가상가" })).toBeTruthy();
@@ -150,18 +151,41 @@ it("connects supplied roster names to candidates and explains OCR uncertainty", 
   try {
     fireEvent.click(screen.getByRole("button", { name: "파일 선택" }));
     await screen.findByText(/1쪽에서 개인정보 후보 0건/);
+    fireEvent.click(screen.getByRole("button", { name: "명단·검색어" }));
     fireEvent.change(screen.getByRole("textbox", { name: "제거할 검색어" }), { target: { value: "가상가" } });
     fireEvent.click(screen.getByRole("button", { name: "검색어 추가" }));
-    expect(screen.getByText("명단·검색어 1개 · 찾은 영역 1건")).toBeTruthy();
+    expect(screen.getByText("검색어 1개 · 찾은 영역 1건")).toBeTruthy();
     expect(screen.getByRole("checkbox", { name: "검색어 · 가상가" })).toBeTruthy();
     fireEvent.click(screen.getByRole("checkbox", { name: "명단·검색어도 후보에 포함" }));
-    expect(screen.getByText("명단·검색어 1개 · 찾은 영역 0건")).toBeTruthy();
+    expect(screen.getByText("검색어 1개 · 찾은 영역 0건")).toBeTruthy();
     expect(screen.queryByRole("checkbox", { name: "검색어 · 가상가" })).toBeNull();
     fireEvent.click(screen.getByRole("checkbox", { name: "명단·검색어도 후보에 포함" }));
-    expect(screen.getByText("명단·검색어 1개 · 찾은 영역 1건")).toBeTruthy();
+    expect(screen.getByText("검색어 1개 · 찾은 영역 1건")).toBeTruthy();
     expect(screen.getByText(/사진 속 글자는 PC 안에서 읽으며 인식 오류가 있을 수 있어요/)).toBeTruthy();
   } finally {
     view.unmount();
     deck.dispose();
+  }
+});
+it("keeps secondary controls collapsed until they are requested", async () => {
+  const close = await mountScanner();
+  try {
+    fireEvent.click(screen.getByRole("button", { name: "파일 선택" }));
+    await screen.findByText(/1쪽에서 개인정보 후보 0건/);
+
+    expect(screen.queryByRole("textbox", { name: "제거할 검색어" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "이 페이지 이미지 글자 읽기" })).toBeNull();
+    expect(screen.queryByRole("spinbutton", { name: "왼쪽" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "명단·검색어" }));
+    expect(screen.getByRole("textbox", { name: "제거할 검색어" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "이미지 글자 다시 읽기" }));
+    expect(screen.getByRole("button", { name: "이 페이지 이미지 글자 읽기" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "직접 지정 영역" }));
+    expect(screen.getByRole("spinbutton", { name: "왼쪽" })).toBeTruthy();
+  } finally {
+    close();
   }
 });
