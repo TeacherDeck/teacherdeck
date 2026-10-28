@@ -571,7 +571,7 @@ fn contents(path: &Path) -> Result<String, DeckError> {
     let mut output = String::new();
     for index in 0..archive.len() {
         let mut part = archive.by_index(index).map_err(|_| failure())?;
-        if part.name().ends_with(".xml") {
+        if part.name().map_err(|_| failure())?.ends_with(".xml") {
             if part.size() > 1024 * 1024 {
                 return Err(failure());
             }
@@ -844,16 +844,17 @@ fn validate_hancom_package(path: &Path) -> Result<(), DeckError> {
     let mut names = std::collections::HashSet::new();
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index).map_err(|_| failure())?;
+        let name = entry.name().map_err(|_| failure())?.into_owned();
         if entry.size() > 1024 * 1024
             || entry.enclosed_name().is_none()
-            || !names.insert(entry.name().to_owned())
+            || !names.insert(name.clone())
         {
             return Err(failure());
         }
         // Reading every entry also verifies decompression and CRC before accepting it.
         let mut data = Vec::new();
         entry.read_to_end(&mut data).map_err(|_| failure())?;
-        if entry.name().ends_with(".xml") || entry.name().ends_with(".hpf") {
+        if name.ends_with(".xml") || name.ends_with(".hpf") {
             parse_fixture_xml(std::str::from_utf8(&data).map_err(|_| failure())?)?;
         }
     }

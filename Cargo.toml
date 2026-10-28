@@ -22,7 +22,7 @@ schemars = { version = "1.2.2", features = ["semver1"] }
 ts-rs = { version = "12.0.1", features = ["semver-impl", "serde-json-impl"] }
 sha2 = "0.11.0"
 thiserror = "2.0.21"
-zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "9.1.3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 quick-xml = "=0.42.0"
 # TimeAlert v1 backup interoperability, approved 2026-10-11 (ADR-0026).
 rusqlite = { version = "=0.40.2", default-features = false, features = ["bundled", "backup", "limits"] }

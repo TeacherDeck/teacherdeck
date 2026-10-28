@@ -177,7 +177,10 @@ pub fn validate_package_with(
         let mut entry = archive
             .by_index(i)
             .map_err(|e| PackageError::Zip(e.to_string()))?;
-        let raw = entry.name().to_owned();
+        let raw = entry
+            .name()
+            .map_err(|e| PackageError::Zip(e.to_string()))?
+            .into_owned();
         let is_dir = entry.is_dir();
         let path = if is_dir {
             raw.trim_end_matches('/')

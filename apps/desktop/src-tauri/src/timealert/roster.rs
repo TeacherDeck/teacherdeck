@@ -46,7 +46,7 @@ impl TimeAlertService {
         let mut photo_keys = vec![];
         for index in 0..zip.len() {
             let mut file = zip.by_index(index).map_err(|_| invalid())?;
-            let name = file.name().to_string();
+            let name = file.name().map_err(|_| invalid())?.into_owned();
             if !name.starts_with("xl/media/") || file.is_dir() {
                 continue;
             }

@@ -496,7 +496,7 @@ fn ooxml<R: Read + Seek>(reader: &mut R) -> Result<(), DeckError> {
     let mut names = std::collections::HashMap::new();
     for index in 0..archive.len() {
         let entry = archive.by_index(index).map_err(|_| rejected())?;
-        let name = entry.name().to_ascii_lowercase();
+        let name = entry.name().map_err(|_| rejected())?.to_ascii_lowercase();
         if name.starts_with('/')
             || name.contains('\\')
             || name.split('/').any(|s| matches!(s, "." | ".."))
