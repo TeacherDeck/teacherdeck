@@ -36,11 +36,11 @@ tauri-plugin-single-instance = "2.5.2"
 tauri-plugin-updater = "2.13.2"
 tauri-plugin-dialog = "2.8.1"
 window-vibrancy = "0.8.1"
-arboard = { version = "=3.6.1", default-features = false }
+arboard = { version = "=3.7.0", default-features = false }
 xcap = { version = "=0.9.8", default-features = false }
 image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg"] }
-tauri-plugin-global-shortcut = "=2.4.0"
-chrono = { version = "=0.4.44", default-features = false, features = ["clock"] }
+tauri-plugin-global-shortcut = "=2.4.1"
+chrono = { version = "=0.4.45", default-features = false, features = ["clock"] }
 windows-version = "0.100.0"
 windows = { version = "=0.62.2", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Ole", "Win32_System_Variant", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging", "Win32_UI_Accessibility", "Win32_UI_Shell", "Win32_NetworkManagement_WiFi", "Win32_System_TaskScheduler", "Win32_Security", "Win32_System_Memory", "Win32_System_Registry", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_System_Diagnostics_ToolHelp", "Win32_Security_Authorization", "Win32_System_Pipes", "Win32_System_IO"] }
 sys-locale = "0.3.2"
