@@ -11,11 +11,11 @@
   "dependencies": {
     "@deck/sdk": "workspace:*",
     "@deck/ui": "workspace:*",
-    "@fluentui/react-icons": "2.0.343",
+    "@fluentui/react-icons": "2.0.344",
     "fflate": "0.8.3",
     "pdf-lib": "1.17.1",
     "pdfjs-dist": "6.4.299",
-    "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   }
 }
