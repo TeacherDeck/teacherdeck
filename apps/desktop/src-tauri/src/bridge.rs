@@ -159,6 +159,38 @@ mod tests {
     }
 
     #[test]
+    fn document_protection_requires_declared_window_for_each_method() {
+        let allowed = store_with(r#"{"window":"^1.2"}"#, "{}");
+        let denied = store_with(r#"{"storage":"^1.0"}"#, "{}");
+        for method in [
+            "registerDocument",
+            "setDocumentState",
+            "completeDocumentSave",
+        ] {
+            assert_eq!(
+                code(authorize(
+                    &allowed,
+                    &caps::host_caps(),
+                    "sample-tool",
+                    "window",
+                    method
+                )),
+                None
+            );
+            assert_eq!(
+                code(authorize(
+                    &denied,
+                    &caps::host_caps(),
+                    "sample-tool",
+                    "window",
+                    method
+                )),
+                Some(ErrorCode::PermissionDenied)
+            );
+        }
+    }
+
+    #[test]
     fn denies_undeclared_caps_and_unknown_modules() {
         let s = store_with(r#"{"storage":"^1.0"}"#, "{}");
         let host = caps::host_caps();

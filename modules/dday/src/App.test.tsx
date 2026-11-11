@@ -7,6 +7,7 @@ import { DeckProvider } from "@deck/ui";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { App } from "./App.tsx";
+import { StrictMode } from "react";
 import { emptyDocument, STATE_KEY, type Item } from "./logic.ts";
 afterEach(() => {
   cleanup();
@@ -25,15 +26,21 @@ const imported = {
     } as Item,
   ],
 };
-async function open(saved: unknown = null) {
-  const store = new Map<string, unknown>([[STATE_KEY, saved]]),
+async function open(saved: unknown = null, savedDraft: unknown = null) {
+  const store = new Map<string, unknown>([
+      [STATE_KEY, saved],
+      ["draft.v1", savedDraft],
+    ]),
     bytes = new TextEncoder().encode(JSON.stringify(imported));
   let failure = "";
   const origin = "http://deckmod.dday.modules.localhost";
   const host = createMockHost({
     module: { id: "dday", version: "0.1.0" },
-    granted: ["storage", "fs"],
+    granted: ["storage", "fs", "window"],
     handlers: {
+      "window.registerDocument": () => ({ documentHandle: "document" }),
+      "window.setDocumentState": () => null,
+      "window.completeDocumentSave": () => null,
       "storage.get": (a) => store.get((a as { key: string }).key) ?? null,
       "storage.keys": () => [...store.keys()],
       "storage.set": (a) => {
@@ -64,9 +71,11 @@ async function open(saved: unknown = null) {
   );
   const deck = await connect({ window: host.window });
   const view = render(
-    <DeckProvider>
-      <App deck={deck} />
-    </DeckProvider>,
+    <StrictMode>
+      <DeckProvider>
+        <App deck={deck} />
+      </DeckProvider>
+    </StrictMode>,
   );
   await screen.findByRole("heading", { name: "D-day" });
   if (saved && "broken" in (saved as object)) {
@@ -78,6 +87,7 @@ async function open(saved: unknown = null) {
   }
   return {
     deck,
+    host,
     view,
     store,
     fail: (value: string) => {
@@ -85,9 +95,12 @@ async function open(saved: unknown = null) {
     },
   };
 }
-function fill(title: string) {
+async function fill(title: string) {
   fireEvent.change(screen.getByRole("textbox", { name: "일정 이름" }), { target: { value: title } });
   fireEvent.change(screen.getByRole("textbox", { name: "날짜 (YYYY-MM-DD)" }), { target: { value: "2026-10-12" } });
+  await waitFor(() =>
+    expect((screen.getByRole("textbox", { name: "일정 이름" }) as HTMLInputElement).value).toBe(title),
+  );
 }
 async function preview() {
   const trigger = screen.getByRole("button", { name: "JSON 백업 가져오기" });
@@ -101,7 +114,7 @@ async function preview() {
 }
 it("preserves unsaved input on failed save and persists archive/search edits after explicit retry", async () => {
   const f = await open();
-  fill("합성 새 항목");
+  await fill("합성 새 항목");
   f.fail(STATE_KEY);
   fireEvent.click(screen.getByRole("button", { name: "일정 저장" }));
   await screen.findByText(/작업하지 못했어요/);
@@ -127,7 +140,7 @@ it("preserves unsaved input on failed save and persists archive/search edits aft
 });
 it("cancels a verified import without replacing storage or losing an input draft", async () => {
   const f = await open();
-  fill("보존할 초안");
+  await fill("보존할 초안");
   fireEvent.click(screen.getByText("백업 · 가져오기"));
   const dialog = await preview();
   expect(within(dialog).getByText("합성 일정 · 2026-10-12")).toBeTruthy();
@@ -185,13 +198,63 @@ it("adds an individual backup while preserving existing records and reminting a 
 
 it("preserves a new unsaved draft before switching records and offers an explicit cancellation exit", async () => {
   const f = await open(imported);
-  fill("보존할 초안");
+  await fill("보존할 초안");
   fireEvent.click(screen.getByRole("button", { name: "수정" }));
   await screen.findByText("입력 중인 내용을 먼저 저장하거나 입력 취소를 눌러 주세요.");
   expect((screen.getByRole("textbox", { name: "일정 이름" }) as HTMLInputElement).value).toBe("보존할 초안");
   fireEvent.click(screen.getByRole("button", { name: "입력 취소" }));
   fireEvent.click(screen.getByRole("button", { name: "수정" }));
+  await screen.findByRole("button", { name: "수정 저장" });
   expect((screen.getByRole("textbox", { name: "일정 이름" }) as HTMLInputElement).value).toBe("합성 일정");
+  f.view.unmount();
+  f.deck.dispose();
+});
+
+it("flushes an unfinished draft before leaving and restores it without adding a saved item", async () => {
+  const f = await open();
+  await fill("남겨 둘 초안");
+  fireEvent.change(screen.getByRole("textbox", { name: "날짜 (YYYY-MM-DD)" }), { target: { value: "2026-" } });
+  await waitFor(() =>
+    expect((screen.getByRole("textbox", { name: "날짜 (YYYY-MM-DD)" }) as HTMLInputElement).value).toBe("2026-"),
+  );
+  f.host.emit("window.documentSaveRequested", { documentHandle: "document", requestId: "leave" });
+  await waitFor(() =>
+    expect(f.host.requests.find((request) => request.method === "completeDocumentSave")?.args).toEqual({
+      documentHandle: "document",
+      requestId: "leave",
+      saved: true,
+    }),
+  );
+  const draft = f.store.get("draft.v1");
+  expect(draft).toMatchObject({ title: "남겨 둘 초안", date: "2026-" });
+  expect(f.store.get(STATE_KEY)).toBeNull();
+  f.view.unmount();
+  f.deck.dispose();
+  const reopened = await open(null, draft);
+  expect((screen.getByRole("textbox", { name: "일정 이름" }) as HTMLInputElement).value).toBe("남겨 둘 초안");
+  reopened.view.unmount();
+  reopened.deck.dispose();
+});
+it("keeps failed automatic draft writes protected and retries the exact input on exit", async () => {
+  const f = await open();
+  f.fail("draft.v1");
+  await fill("실패해도 유지할 초안");
+  await screen.findByText("초안을 저장하지 못했어요. 입력을 유지했으니 다시 저장해 주세요.");
+  expect(f.host.requests.filter((request) => request.method === "setDocumentState").at(-1)?.args).toEqual({
+    documentHandle: "document",
+    dirty: true,
+    saving: false,
+  });
+  f.fail("");
+  f.host.emit("window.documentSaveRequested", { documentHandle: "document", requestId: "retry" });
+  await waitFor(() =>
+    expect(f.host.requests.find((request) => request.method === "completeDocumentSave")?.args).toEqual({
+      documentHandle: "document",
+      requestId: "retry",
+      saved: true,
+    }),
+  );
+  expect(f.store.get("draft.v1")).toMatchObject({ title: "실패해도 유지할 초안" });
   f.view.unmount();
   f.deck.dispose();
 });

@@ -29,7 +29,7 @@ it("keeps the earlier PDF photo and manual name when new margins erase the crop"
   const file = { handle: "pdf", name: "합성.pdf", ext: "pdf", size: 1, modifiedAt: 0 };
   const host = createMockHost({
     module: { id: "photo-extract", version: "0.2.0" },
-    caps: { fs: "1.1.0" },
+    caps: { fs: "1.4.0" },
     granted: ["fs"],
     handlers: { "fs.pickFiles": () => [file] },
   });

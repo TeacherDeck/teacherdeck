@@ -39,7 +39,9 @@ export function App({ deck }: { deck: Deck }) {
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
   const controller = useRef<AbortController | null>(null);
+  const mounted = useRef(true);
   const [message, setMessage] = useState("");
+  const [inputMessage, setInputMessage] = useState("");
   const [pageDone, setPageDone] = useState(0);
   const [pageTotal, setPageTotal] = useState(0);
   const [parent, setParent] = useState<FolderHandleInfo | null>(null);
@@ -47,6 +49,7 @@ export function App({ deck }: { deck: Deck }) {
   const [folder, setFolder] = useState<FolderHandleInfo | null>(null);
   useEffect(() => {
     let active = true;
+    mounted.current = true;
     optionsChanged.current = false;
     optionsReady.current = loadOptions(deck).then((value) => {
       if (active && !optionsChanged.current) {
@@ -56,6 +59,7 @@ export function App({ deck }: { deck: Deck }) {
     });
     return () => {
       active = false;
+      mounted.current = false;
       controller.current?.abort();
     };
   }, [deck]);
@@ -78,33 +82,41 @@ export function App({ deck }: { deck: Deck }) {
     setBusy(true);
     try {
       const value = await deck.fs.pickFolder();
-      if (value) rememberParent(value);
+      if (value && mounted.current) rememberParent(value);
     } catch {
-      setMessage("폴더를 선택하지 못했어요. 다시 선택해 주세요.");
+      if (mounted.current) setMessage("폴더를 선택하지 못했어요. 다시 선택해 주세요.");
     } finally {
       lock.current = false;
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
   function add(incoming: FileHandleInfo[]) {
     if (lock.current) {
-      setMessage("현재 파일을 처리하고 있어요. 끝난 뒤 다음 파일을 추가해 주세요.");
+      setInputMessage("현재 파일을 처리하고 있어요. 끝난 뒤 다음 파일을 추가해 주세요.");
       return;
     }
-    const accepted = incoming.filter(
-      (file) =>
-        file.ext.toLowerCase() === "pdf" && !reserved.current.some((existing) => existing.handle === file.handle),
-    );
+    if (!incoming.length) return;
+    const known = new Set(reserved.current.map((file) => file.handle));
+    const accepted = incoming.filter((file) => {
+      if (file.ext.toLowerCase() !== "pdf" || known.has(file.handle)) return false;
+      known.add(file.handle);
+      return true;
+    });
     if (reserved.current.length + accepted.length > 1000) {
-      setMessage("한 번에 PDF 1,000개까지 추가해요. 저장한 뒤 목록을 비워 주세요.");
+      setInputMessage("한 번에 PDF 1,000개까지 추가해요. 저장한 뒤 목록을 비워 주세요.");
       return;
     }
     reserved.current = [...reserved.current, ...accepted];
     setFiles(reserved.current);
-    if (accepted.length !== incoming.length) setMessage("PDF 파일만 추가해요. 이미 추가한 파일은 유지해요.");
+    setInputMessage(
+      accepted.length
+        ? `PDF ${accepted.length}개를 추가했어요. 목록에서 파일을 확인할 수 있어요.${accepted.length !== incoming.length ? " PDF가 아니거나 이미 추가한 파일은 제외했어요." : ""}`
+        : "추가할 PDF가 없어요. PDF 파일만 추가하며 이미 추가한 파일은 유지해요.",
+    );
     if (auto && accepted.length && (optionsRef.current.mode !== "raster" || ack)) void run(accepted);
   }
   async function pick() {
+    if (lock.current) return;
     try {
       add(await deck.fs.pickFiles({ multiple: true, filters: [{ name: "PDF", extensions: ["pdf"] }] }));
     } catch {
@@ -137,17 +149,14 @@ export function App({ deck }: { deck: Deck }) {
       });
       if (abort.signal.aborted) return;
       const runOptions = optionsRef.current;
-      let destination = parentRef.current;
-      if (!destination) destination = await deck.fs.pickFolder();
-      if (!destination || abort.signal.aborted) return;
-      rememberParent(destination);
+      const destination = parentRef.current;
       void deck.storage.set("pdf-compression", runOptions).catch(() => undefined);
       const merge = (incoming: Result[]) =>
         setResults((old) => [...new Map([...old, ...incoming].map((r) => [r.file.handle, r])).values()]);
       const output = await runBatch(
         deck,
         selected,
-        destination.handle,
+        destination?.handle ?? null,
         runOptions,
         abort.signal,
         (incoming, done, total) => {
@@ -174,7 +183,7 @@ export function App({ deck }: { deck: Deck }) {
   return (
     <ToolLayout
       title="PDF 용량 줄이기"
-      description="PDF를 한 번에 추가하면 글자와 문서 구조를 유지하며 압축해요. 저장 폴더는 처음 한 번만 골라 주세요."
+      description="PDF를 추가하면 글자와 문서 구조를 유지하며 압축해 원본과 같은 폴더에 새 파일로 저장해요."
     >
       <ToolLayout.Section step="input" title="PDF 추가">
         <div className={s.actions}>
@@ -204,14 +213,17 @@ export function App({ deck }: { deck: Deck }) {
           </Button>
         </div>
         <DropZone
-          onPick={() => {
-            void pick();
-          }}
+          {...(busy ? {} : { onPick: () => void pick() })}
           description="PDF 여러 개를 끌어 놓거나 선택해 주세요."
         />
         <Body>
           {files.length}개 · {size(files.reduce((sum, f) => sum + f.size, 0))}
         </Body>
+        {inputMessage && (
+          <div role="status">
+            <InfoBar severity="informational" message={inputMessage} />
+          </div>
+        )}
         <CheckBox content="파일을 추가하면 바로 압축" checked={auto} disabled={busy} onChange={setAuto} />
         {message && <InfoBar severity="informational" message={message} />}
         {busy && <ProgressBar header="현재 파일 처리 진행" value={pageTotal ? (pageDone / pageTotal) * 100 : 0} />}
@@ -223,6 +235,7 @@ export function App({ deck }: { deck: Deck }) {
             setResults([]);
             setFolder(null);
             setMessage("");
+            setInputMessage("");
           }}
         >
           목록 비우기
@@ -289,9 +302,20 @@ export function App({ deck }: { deck: Deck }) {
             void chooseParent();
           }}
         >
-          다음 저장 폴더 선택
+          다른 저장 폴더 선택
         </Button>
-        <Body>{parent?.name ?? "압축할 때 저장 폴더를 선택해요."}</Body>
+        {parent && (
+          <Button
+            disabled={busy}
+            onClick={() => {
+              parentRef.current = null;
+              setParent(null);
+            }}
+          >
+            원본 폴더에 저장
+          </Button>
+        )}
+        <Body>{parent?.name ?? "각 원본 파일과 같은 폴더에 저장해요. 새 폴더는 만들지 않아요."}</Body>
       </ToolLayout.Section>
       <ToolLayout.Section step="preview" title="선택한 PDF">
         <div className={s.list}>
@@ -341,7 +365,7 @@ export function App({ deck }: { deck: Deck }) {
                 <Body>
                   {r.file.name} ·{" "}
                   {r.status === "failed"
-                    ? "실패: 비밀번호·크기·손상 여부를 확인해 주세요."
+                    ? "실패: 비밀번호·크기·손상·저장 폴더 권한을 확인해 주세요. 다른 저장 폴더를 선택해 재시도할 수 있어요."
                     : r.status === "original"
                       ? `용량 유지 · 원본 복사 ${size(r.outputSize ?? 0)}`
                       : `${size(r.file.size)} → ${size(r.outputSize ?? 0)} · ${Math.round((1 - (r.outputSize ?? 0) / r.file.size) * 100)}% 감소`}

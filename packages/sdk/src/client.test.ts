@@ -43,6 +43,49 @@ describe("handshake (BRG-003, BRG-008, VER-006)", () => {
   });
 });
 
+describe("window 1.2 document protection", () => {
+  it("maps typed registration, state and one-use save response without document contents", async () => {
+    const host = createMockHost({
+      granted: ["window"],
+      handlers: {
+        "window.registerDocument": () => ({ documentHandle: "synthetic-document" }),
+        "window.setDocumentState": () => null,
+        "window.completeDocumentSave": () => null,
+      },
+    });
+    const deck = await connect({ window: host.window, logger: quietLogger() });
+    expect(await deck.window.registerDocument()).toEqual({ documentHandle: "synthetic-document" });
+    await deck.window.setDocumentState({ documentHandle: "synthetic-document", dirty: true, saving: false });
+    const events: unknown[] = [];
+    deck.on("window.documentSaveRequested", (event) => events.push(event));
+    host.emit("window.documentSaveRequested", { documentHandle: "synthetic-document", requestId: "synthetic-save" });
+    await host.flush();
+    await deck.window.completeDocumentSave({
+      documentHandle: "synthetic-document",
+      requestId: "synthetic-save",
+      saved: false,
+    });
+    expect(events).toEqual([{ documentHandle: "synthetic-document", requestId: "synthetic-save" }]);
+    expect(host.requests.map(({ method }) => method)).toEqual([
+      "registerDocument",
+      "setDocumentState",
+      "completeDocumentSave",
+    ]);
+    deck.dispose();
+  });
+  it("rejects older or undeclared window protection before sending a mutation", async () => {
+    for (const granted of [[], ["window"]]) {
+      const host = createMockHost({ granted, caps: { window: "1.1.0" } });
+      const deck = await connect({ window: host.window, logger: quietLogger() });
+      expect((await rejection(deck.window.registerDocument())).code).toBe(
+        granted.length === 0 ? "PERMISSION_DENIED" : "VERSION_MISMATCH",
+      );
+      expect(host.requests).toEqual([]);
+      deck.dispose();
+    }
+  });
+});
+
 describe("origin checks (BRG-002)", () => {
   it("ignores init from a foreign origin or a non-parent source", async () => {
     const host = createMockHost({ answerHello: false });

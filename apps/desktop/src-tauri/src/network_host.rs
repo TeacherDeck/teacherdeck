@@ -770,11 +770,28 @@ fn runner_matches(
         && hash.is_some_and(|hash| record.exe_hash == hash)
 }
 fn apply_record(record: &mut Record, mode: NetworkMode, manual: bool) -> Result<(), DeckError> {
-    let before = crate::network_native::inspect(
+    apply_record_with(
+        record,
+        mode,
+        manual,
+        &local_time(),
+        crate::network_native::inspect,
+        crate::network_native::apply,
+    )
+}
+fn apply_record_with(
+    record: &mut Record,
+    mode: NetworkMode,
+    manual: bool,
+    now: &str,
+    inspect: impl Fn(&str, bool) -> Result<NetworkSnapshot, DeckError>,
+    apply: impl Fn(&str, NetworkMode, &Ipv4Patch) -> Result<NetworkSnapshot, DeckError>,
+) -> Result<(), DeckError> {
+    let before = inspect(
         &record.adapter_guid,
         record.rules.decision_mode != NetworkDecisionMode::Schedule,
     )?;
-    let decision = decide(&record.rules, &local_time(), &before)?;
+    let decision = decide(&record.rules, now, &before)?;
     if !manual {
         let action = reconcile(
             record.enabled,
@@ -790,7 +807,24 @@ fn apply_record(record: &mut Record, mode: NetworkMode, manual: bool) -> Result<
             return Err(stale());
         }
     }
-    let verified = crate::network_native::apply(&record.adapter_guid, mode, &record.internal)?;
+    let verified = match apply(&record.adapter_guid, mode, &record.internal) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            // WMI changes address, gateway and DNS in separate calls. A failure may be partial.
+            // Never leave the pre-apply snapshot looking like the current adapter state.
+            record.snapshot = inspect(
+                &record.adapter_guid,
+                record.rules.decision_mode != NetworkDecisionMode::Schedule,
+            )
+            .ok();
+            record.decision = record
+                .snapshot
+                .as_ref()
+                .and_then(|snapshot| decide(&record.rules, now, snapshot).ok());
+            record.error = Some(format!("{:?}", error.code));
+            return Err(error);
+        }
+    };
     // The native adapter returns only after verifying DNS source, paired mask and gateway.
     if manual {
         record.state.manual_override_segment_id = decision.segment_id.clone();
@@ -853,7 +887,12 @@ pub(crate) fn run_elevated_request(argument: &str) -> Result<(), DeckError> {
                 )?;
                 record.enabled = enabled;
             }
-            ElevatedAction::Apply { mode, manual } => apply_record(&mut record, mode, manual)?,
+            ElevatedAction::Apply { mode, manual } => {
+                if let Err(error) = apply_record(&mut record, mode, manual) {
+                    write_record(&root, &record)?;
+                    return Err(error);
+                }
+            }
             ElevatedAction::Stop => {
                 crate::network_native::configure_tasks(
                     &record.sid,
@@ -982,6 +1021,59 @@ mod tests {
             exe: PathBuf::new(),
             exe_hash: String::new(),
             runner_version: VERSION.into(),
+        }
+    }
+    #[test]
+    fn partial_apply_failure_reads_back_without_marking_a_success_or_reapplying() {
+        use std::cell::Cell;
+        for readback_fails in [false, true] {
+            let mut record = record();
+            let reads = Cell::new(0);
+            let applies = Cell::new(0);
+            record.snapshot = Some(NetworkSnapshot {
+                ips: vec!["192.0.2.1".into()],
+                ..Default::default()
+            });
+            let result = apply_record_with(
+                &mut record,
+                NetworkMode::Internal,
+                true,
+                "2026-10-12T09:00:00",
+                |_, _| {
+                    reads.set(reads.get() + 1);
+                    if reads.get() == 2 && readback_fails {
+                        return Err(failure());
+                    }
+                    Ok(NetworkSnapshot {
+                        ips: vec![
+                            if reads.get() == 1 {
+                                "192.0.2.1"
+                            } else {
+                                "192.0.2.2"
+                            }
+                            .into(),
+                        ],
+                        ..Default::default()
+                    })
+                },
+                |_, _, _| {
+                    applies.set(applies.get() + 1);
+                    Err(failure())
+                },
+            );
+            assert!(result.is_err());
+            assert_eq!(reads.get(), 2);
+            assert_eq!(applies.get(), 1);
+            assert!(record.state.manual_override_segment_id.is_empty());
+            assert!(record.state.last_applied_mode.is_none());
+            assert!(record.error.is_some());
+            if readback_fails {
+                assert!(record.snapshot.is_none());
+                assert!(record.decision.is_none());
+            } else {
+                assert_eq!(record.snapshot.unwrap().ips, vec!["192.0.2.2"]);
+                assert!(record.decision.is_some());
+            }
         }
     }
     #[test]

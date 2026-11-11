@@ -12,14 +12,23 @@ globalThis.onmessage = async (event: MessageEvent<{ blob: Blob; options: Options
     const canvas = new OffscreenCanvas(size.width, size.height);
     const context = canvas.getContext("2d");
     if (!context) throw new Error("CANVAS_UNAVAILABLE");
+    const type = options.format === "original" ? header.mime : `image/${options.format}`;
+    if (type === "image/jpeg") {
+      context.fillStyle = "white";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+    }
     context.drawImage(bitmap, 0, 0, size.width, size.height);
-    // Preserve alpha even when JPEG was requested for a potentially transparent input.
-    const type = options.format === "jpeg" && header.mime === "image/jpeg" ? "image/jpeg" : "image/webp";
     const output = await canvas.convertToBlob({ type, quality: options.quality / 100 });
     if (output.type !== type) throw new Error("ENCODER_UNAVAILABLE");
     globalThis.postMessage({ ok: true, blob: output });
-  } catch {
-    globalThis.postMessage({ ok: false });
+  } catch (error) {
+    globalThis.postMessage({
+      ok: false,
+      error:
+        error instanceof Error && error.message === "ENCODER_UNAVAILABLE"
+          ? "ENCODER_UNAVAILABLE"
+          : "COMPRESSION_FAILED",
+    });
   } finally {
     bitmap?.close();
   }

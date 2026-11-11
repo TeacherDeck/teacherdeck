@@ -14,6 +14,7 @@
 
 pub mod caps;
 pub mod catalog;
+pub mod document_lifecycle;
 pub mod error;
 pub mod handles;
 pub mod manifest;

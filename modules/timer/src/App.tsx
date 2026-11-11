@@ -7,7 +7,7 @@
 // - keyboard: Space start/pause, R reset, F presentation mode, Enter on the digits to set a time,
 //   then ↑/↓ or typing (UI-005)
 // - 해요체 wording, same action = same word (UI-007)
-import type { Deck } from "@deck/sdk";
+import { createDocumentSession, type Deck } from "@deck/sdk";
 import {
   Button,
   Caption,
@@ -37,6 +37,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -53,7 +54,8 @@ import {
 } from "./picker.ts";
 import { type Chime, SILENT, createAudio, playChime } from "./chime.ts";
 import { loadRecent, loadSound, pushRecent, saveSound } from "./recent.ts";
-import { type TimerState, create, format, fromParts, remaining, reset, tick, toParts, toggle } from "./timer.ts";
+import { readTimer } from "./resume.ts";
+import { type TimerState, create, format, fromParts, remaining, reset, tick, toParts, toggle, pause } from "./timer.ts";
 
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: deckTokens.sectionGap, padding: deckTokens.pagePadding },
@@ -499,7 +501,7 @@ function TimeEditor({
 
 export function App({ deck }: { deck: Deck }) {
   const s = useStyles();
-  const [timer, setTimer] = useState<TimerState>(() => create(5 * 60 * 1000));
+  const [timer, applyTimer] = useState<TimerState>(() => create(5 * 60 * 1000));
   const [now, setNow] = useState(() => performance.now());
   const [recent, setRecent] = useState<number[]>([]);
   const recentRef = useRef(recent);
@@ -508,12 +510,61 @@ export function App({ deck }: { deck: Deck }) {
   const [onTop, setOnTop] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
   const editedValue = useRef<(() => number) | null>(null);
   const [sound, setSound] = useState(true);
   const soundRef = useRef(sound);
   soundRef.current = sound;
   const audio = useRef<AudioContext | null>(null);
   const chime = useRef<Chime>(SILENT);
+  const timerRef = useRef(timer);
+  const changed = useRef(false);
+  const session = useMemo(
+    () =>
+      createDocumentSession(deck, {
+        save: async () => {
+          const now = performance.now();
+          const entered = editingRef.current ? editedValue.current?.() : undefined;
+          const next = entered ? create(entered) : pause(tick(timerRef.current, now), now);
+          await deck.storage.set("timer.v1", next);
+          timerRef.current = next;
+          applyTimer(next);
+          setEditing(false);
+        },
+        onError: () => setMessage("타이머 상태를 보관하지 못했어요. 타이머를 유지하고 다시 시도해 주세요."),
+      }),
+    [deck],
+  );
+  const setTimer = useCallback(
+    (value: TimerState | ((previous: TimerState) => TimerState)) => {
+      void session.change(() => {
+        const next = typeof value === "function" ? value(timerRef.current) : value;
+        timerRef.current = next;
+        changed.current = true;
+        applyTimer(next);
+      });
+    },
+    [session],
+  );
+  useEffect(() => {
+    let active = true;
+    void Promise.all([deck.storage.get("timer.v1"), session.ready])
+      .then(([value]) => {
+        if (!active || changed.current || value === null) return;
+        const next = readTimer(value);
+        timerRef.current = next;
+        applyTimer(next);
+      })
+      .catch(() => setMessage("이전 타이머 상태를 읽지 못했어요. 새 시간을 설정해 주세요."));
+    return () => {
+      active = false;
+      session.dispose();
+    };
+  }, [deck, session]);
+  useEffect(() => {
+    if (changed.current && timer.status !== "running") void session.save();
+  }, [timer.status, timer.durationMs, timer.elapsedMs, session]);
 
   useEffect(() => {
     loadRecent(deck)
@@ -562,7 +613,9 @@ export function App({ deck }: { deck: Deck }) {
     const id = setInterval(() => {
       const t = performance.now();
       setNow(t);
-      setTimer((prev) => tick(prev, t));
+      const next = tick(timerRef.current, t);
+      timerRef.current = next;
+      applyTimer(next);
     }, 200);
     return () => clearInterval(id);
   }, [timer.status]);
@@ -619,7 +672,7 @@ export function App({ deck }: { deck: Deck }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [presenting, setPresentation]);
+  }, [presenting, setPresentation, setTimer]);
 
   const choose = (seconds: number) => setTimer(create(seconds * 1000));
   const left = remaining(timer, now);
@@ -648,7 +701,12 @@ export function App({ deck }: { deck: Deck }) {
           className={s.digitsButton}
           aria-label={`남은 시간 ${format(left)}, 눌러서 시간 입력`}
           title="눌러서 시간 입력"
-          onClick={() => setEditing(true)}
+          onClick={() =>
+            void session.change(() => {
+              changed.current = true;
+              setEditing(true);
+            })
+          }
         >
           <Display className={mergeClasses(s.digits, presenting && s.presentationDigits, finished && s.finishedDigits)}>
             {format(left)}

@@ -91,6 +91,12 @@ const statusLabel = (status: string) =>
 export function App({ deck }: { deck: Deck }) {
   const s = useStyles();
   const [entries, setEntries] = useState<Entry[]>([]);
+  const currentEntries = useRef<Entry[]>([]);
+  function changeEntries(value: Entry[] | ((previous: Entry[]) => Entry[])) {
+    const next = typeof value === "function" ? value(currentEntries.current) : value;
+    currentEntries.current = next;
+    setEntries(next);
+  }
   const [mode, setMode] = useState<Mode>("pattern");
   const [naming, setNaming] = useState<Naming>({ ...DEFAULT_NAMING, date: today() });
   const [match, setMatch] = useState<MatchOptions>(DEFAULT_MATCH);
@@ -107,6 +113,7 @@ export function App({ deck }: { deck: Deck }) {
   const [renameResult, setRenameResult] = useState<RenameResult | null>(null);
   const [results, setResults] = useState<CopyResult[]>([]);
   const [folder, setFolder] = useState<FolderHandleInfo | null>(null);
+  const [parent, setParent] = useState<FolderHandleInfo | null>(null);
   const [history, setHistory] = useState<RenameHistory[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(0);
@@ -115,6 +122,7 @@ export function App({ deck }: { deck: Deck }) {
   const [detail, setDetail] = useState<string | null>(null);
   const [sort, setSort] = useState("nameAsc");
   const [message, setMessage] = useState("");
+  const [inputMessage, setInputMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(0);
   const [total, setTotal] = useState(0);
@@ -150,14 +158,16 @@ export function App({ deck }: { deck: Deck }) {
   const rows = visible.slice(currentPage * 50, (currentPage + 1) * 50);
   const invalid = previews.filter((row) => row.errors.length).length;
   const update = (handle: string, change: (entry: Entry) => Entry) => {
-    setEntries((old) => old.map((entry) => (entry.file.handle === handle ? change(entry) : entry)));
+    changeEntries((old) => old.map((entry) => (entry.file.handle === handle ? change(entry) : entry)));
     setPlan(null);
   };
   useEffect(() => () => controller.current?.abort(), []);
   useEffect(
     () =>
       deck.on("fs.dropped", ({ files }) => {
-        if (!lock.current && !renameResult) add(files);
+        if (lock.current || renameResult) {
+          setInputMessage("현재 작업을 마친 뒤 파일을 추가해 주세요. 원본 이름을 변경했다면 목록을 먼저 비워 주세요.");
+        } else add(files);
       }),
     [deck, renameResult],
   );
@@ -187,7 +197,8 @@ export function App({ deck }: { deck: Deck }) {
       .catch(() => setMessage("저장한 패턴을 읽지 못했어요. 직접 입력해 주세요."));
   }, [deck]);
   function add(files: FileHandleInfo[]) {
-    setEntries((old) => {
+    if (!files.length) return;
+    changeEntries((old) => {
       const known = new Set(old.map((entry) => entry.file.handle));
       const additions = files
         .filter((file) => {
@@ -197,9 +208,14 @@ export function App({ deck }: { deck: Deck }) {
         })
         .map((file) => ({ file }));
       if (old.length + additions.length > 2000) {
-        setMessage("한 작업에2,000개까지 추가할 수 있어요. 목록을 나누어 주세요.");
+        setInputMessage("한 작업에 2,000개까지 추가할 수 있어요. 목록을 나누어 주세요.");
         return old;
       }
+      setInputMessage(
+        additions.length
+          ? `파일 ${additions.length}개를 추가했어요. 이름 미리보기에서 확인해 주세요.${additions.length !== files.length ? " 이미 추가한 파일은 제외했어요." : ""}`
+          : "이미 추가한 파일이에요. 현재 목록을 유지해요.",
+      );
       return [...old, ...additions];
     });
     setPage(0);
@@ -319,6 +335,7 @@ export function App({ deck }: { deck: Deck }) {
             setDone(value.filter((row) => row.status !== "notStarted").length);
           },
           retry ? results : [],
+          parent?.handle,
         );
         if (out.cancelled) {
           setMessage("저장 폴더 선택을 취소했어요. 이전 결과는 유지해요.");
@@ -374,7 +391,7 @@ export function App({ deck }: { deck: Deck }) {
     });
   }
   function move(direction: number) {
-    setEntries((old) => {
+    changeEntries((old) => {
       const next = [...old];
       const indexes = next.flatMap((entry, index) => (selected.has(entry.file.handle) ? [index] : []));
       if (direction > 0) indexes.reverse();
@@ -393,7 +410,7 @@ export function App({ deck }: { deck: Deck }) {
     });
   }
   function sortEntries() {
-    setEntries((old) =>
+    changeEntries((old) =>
       [...old].sort((a, b) => {
         const sign = sort.endsWith("Desc") ? -1 : 1;
         return (
@@ -411,7 +428,7 @@ export function App({ deck }: { deck: Deck }) {
   const hostReady = plan && plan.items.every((row) => ["ready", "unchanged"].includes(row.status));
   const ran = renameResult !== null;
   const discardManualRows = () =>
-    setEntries((old) =>
+    changeEntries((old) =>
       old.map((entry) => {
         const rest = { ...entry };
         delete rest.manualRow;
@@ -421,10 +438,15 @@ export function App({ deck }: { deck: Deck }) {
   return (
     <ToolLayout
       title="파일명 정리"
-      description="원본을 보며 새 이름을 정하고 새 폴더에 복사해요. 원본 이름 변경은 별도 확인 후 실행해요."
+      description="원본을 보며 새 이름을 정하고 원본과 같은 폴더에 새 파일로 복사해요. 원본 이름 변경은 별도 확인 후 실행해요."
     >
       {message && !results.length && !renameResult && <InfoBar message={message} onClose={() => setMessage("")} />}
       <ToolLayout.Section step="input" title="1. 파일 추가">
+        {inputMessage && (
+          <div role="status">
+            <InfoBar severity="informational" message={inputMessage} />
+          </div>
+        )}
         {!entries.length && (
           <DropZone
             title="파일을 끌어 놓거나 추가해 주세요"
@@ -446,7 +468,7 @@ export function App({ deck }: { deck: Deck }) {
           <Button
             disabled={busy || !selected.size || ran}
             onClick={() => {
-              setEntries((old) => old.filter((entry) => !selected.has(entry.file.handle)));
+              changeEntries((old) => old.filter((entry) => !selected.has(entry.file.handle)));
               setSelected(new Set());
             }}
           >
@@ -455,7 +477,8 @@ export function App({ deck }: { deck: Deck }) {
           <Button
             disabled={busy || !entries.length}
             onClick={() => {
-              setEntries([]);
+              changeEntries([]);
+              setInputMessage("");
               setSelected(new Set());
               setResults([]);
               setRenameResult(null);
@@ -511,7 +534,7 @@ export function App({ deck }: { deck: Deck }) {
               <Button disabled={busy || ran} onClick={() => void loadExcel()}>
                 엑셀 읽기
               </Button>
-              <Button disabled={busy} onClick={() => void task(async () => templateFile(deck))}>
+              <Button disabled={busy} onClick={() => void task(async () => templateFile(deck, parent?.handle))}>
                 연결 양식 저장
               </Button>
             </div>
@@ -684,10 +707,35 @@ export function App({ deck }: { deck: Deck }) {
           disabled={busy || ran}
           onChange={setOperation}
           options={[
-            { value: "copy", label: "새 폴더에 복사 (기본)" },
+            { value: "copy", label: "새 파일로 복사 (기본)" },
             { value: "rename", label: "원본 이름 변경" },
           ]}
         />
+        {operation === "copy" && (
+          <div className={s.stack}>
+            <div className={s.actions}>
+              <Button
+                disabled={busy}
+                onClick={() =>
+                  void task(async () => {
+                    const selected = await deck.fs.pickFolder();
+                    if (selected) setParent(selected);
+                  })
+                }
+              >
+                다른 저장 폴더 선택
+              </Button>
+              {parent && (
+                <Button disabled={busy} onClick={() => setParent(null)}>
+                  원본 폴더에 저장
+                </Button>
+              )}
+            </div>
+            <Caption>
+              {parent ? `저장 폴더: ${parent.name}` : "각 원본 파일과 같은 폴더에 저장해요. 새 폴더는 만들지 않아요."}
+            </Caption>
+          </div>
+        )}
         {operation === "rename" && (
           <InfoBar
             severity="warning"
@@ -907,7 +955,7 @@ export function App({ deck }: { deck: Deck }) {
               disabled={busy || ran || invalid > 0 || !entries.length || (operation === "rename" && !hostReady)}
               onClick={() => (operation === "rename" ? setConfirm(true) : void run())}
             >
-              {operation === "copy" ? "새 폴더에 복사" : "원본 이름 변경"}
+              {operation === "copy" ? "새 파일로 복사" : "원본 이름 변경"}
             </Button>
             <Button disabled={!busy} onClick={() => controller.current?.abort()}>
               취소
@@ -931,7 +979,7 @@ export function App({ deck }: { deck: Deck }) {
                       .filter((item) => ["failed", "changed", "conflict", "notStarted"].includes(item.status))
                       .map((item) => item.sourceHandle),
                   );
-                  setEntries((old) => old.filter((entry) => failed.has(entry.file.handle)));
+                  changeEntries((old) => old.filter((entry) => failed.has(entry.file.handle)));
                   setRenameResult(null);
                   setPlan(null);
                   setSelected(new Set());

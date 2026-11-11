@@ -227,6 +227,33 @@ describe("requests", () => {
 describe("keepAlive LRU", () => {
   const keep = (id: string) => id !== "plain";
 
+  it("retains running work before idle LRU entries without exceeding the limit", () => {
+    const k = new KeepAliveSet(3);
+    for (const id of ["timer", "notes", "capture"]) k.activate(id, keep);
+    const protectedIds = new Set(["timer"]);
+    expect(k.preview("editor", keep, protectedIds)).toEqual({
+      mounted: ["editor", "capture", "timer"],
+      evicted: ["notes"],
+    });
+    expect(k.activate("editor", keep, protectedIds)).toEqual({
+      mounted: ["editor", "capture", "timer"],
+      evicted: ["notes"],
+    });
+    expect(k.activate("fourth", keep, new Set(["timer", "capture", "editor"]))).toEqual({
+      mounted: ["fourth", "editor", "capture"],
+      evicted: ["timer"],
+    });
+  });
+
+  it("previews LRU removal without unloading or changing order while a dialog is open", () => {
+    const k = new KeepAliveSet();
+    for (const id of ["a", "b", "c"]) k.activate(id, keep);
+    expect(k.preview("d", keep)).toEqual({ mounted: ["d", "c", "b"], evicted: ["a"] });
+    expect(k.activate("c", keep).mounted).toEqual(["c", "b", "a"]);
+    k.remove("b");
+    expect(k.activate("d", keep).mounted).toEqual(["d", "c", "a"]);
+  });
+
   it("keeps at most three keepAlive modules including the active one", () => {
     const k = new KeepAliveSet(3);
     for (const id of ["a", "b", "c", "d"]) k.activate(id, keep);

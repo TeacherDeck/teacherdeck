@@ -44,7 +44,7 @@ async function fixture() {
         return null;
       },
       "fs.pickFolder": () => (cancel ? null : { handle: "folder", displayName: "합성 폴더" }),
-      "fs.createOutputFolder": () => ({ batchId: "batch", displayName: "합성 출력" }),
+      "fs.openOutputFolder": () => ({ batchId: "batch", displayName: "합성 출력" }),
       "fs.writeBlob": () => {
         writes++;
         throw new Error("SYNTHETIC_WRITE_FAILURE");

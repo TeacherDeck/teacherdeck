@@ -38,7 +38,7 @@ async function settingsHarness(
   const saveOptions = vi.fn(() => null);
   const host = createMockHost({
     module: { id: "pdf-compress", version: "0.1.0" },
-    caps: { fs: "1.1.0", storage: "1.0.0" },
+    caps: { fs: "1.4.0", storage: "1.0.0" },
     granted: ["fs", "storage"],
     handlers: {
       "storage.get": getOptions,
@@ -80,7 +80,7 @@ it("keeps a user's quality choice when stored options arrive after an early drop
     expect(screen.getByRole("spinbutton", { name: "사진 품질 (%)" }).getAttribute("value")).toBe("100");
     expect(vi.mocked(runBatch).mock.calls[0]?.[1]).toEqual([file]);
     expect(vi.mocked(runBatch).mock.calls[0]?.[3].quality).toBe(100);
-    expect(pickFolder).toHaveBeenCalledOnce();
+    expect(pickFolder).not.toHaveBeenCalled();
   } finally {
     view.unmount();
     deck.dispose();
@@ -232,13 +232,13 @@ it("cancels a run waiting for settings immediately and retains the file for a ma
   }
 });
 
-it("does not start compression if the folder dialog resolves after unmounting", async () => {
+it("does not remember an explicit destination after unmounting while choosing it", async () => {
   const destination = deferred<FolderHandleInfo>();
   const pickFolder = vi.fn(() => destination.promise);
-  const { file, host, deck, view, saveOptions } = await settingsHarness(() => null, pickFolder);
+  const { host, deck, view, saveOptions } = await settingsHarness(() => null, pickFolder);
   try {
     await act(async () => {
-      host.emit("fs.dropped", { files: [file] });
+      fireEvent.click(screen.getByRole("button", { name: "다른 저장 폴더 선택" }));
       await host.flush();
     });
     expect(pickFolder).toHaveBeenCalledOnce();
@@ -253,14 +253,14 @@ it("does not start compression if the folder dialog resolves after unmounting", 
     deck.dispose();
   }
 });
-it("compresses selected and dropped PDFs automatically in preserving mode and asks for the folder once", async () => {
+it("compresses selected and dropped PDFs automatically without a folder dialog", async () => {
   const first = { handle: "a", name: "합성 첫문서.pdf", ext: "pdf", size: 4, modifiedAt: 0 };
   const second = { ...first, handle: "b", name: "합성 둘째문서.pdf" };
   const folder = { handle: "output", name: "합성 결과" };
   const pickFolder = vi.fn(() => ({ handle: "parent", name: "합성 저장 폴더" }));
   const host = createMockHost({
     module: { id: "pdf-compress", version: "0.1.0" },
-    caps: { fs: "1.1.0", storage: "1.0.0" },
+    caps: { fs: "1.4.0", storage: "1.0.0" },
     granted: ["fs", "storage"],
     handlers: {
       "storage.get": () => null,
@@ -289,7 +289,8 @@ it("compresses selected and dropped PDFs automatically in preserving mode and as
   await waitFor(() => expect(runBatch).toHaveBeenCalledTimes(2));
   await waitFor(() => expect(screen.getByRole("button", { name: /^취소$/ }).hasAttribute("disabled")).toBe(true));
   expect(vi.mocked(runBatch).mock.calls[1]?.[1]).toEqual([second]);
-  expect(pickFolder).toHaveBeenCalledOnce();
+  expect(pickFolder).not.toHaveBeenCalled();
+  expect(vi.mocked(runBatch).mock.calls.map((call) => call[2])).toEqual([null, null]);
   expect(screen.queryByRole("checkbox", { name: "이미지 문서로 바뀌는 것을 확인했어요" })).toBeNull();
   view.unmount();
   deck.dispose();
@@ -301,7 +302,7 @@ async function dropHarness(pickFolder: () => FolderHandleInfo | null | Promise<F
   const folder = { handle: "output", name: "합성 결과" };
   const host = createMockHost({
     module: { id: "pdf-compress", version: "0.1.0" },
-    caps: { fs: "1.1.0", storage: "1.0.0" },
+    caps: { fs: "1.4.0", storage: "1.0.0" },
     granted: ["fs", "storage"],
     handlers: { "storage.get": () => null, "storage.set": () => null, "fs.pickFolder": pickFolder },
   });
@@ -314,7 +315,7 @@ async function dropHarness(pickFolder: () => FolderHandleInfo | null | Promise<F
   return { first, second, folder, host, deck, view };
 }
 
-it("reuses a chosen folder for a drop arriving immediately after completion before React commits its new subscription", async () => {
+it("keeps source-folder saving for a drop arriving immediately after completion before React commits its subscription", async () => {
   const pickFolder = vi.fn(() => ({ handle: "parent", name: "합성 저장 폴더" }));
   const { first, second, folder, host, deck, view } = await dropHarness(pickFolder);
   let batches = 0;
@@ -334,8 +335,8 @@ it("reuses a chosen folder for a drop arriving immediately after completion befo
     });
     await waitFor(() => expect(runBatch).toHaveBeenCalledTimes(2));
     expect(vi.mocked(runBatch).mock.calls.map((call) => call[1])).toEqual([[first], [second]]);
-    expect(vi.mocked(runBatch).mock.calls.map((call) => call[2])).toEqual(["parent", "parent"]);
-    expect(pickFolder).toHaveBeenCalledOnce();
+    expect(vi.mocked(runBatch).mock.calls.map((call) => call[2])).toEqual([null, null]);
+    expect(pickFolder).not.toHaveBeenCalled();
     expect(screen.getAllByText(/^합성 첫문서\.pdf ·/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/^합성 둘째문서\.pdf ·/).length).toBeGreaterThan(0);
   } finally {
@@ -344,54 +345,41 @@ it("reuses a chosen folder for a drop arriving immediately after completion befo
   }
 });
 
-it("rejects drops while choosing a folder and permits a new choice after cancellation without losing pending files", async () => {
-  let cancelChoice: ((folder: FolderHandleInfo | null) => void) | undefined;
-  const pendingChoice = new Promise<FolderHandleInfo | null>((resolve) => {
-    cancelChoice = resolve;
-  });
-  const pickFolder = vi
-    .fn<() => FolderHandleInfo | null | Promise<FolderHandleInfo | null>>()
-    .mockReturnValueOnce(pendingChoice)
-    .mockReturnValue({ handle: "parent", name: "합성 저장 폴더" });
+it("acknowledges files immediately, rejects busy drops visibly, and opens no picker", async () => {
+  const pickFolder = vi.fn(() => null);
   const { first, second, folder, host, deck, view } = await dropHarness(pickFolder);
-  vi.mocked(runBatch).mockImplementation(async (_deck, selected) => ({
-    folder,
-    results: selected.map((file) => ({ file, status: "compressed", outputSize: 2, folder })),
-  }));
+  const result = deferred<Awaited<ReturnType<typeof runBatch>>>();
+  vi.mocked(runBatch).mockReturnValueOnce(result.promise);
   try {
     await act(async () => {
       host.emit("fs.dropped", { files: [first] });
       await host.flush();
     });
-    expect(pickFolder).toHaveBeenCalledOnce();
+    expect(screen.getByRole("status").textContent).toContain("PDF 1개를 추가했어요");
+    expect(screen.getAllByText(/^합성 첫문서\.pdf ·/)).toHaveLength(1);
     await act(async () => {
       host.emit("fs.dropped", { files: [second] });
+      await host.flush();
     });
-    expect(runBatch).not.toHaveBeenCalled();
-    expect(pickFolder).toHaveBeenCalledOnce();
-    expect(screen.getByText("현재 파일을 처리하고 있어요. 끝난 뒤 다음 파일을 추가해 주세요.")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain("현재 파일을 처리하고 있어요");
     expect(screen.queryAllByText(/^합성 둘째문서\.pdf ·/)).toHaveLength(0);
+    expect(pickFolder).not.toHaveBeenCalled();
+    expect(host.requests.some((r) => r.method === "pickFiles")).toBe(false);
     await act(async () => {
-      cancelChoice?.(null);
+      result.resolve({ folder, results: [] });
       await host.flush();
     });
-    expect(screen.getByRole("button", { name: "취소" }).hasAttribute("disabled")).toBe(true);
-    expect(screen.getAllByText(/^합성 첫문서\.pdf ·/)).toHaveLength(1);
     await act(async () => {
-      host.emit("fs.dropped", { files: [second] });
+      host.emit("fs.dropped", { files: [first, { ...first, handle: "unsupported", ext: "txt" }] });
       await host.flush();
     });
-    await waitFor(() => expect(runBatch).toHaveBeenCalledOnce());
-    expect(vi.mocked(runBatch).mock.calls[0]?.[1]).toEqual([second]);
-    expect(pickFolder).toHaveBeenCalledTimes(2);
-    expect(screen.getAllByText(/^합성 첫문서\.pdf ·/)).toHaveLength(1);
-    expect(screen.getAllByText(/^합성 둘째문서\.pdf ·/)).toHaveLength(2);
+    expect(screen.getByRole("status").textContent).toContain("추가할 PDF가 없어요");
+    expect(runBatch).toHaveBeenCalledOnce();
   } finally {
     view.unmount();
     deck.dispose();
   }
 });
-
 it("keeps the previous destination when a next-folder dialog is cancelled and blocks drops while it is open", async () => {
   let cancelChoice: ((folder: FolderHandleInfo | null) => void) | undefined;
   const pendingChoice = new Promise<FolderHandleInfo | null>((resolve) => {
@@ -408,12 +396,12 @@ it("keeps the previous destination when a next-folder dialog is cancelled and bl
   }));
   try {
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "다음 저장 폴더 선택" }));
+      fireEvent.click(screen.getByRole("button", { name: "다른 저장 폴더 선택" }));
       await host.flush();
     });
     expect(screen.getByText("합성 저장 폴더")).toBeTruthy();
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "다음 저장 폴더 선택" }));
+      fireEvent.click(screen.getByRole("button", { name: "다른 저장 폴더 선택" }));
       await host.flush();
     });
     await act(async () => {

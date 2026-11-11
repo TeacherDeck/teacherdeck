@@ -40,6 +40,11 @@ const supported = (file: FileHandleInfo) => /\.(xlsx|xls|pdf)$/i.test(file.name)
 export function App({ deck }: { deck: Deck }) {
   const s = useStyles();
   const [extractions, setExtractions] = useState<Extraction[]>([]);
+  const alive = useRef(true);
+  const extractionsRef = useRef(extractions);
+  extractionsRef.current = extractions;
+  const queued = useRef(new Map<string, FileHandleInfo>());
+  const admitted = useRef(new Set<string>());
   const [renamed, setRenamed] = useState<Record<string, string>>({});
   const [pattern, setPattern] = useState(DEFAULT_NAME_PATTERN);
   const [insets, setInsets] = useState<Insets>({ ...DEFAULT_INSETS });
@@ -51,6 +56,8 @@ export function App({ deck }: { deck: Deck }) {
   const [progress, setProgress] = useState(0);
   const [total, setTotal] = useState(0);
   const destination = useRef<OutputSession | null>(null);
+  const [parent, setParent] = useState<FolderHandleInfo | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<FileHandleInfo[]>([]);
   const [saveStatuses, setSaveStatuses] = useState<Record<string, SaveStatus>>({});
   const [folder, setFolder] = useState<FolderHandleInfo | null>(null);
   const [urls, setUrls] = useState<Record<string, string>>({});
@@ -68,13 +75,15 @@ export function App({ deck }: { deck: Deck }) {
       for (const url of Object.values(next)) URL.revokeObjectURL(url);
     };
   }, [extractions]);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      queued.current.clear();
       controller.current?.abort();
       void destination.current?.close().catch(() => undefined);
-    },
-    [],
-  );
+    };
+  }, []);
   function resetDestination() {
     void destination.current?.close().catch(() => setMessage("저장 작업을 정리하지 못했어요. 저장한 결과는 유지해요."));
     destination.current = null;
@@ -82,21 +91,50 @@ export function App({ deck }: { deck: Deck }) {
   useEffect(
     () =>
       deck.on("fs.dropped", ({ files }) => {
+        if (!files.length) {
+          setMessage("폴더나 읽을 수 없는 파일은 추가하지 않았어요. 지원하는 파일을 놓아주세요.");
+          return;
+        }
         void addFiles(files);
       }),
     [deck, extractions, insets],
   );
+  function flushQueued(cancelled = false) {
+    const next = [...queued.current.values()];
+    queued.current.clear();
+    for (const file of next) admitted.current.delete(file.handle);
+    if (!next.length || !alive.current) return;
+    if (cancelled) {
+      setFailedFiles((current) => [...new Map([...current, ...next].map((file) => [file.handle, file])).values()]);
+      setPendingFiles((current) =>
+        current.filter((file) => !next.some((queuedFile) => queuedFile.handle === file.handle)),
+      );
+    } else void addFiles(next);
+  }
   async function addFiles(files: FileHandleInfo[], replace = false) {
-    if (locked.current || !files.length) return;
+    if (!files.length || !alive.current) return;
     const accepted = [...new Map(files.filter(supported).map((file) => [file.handle, file])).values()].filter(
-      (file) => replace || !extractions.some((e) => e.file.handle === file.handle),
+      (file) =>
+        replace ||
+        (!admitted.current.has(file.handle) && !extractionsRef.current.some((e) => e.file.handle === file.handle)),
     );
     if (!accepted.length) {
-      setMessage("사진명렬표 .xlsx, ZIP 형식의 .xls 또는 사진 출석부 .pdf 파일을 선택해 주세요.");
+      setMessage(
+        files.every(supported)
+          ? "이미 추가한 문서예요. 입력 목록에서 확인해 주세요."
+          : "사진명렬표 .xlsx, ZIP 형식의 .xls 또는 사진 출석부 .pdf 파일을 선택해 주세요.",
+      );
       return;
     }
-    if (!replace && accepted.length + extractions.length > 16) {
+    if (!replace && accepted.length + admitted.current.size + extractionsRef.current.length > 16) {
       setMessage("한 번에 파일 16개까지 확인해요. 현재 사진을 저장한 뒤 목록을 비워 주세요.");
+      return;
+    }
+    for (const file of accepted) admitted.current.add(file.handle);
+    setPendingFiles((current) => [...new Map([...current, ...accepted].map((file) => [file.handle, file])).values()]);
+    if (locked.current) {
+      for (const file of accepted) queued.current.set(file.handle, file);
+      setMessage(`${accepted.length}개 파일을 입력했어요. 앞선 작업이 끝나면 읽어요.`);
       return;
     }
     locked.current = true;
@@ -105,7 +143,7 @@ export function App({ deck }: { deck: Deck }) {
     controller.current = abort;
     setTotal(accepted.length);
     setProgress(0);
-    setMessage("사진과 학생 정보를 읽는 중이에요.");
+    setMessage(`${accepted.length}개 파일을 입력했어요. 사진과 학생 정보를 읽는 중이에요.`);
     let added = 0;
     let failed = 0;
     let invalidCrop = false;
@@ -123,7 +161,8 @@ export function App({ deck }: { deck: Deck }) {
           if (cumulative - previous + retained > 128 * 1024 * 1024) throw new Error("INPUT_LIMIT");
           if (abort.signal.aborted) break;
           cumulative += retained - previous;
-          setExtractions((current) => [...current.filter((e) => e.file.handle !== file.handle), result]);
+          extractionsRef.current = [...extractionsRef.current.filter((e) => e.file.handle !== file.handle), result];
+          setExtractions(extractionsRef.current);
           setFailedFiles((current) => current.filter((input) => input.handle !== file.handle));
           added++;
         } catch (error) {
@@ -135,6 +174,8 @@ export function App({ deck }: { deck: Deck }) {
             ]);
           }
         }
+        admitted.current.delete(file.handle);
+        setPendingFiles((current) => current.filter((input) => input.handle !== file.handle));
         setProgress(i + 1);
       }
       setMessage(
@@ -146,6 +187,13 @@ export function App({ deck }: { deck: Deck }) {
       locked.current = false;
       setBusy(false);
       controller.current = null;
+      if (abort.signal.aborted) {
+        const unread = accepted.filter((file) => !extractionsRef.current.some((e) => e.file.handle === file.handle));
+        setFailedFiles((current) => [...new Map([...current, ...unread].map((file) => [file.handle, file])).values()]);
+      }
+      for (const file of accepted) admitted.current.delete(file.handle);
+      setPendingFiles((current) => current.filter((input) => !accepted.some((file) => file.handle === input.handle)));
+      flushQueued(abort.signal.aborted);
     }
   }
   async function pick() {
@@ -158,6 +206,24 @@ export function App({ deck }: { deck: Deck }) {
       );
     } catch {
       setMessage("파일을 선택하지 못했어요. 다시 선택해 주세요.");
+    }
+  }
+  async function chooseDestination() {
+    if (locked.current) return;
+    locked.current = true;
+    setBusy(true);
+    try {
+      const picked = await deck.fs.pickFolder();
+      if (picked) {
+        resetDestination();
+        setParent(picked);
+      }
+    } catch {
+      setMessage("폴더를 선택하지 못했어요. 다시 선택해 주세요.");
+    } finally {
+      locked.current = false;
+      setBusy(false);
+      flushQueued();
     }
   }
   async function save(retry = false) {
@@ -174,7 +240,7 @@ export function App({ deck }: { deck: Deck }) {
       setBusy(false);
       return;
     }
-    destination.current ??= new OutputSession(deck, "명렬표 사진");
+    destination.current ??= new OutputSession(deck, parent?.handle);
     setTotal(selected.length);
     setProgress(0);
     try {
@@ -187,11 +253,12 @@ export function App({ deck }: { deck: Deck }) {
           const failed = new Set(result.failed);
           for (const photo of selected) {
             if (!saved.has(photo.id) && !failed.has(photo.id) && previous[photo.id]) continue;
+            const savedFolder = result.folders?.[photo.id];
             next[photo.id] = {
               id: photo.id,
               filename: result.outputs?.[photo.id] ?? photo.filename,
               state: saved.has(photo.id) ? "saved" : failed.has(photo.id) ? "failed" : "pending",
-              folder: result.folder,
+              ...(savedFolder ? { folder: savedFolder } : {}),
             };
           }
           return next;
@@ -217,6 +284,7 @@ export function App({ deck }: { deck: Deck }) {
       locked.current = false;
       setBusy(false);
       controller.current = null;
+      flushQueued(abort.signal.aborted);
     }
   }
   const students = extractions.flatMap((e) =>
@@ -228,6 +296,32 @@ export function App({ deck }: { deck: Deck }) {
       description="나이스 XLSX 사진명렬표와 PDF 사진 출석부에서 사진을 꺼내 학번·이름으로 저장해요."
     >
       <ToolLayout.Section step="input" title="사진명렬표 추가">
+        <div className={s.actions}>
+          <Button disabled={busy} onClick={() => void chooseDestination()}>
+            저장 폴더 선택
+          </Button>
+          <Button
+            disabled={busy || !parent}
+            onClick={() => {
+              resetDestination();
+              setParent(null);
+            }}
+          >
+            원본 폴더에 저장
+          </Button>
+          <Caption>{parent ? `저장 위치: ${parent.name}` : "원본 파일과 같은 폴더에 저장해요."}</Caption>
+        </div>
+        {pendingFiles.length > 0 && (
+          <div>
+            <Caption aria-live="polite">입력한 파일 {pendingFiles.length}개 · 읽는 중</Caption>
+            <ListView
+              header={`입력한 파일 ${pendingFiles.length}개 · 읽는 중`}
+              items={pendingFiles}
+              getKey={(file) => file.handle}
+              renderItem={(file) => <Body>{file.name} · 파일 입력됨</Body>}
+            />
+          </div>
+        )}
         <div className={s.actions}>
           <Button
             appearance={plans.length ? "secondary" : "primary"}
@@ -268,6 +362,18 @@ export function App({ deck }: { deck: Deck }) {
             {extractions.length}개 파일 · 사진 {plans.length}장 · 학생 {students.length}명
           </Caption>
         </div>
+        {extractions.length > 0 && (
+          <ListView
+            header="입력한 문서"
+            items={extractions}
+            getKey={(item) => item.file.handle}
+            renderItem={(item) => (
+              <Body>
+                {item.file.name} · 사진 {item.photos.length}장 · 입력 완료
+              </Body>
+            )}
+          />
+        )}
         {failedFiles.length > 0 && (
           <ListView
             header="읽지 못한 파일"
@@ -415,18 +521,10 @@ export function App({ deck }: { deck: Deck }) {
       </ToolLayout.Section>
       <ToolLayout.Section step="run" title="사진 저장">
         <Caption secondary>
-          처음 저장할 때 폴더를 선택해요. 같은 작업과 재시도는 한 결과 폴더에 모으고, 이미 저장한 사진은 새 이름으로
-          저장해요.
+          각 원본 문서와 같은 폴더에 저장해요. 다른 저장 폴더를 선택하면 그 폴더에 직접 저장하고, 이미 저장한 사진은 새
+          이름으로 저장해요.
         </Caption>
-        <Button
-          disabled={busy || !folder}
-          onClick={() => {
-            resetDestination();
-            setMessage("다음 저장 때 새 저장 폴더를 선택해요. 이전 결과는 그대로 유지해요.");
-          }}
-        >
-          다음 저장 폴더 변경
-        </Button>
+
         {busy && <ProgressBar header="처리 진행" value={total ? (progress / total) * 100 : 0} />}
       </ToolLayout.Section>
       <ToolLayout.Section step="result" title="처리 결과">

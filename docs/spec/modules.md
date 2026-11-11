@@ -10,33 +10,33 @@
   "manifestVersion": 1,
   "id": "timer",
   "name": "타이머",
-  "description": "수업용 타이머",          // 80자 이하
-  "version": "0.1.0",                      // semver
-  "category": "classroom",                 // classroom | file | image | document | utility
+  "description": "수업용 타이머", // 80자 이하
+  "version": "0.1.0", // semver
+  "category": "classroom", // classroom | file | image | document | utility
   "icon": "icon.svg",
   "entry": "index.html",
   "authors": [{ "name": "신민성", "github": "banatic" }],
   "requires": { "storage": "^1.0", "window": "^1.0" },
   "optional": {},
-  "ui": { "keepAlive": true }             // 기본 false
+  "ui": { "keepAlive": true }, // 기본 false
 }
 ```
 
-| 필드 | 필수 | 설명 |
-|---|---|---|
-| `$schema` | 아니오 | 편집기 검증용. 패키징 시 무시한다. |
-| `manifestVersion` | 예 | 정수. 현재 `1`. |
-| `id` | 예 | MOD-002 형식. 디렉터리명과 같다. `_`로 시작할 수 없다([catalog.md](catalog.md#3-서빙)). |
-| `name` | 예 | 사용자에게 보이는 이름(한국어). |
-| `description` | 예 | 80자 이하. |
-| `version` | 예 | semver([versioning.md](versioning.md)). |
-| `category` | 예 | `classroom`, `file`, `image`, `document`, `utility` 중 하나. |
-| `icon` | 예 | 패키지 내부 상대 경로의 SVG. |
-| `entry` | 예 | 패키지 내부 상대 경로의 HTML. |
-| `authors` | 예 | 1개 이상. 각 항목은 `name`(필수), `github`(선택). |
-| `requires` | 예 | 캡 이름 → semver 범위. 빈 객체를 허용한다. |
-| `optional` | 예 | 캡 이름 → semver 범위. 빈 객체를 허용한다. |
-| `ui.keepAlive` | 아니오 | 기본 `false`. |
+| 필드              | 필수   | 설명                                                                                    |
+| ----------------- | ------ | --------------------------------------------------------------------------------------- |
+| `$schema`         | 아니오 | 편집기 검증용. 패키징 시 무시한다.                                                      |
+| `manifestVersion` | 예     | 정수. 현재 `1`.                                                                         |
+| `id`              | 예     | MOD-002 형식. 디렉터리명과 같다. `_`로 시작할 수 없다([catalog.md](catalog.md#3-서빙)). |
+| `name`            | 예     | 사용자에게 보이는 이름(한국어).                                                         |
+| `description`     | 예     | 80자 이하.                                                                              |
+| `version`         | 예     | semver([versioning.md](versioning.md)).                                                 |
+| `category`        | 예     | `classroom`, `file`, `image`, `document`, `utility` 중 하나.                            |
+| `icon`            | 예     | 패키지 내부 상대 경로의 SVG.                                                            |
+| `entry`           | 예     | 패키지 내부 상대 경로의 HTML.                                                           |
+| `authors`         | 예     | 1개 이상. 각 항목은 `name`(필수), `github`(선택).                                       |
+| `requires`        | 예     | 캡 이름 → semver 범위. 빈 객체를 허용한다.                                              |
+| `optional`        | 예     | 캡 이름 → semver 범위. 빈 객체를 허용한다.                                              |
+| `ui.keepAlive`    | 아니오 | 기본 `false`.                                                                           |
 
 - `additionalProperties: false`다. 카테고리나 필드를 추가하는 것은 스펙 변경이다(DOC-002, GEN-005).
 - `requires`·`optional`의 키는 레지스트리(`schema/capabilities.json`)에 있는 캡이어야 하며, 같은 캡이 양쪽에 동시에 올 수 없다.
@@ -67,8 +67,16 @@ modules/<id>/
 3. **로드**: 셸이 모듈 origin의 iframe을 만든다([security.md](security.md), SEC-002).
 4. **핸드셰이크**: 모듈이 `hello`를 보내고 셸이 `init`으로 응답한다([bridge-protocol.md](bridge-protocol.md), BRG-003).
 5. **활성**: 모듈이 `req`로 캡을 호출한다. 호스트는 매 호출마다 권한을 검사한다(CAP-008).
-6. **숨김**: 다른 화면으로 전환하면, `ui.keepAlive: true`인 모듈은 iframe을 숨긴 채 유지하고 `module.visibility` 이벤트를 보낸다. 동시에 유지되는 keepAlive 모듈은 최대 3개(LRU)다. 그 외 모듈은 언로드한다.
+6. **숨김**: 다른 화면으로 전환하면, `ui.keepAlive: true`인 모듈은 iframe을 숨긴 채 유지하고 `module.visibility` 이벤트를 보낸다. 동시에 유지되는 keepAlive 모듈은 활성 도구를 포함해 최대 3개다. 숨긴 도구 중 dirty 또는 saving 문서를 먼저 유지하고, 같은 보호 상태에서는 LRU 순서를 따른다. 그 외 모듈은 언로드한다.
 7. **언로드**: iframe을 제거한다. 호스트는 모듈이 바꾼 창 상태(항상 위, 전체화면)를 되돌린다([capabilities.md](capabilities.md)).
+
+window 1.2에 문서를 등록한 도구는 실제 언로드·앱 종료 전에 [미저장 문서 보호](document-lifecycle.md)를 적용한다. iframe을 유지한 채 숨기는 이동은 확인 없이 작업을 계속한다. 저장 실패·취소·만료 때 iframe을 유지하며 버리기 선택은 해당 iframe을 제거한다. keepAlive 한도는 유지한다.
+
+### 파일 입력과 결과 저장
+
+파일 가져오기를 지원하는 모듈은 `fs.dropped`의 불투명 핸들을 기존 입력 검증으로 처리한다([ADR-0031](../adr/0031-file-input-direct-output.md)). 드래그 입력으로 `fs.pickFiles`를 호출하지 않는다. 파일명·개수·읽는 중 상태를 표시하고, 지원하지 않는 형식·중복·처리 중 입력을 무응답으로 버리지 않고 안내한다. 기존 복원 확인이나 원본 변경 확인 절차는 유지한다.
+
+별도 저장 폴더를 지정하지 않았으면 각 입력 파일의 폴더에 새 결과를 저장한다. 다른 폴더를 지정하면 그 폴더를 직접 쓴다. 새 문서·캡처·QR·원본 없는 백업은 사용자가 선택한 폴더를 쓴다. 자동으로 결과 하위 폴더를 만들거나 저장 실패를 다른 위치로 우회하지 않는다. fs 1.4 `openOutputFolder`와 기존 청크 쓰기·작업 종료 계약을 사용하고, 원본은 보존하며 이름 충돌에는 번호를 붙인다.
 
 ## 4. 규칙
 

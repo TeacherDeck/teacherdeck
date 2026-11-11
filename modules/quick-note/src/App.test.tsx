@@ -7,6 +7,7 @@ import { DeckProvider } from "@deck/ui";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { App } from "./App.tsx";
+import { StrictMode } from "react";
 import { emptyDocument, STATE_KEY, type Item } from "./logic.ts";
 afterEach(() => {
   cleanup();
@@ -26,15 +27,21 @@ const imported = {
     } as Item,
   ],
 };
-async function open(saved: unknown = null) {
-  const store = new Map<string, unknown>([[STATE_KEY, saved]]),
+async function open(saved: unknown = null, savedDraft: unknown = null) {
+  const store = new Map<string, unknown>([
+      [STATE_KEY, saved],
+      ["draft.v1", savedDraft],
+    ]),
     bytes = new TextEncoder().encode(JSON.stringify(imported));
   let failure = "";
   const origin = "http://deckmod.quick-note.modules.localhost";
   const host = createMockHost({
     module: { id: "quick-note", version: "0.1.0" },
-    granted: ["storage", "fs"],
+    granted: ["storage", "fs", "window"],
     handlers: {
+      "window.registerDocument": () => ({ documentHandle: "document" }),
+      "window.setDocumentState": () => null,
+      "window.completeDocumentSave": () => null,
       "storage.get": (a) => store.get((a as { key: string }).key) ?? null,
       "storage.keys": () => [...store.keys()],
       "storage.set": (a) => {
@@ -65,9 +72,11 @@ async function open(saved: unknown = null) {
   );
   const deck = await connect({ window: host.window });
   const view = render(
-    <DeckProvider>
-      <App deck={deck} />
-    </DeckProvider>,
+    <StrictMode>
+      <DeckProvider>
+        <App deck={deck} />
+      </DeckProvider>
+    </StrictMode>,
   );
   await screen.findByRole("heading", { name: "빠른 메모" });
   if (saved && "broken" in (saved as object)) {
@@ -79,6 +88,7 @@ async function open(saved: unknown = null) {
   }
   return {
     deck,
+    host,
     view,
     store,
     fail: (value: string) => {
@@ -86,9 +96,12 @@ async function open(saved: unknown = null) {
     },
   };
 }
-function fill(title: string) {
+async function fill(title: string) {
   fireEvent.change(screen.getByRole("textbox", { name: "제목 (선택)" }), { target: { value: title } });
   fireEvent.change(screen.getByRole("textbox", { name: "메모 내용" }), { target: { value: "입력한 합성 내용" } });
+  await waitFor(() =>
+    expect((screen.getByRole("textbox", { name: "제목 (선택)" }) as HTMLInputElement).value).toBe(title),
+  );
 }
 async function preview() {
   const trigger = screen.getByRole("button", { name: "JSON 백업 가져오기" });
@@ -102,7 +115,7 @@ async function preview() {
 }
 it("preserves unsaved input on failed save and persists archive/search edits after explicit retry", async () => {
   const f = await open();
-  fill("합성 새 항목");
+  await fill("합성 새 항목");
   f.fail(STATE_KEY);
   fireEvent.click(screen.getByRole("button", { name: "메모 저장" }));
   await screen.findByText(/작업하지 못했어요/);
@@ -128,7 +141,7 @@ it("preserves unsaved input on failed save and persists archive/search edits aft
 });
 it("cancels a verified import without replacing storage or losing an input draft", async () => {
   const f = await open();
-  fill("보존할 초안");
+  await fill("보존할 초안");
   fireEvent.click(screen.getByText("백업 · 가져오기"));
   const dialog = await preview();
   expect(within(dialog).getByText("합성 메모")).toBeTruthy();
@@ -165,7 +178,7 @@ it("offers twenty compact entries with one set of actions, full selected text an
     ),
   );
   expect((screen.getByRole("textbox", { name: "선택한 메모 전문" }) as HTMLTextAreaElement).readOnly).toBe(true);
-  fill("보존할 새 초안");
+  await fill("보존할 새 초안");
   fireEvent.click(within(list).getByText("합성 메모 5"));
   expect((screen.getByRole("textbox", { name: "제목 (선택)" }) as HTMLInputElement).value).toBe("보존할 새 초안");
   fireEvent.click(screen.getByRole("button", { name: "수정" }));
@@ -185,6 +198,7 @@ it("returns focus to the same list after Ctrl+Enter edits and the adjacent note 
   const list = screen.getByLabelText("저장한 메모");
   fireEvent.click(within(list).getByText("위치 1"));
   fireEvent.click(screen.getByRole("button", { name: "수정" }));
+  await screen.findByRole("button", { name: "수정 저장" });
   const input = screen.getByRole("textbox", { name: "메모 내용" });
   expect(globalThis.document.activeElement).toBe(input);
   fireEvent.change(input, { target: { value: "수정한 합성 내용" } });
@@ -221,6 +235,7 @@ it("reveals and focuses notes moved from a later page by editing or pinning", as
   const f = await open({ ...emptyDocument(), items });
   fireEvent.click(screen.getByRole("button", { name: "다음" }));
   fireEvent.click(screen.getByRole("button", { name: "수정" }));
+  await screen.findByRole("button", { name: "수정 저장" });
   fireEvent.change(screen.getByRole("textbox", { name: "메모 내용" }), { target: { value: "마지막 쪽의 수정 내용" } });
   fireEvent.click(screen.getByRole("button", { name: "수정 저장" }));
   await waitFor(() => expect(globalThis.document.activeElement?.textContent).toContain("페이지 메모 20"));
@@ -298,13 +313,63 @@ it("adds an individual backup while preserving existing records and reminting a 
 
 it("preserves a new unsaved draft before switching records and offers an explicit cancellation exit", async () => {
   const f = await open(imported);
-  fill("보존할 초안");
+  await fill("보존할 초안");
   fireEvent.click(screen.getByRole("button", { name: "수정" }));
   await screen.findByText("입력 중인 내용을 먼저 저장하거나 입력 취소를 눌러 주세요.");
   expect((screen.getByRole("textbox", { name: "제목 (선택)" }) as HTMLInputElement).value).toBe("보존할 초안");
   fireEvent.click(screen.getByRole("button", { name: "입력 취소" }));
   fireEvent.click(screen.getByRole("button", { name: "수정" }));
+  await screen.findByRole("button", { name: "수정 저장" });
   expect((screen.getByRole("textbox", { name: "제목 (선택)" }) as HTMLInputElement).value).toBe("합성 메모");
+  f.view.unmount();
+  f.deck.dispose();
+});
+
+it("flushes an unfinished draft before leaving and restores it without adding a saved item", async () => {
+  const f = await open();
+  await fill("남겨 둘 초안");
+  fireEvent.change(screen.getByRole("textbox", { name: "메모 내용" }), { target: { value: "이어서 쓸 합성 초안" } });
+  await waitFor(() =>
+    expect((screen.getByRole("textbox", { name: "메모 내용" }) as HTMLInputElement).value).toBe("이어서 쓸 합성 초안"),
+  );
+  f.host.emit("window.documentSaveRequested", { documentHandle: "document", requestId: "leave" });
+  await waitFor(() =>
+    expect(f.host.requests.find((request) => request.method === "completeDocumentSave")?.args).toEqual({
+      documentHandle: "document",
+      requestId: "leave",
+      saved: true,
+    }),
+  );
+  const draft = f.store.get("draft.v1");
+  expect(draft).toMatchObject({ title: "남겨 둘 초안", body: "이어서 쓸 합성 초안" });
+  expect(f.store.get(STATE_KEY)).toBeNull();
+  f.view.unmount();
+  f.deck.dispose();
+  const reopened = await open(null, draft);
+  expect((screen.getByRole("textbox", { name: "제목 (선택)" }) as HTMLInputElement).value).toBe("남겨 둘 초안");
+  reopened.view.unmount();
+  reopened.deck.dispose();
+});
+it("keeps failed automatic draft writes protected and retries the exact input on exit", async () => {
+  const f = await open();
+  f.fail("draft.v1");
+  await fill("실패해도 유지할 초안");
+  await screen.findByText("초안을 저장하지 못했어요. 입력을 유지했으니 다시 저장해 주세요.");
+  expect(f.host.requests.filter((request) => request.method === "setDocumentState").at(-1)?.args).toEqual({
+    documentHandle: "document",
+    dirty: true,
+    saving: false,
+  });
+  f.fail("");
+  f.host.emit("window.documentSaveRequested", { documentHandle: "document", requestId: "retry" });
+  await waitFor(() =>
+    expect(f.host.requests.find((request) => request.method === "completeDocumentSave")?.args).toEqual({
+      documentHandle: "document",
+      requestId: "retry",
+      saved: true,
+    }),
+  );
+  expect(f.store.get("draft.v1")).toMatchObject({ title: "실패해도 유지할 초안" });
   f.view.unmount();
   f.deck.dispose();
 });

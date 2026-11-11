@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanBuildArtifacts } from "./clean-build-artifacts.ts";
 
@@ -27,6 +28,53 @@ afterEach(() => {
 });
 
 describe("bounded build artifact cleanup", () => {
+  it("removes stale bundled packages only beside a matching current catalog and verified package", () => {
+    const root = fixture();
+    put(root, current);
+    put(root, "modules/timer/module.json", JSON.stringify({ version: "0.3.1" }));
+    const bytes = "synthetic current package";
+    const catalog = JSON.stringify({
+      modules: {
+        timer: [
+          {
+            version: "0.3.1",
+            size: Buffer.byteLength(bytes),
+            sha256: createHash("sha256").update(bytes).digest("hex"),
+          },
+        ],
+      },
+    });
+    const source = "apps/desktop/src-tauri/resources/modules";
+    const output = "target/review-040/release/modules";
+    for (const directory of [source, output]) {
+      put(root, `${directory}/index.json`, catalog);
+      put(root, `${directory}/timer/0.3.1/timer-0.3.1.deckmod`, bytes);
+    }
+    const stale = `${output}/timer/0.2.0/timer-0.2.0.deckmod`;
+    const emptyVersion = `${output}/timer/0.1.0/timer-0.1.0.deckmod`;
+    const kept = [
+      `${output}/timer/0.4.0/timer-0.4.0.deckmod`,
+      `${output}/timer/0.2.0/notes.txt`,
+      `${output}/unknown/0.1.0/unknown-0.1.0.deckmod`,
+      "target/debug/modules/timer/0.2.0/timer-0.2.0.deckmod",
+    ];
+    put(root, stale);
+    put(root, emptyVersion);
+    for (const file of kept) put(root, file);
+    const options = { root, currentArtifact: current, buildSucceeded: true };
+    expect(cleanBuildArtifacts(options).files).toEqual([emptyVersion, stale]);
+    put(root, `${output}/timer/0.3.1/timer-0.3.1.deckmod`, "damaged");
+    expect(cleanBuildArtifacts({ ...options, apply: true }).files).toEqual([]);
+    expect(fs.existsSync(path.join(root, stale))).toBe(true);
+    put(root, `${output}/timer/0.3.1/timer-0.3.1.deckmod`, bytes);
+    put(root, `${output}/index.json`, "{}");
+    expect(cleanBuildArtifacts({ ...options, apply: true }).files).toEqual([]);
+    put(root, `${output}/index.json`, catalog);
+    expect(cleanBuildArtifacts({ ...options, apply: true }).files).toEqual([emptyVersion, stale]);
+    expect(fs.existsSync(path.join(root, stale))).toBe(false);
+    expect(fs.existsSync(path.dirname(path.join(root, emptyVersion)))).toBe(false);
+    for (const file of kept) expect(fs.existsSync(path.join(root, file))).toBe(true);
+  });
   it("defaults to a dry run and only applies when explicitly requested after success", () => {
     const root = fixture();
     put(root, current);

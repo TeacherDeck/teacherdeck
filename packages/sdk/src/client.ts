@@ -22,6 +22,9 @@ import type { PresentationSession } from "./generated/PresentationSession.ts";
 import type { OpenPresentationArgs } from "./generated/OpenPresentationArgs.ts";
 import type { UpdatePresentationArgs } from "./generated/UpdatePresentationArgs.ts";
 import type { ClosePresentationArgs } from "./generated/ClosePresentationArgs.ts";
+import type { DocumentRegistration } from "./generated/DocumentRegistration.ts";
+import type { DocumentState } from "./generated/DocumentState.ts";
+import type { CompleteDocumentSaveArgs } from "./generated/CompleteDocumentSaveArgs.ts";
 import type { CaptureArgs } from "./generated/CaptureArgs.ts";
 import type { CaptureResult } from "./generated/CaptureResult.ts";
 import type { CaptureArmArgs } from "./generated/CaptureArmArgs.ts";
@@ -93,6 +96,7 @@ import type { HandleArgs } from "./generated/HandleArgs.ts";
 import type { FileRead } from "./generated/FileRead.ts";
 import type { CloseReadArgs } from "./generated/CloseReadArgs.ts";
 import type { CreateOutputFolderArgs } from "./generated/CreateOutputFolderArgs.ts";
+import type { OpenOutputFolderArgs } from "./generated/OpenOutputFolderArgs.ts";
 import type { OutputBatch } from "./generated/OutputBatch.ts";
 import type { BeginWriteArgs } from "./generated/BeginWriteArgs.ts";
 import type { FileWrite } from "./generated/FileWrite.ts";
@@ -265,6 +269,8 @@ export interface Deck {
     openRead(args: HandleArgs): Promise<FileRead>;
     closeRead(args: CloseReadArgs): Promise<void>;
     createOutputFolder(args: CreateOutputFolderArgs): Promise<OutputBatch>;
+    /** Save new files directly in an owned source parent or explicitly selected folder (fs 1.4). */
+    openOutputFolder(args: OpenOutputFolderArgs): Promise<OutputBatch>;
     beginWrite(args: BeginWriteArgs): Promise<FileWrite>;
     writeChunk(args: WriteChunkArgs): Promise<WriteChunkResult>;
     commitWrite(args: WriteIdArgs): Promise<FileHandleInfo>;
@@ -274,6 +280,9 @@ export interface Deck {
     writeBlob(args: WriteBlobArgs, options?: TransferOptions): Promise<FileHandleInfo>;
   };
   readonly window: {
+    registerDocument(): Promise<DocumentRegistration>;
+    setDocumentState(args: DocumentState): Promise<void>;
+    completeDocumentSave(args: CompleteDocumentSaveArgs): Promise<void>;
     listDisplays(): Promise<PresentationDisplay[]>;
     openPresentation(args: OpenPresentationArgs): Promise<PresentationSession>;
     updatePresentation(args: UpdatePresentationArgs): Promise<PresentationSession>;
@@ -433,6 +442,16 @@ export function connect(options: ConnectOptions = {}): Promise<Deck> {
         );
       return call<T>("window", method, args);
     };
+    const callWindow12 = <T>(method: string, args: unknown): Promise<T> => {
+      const { granted, host } = requireInit();
+      if (!granted.includes("window")) return call<T>("window", method, args);
+      const version = /^1\.(\d+)\.\d+$/.exec(host.caps["window"] ?? "");
+      if (!version || Number(version[1]) < 2)
+        return Promise.reject(
+          new DeckCallError("VERSION_MISMATCH", "문서 보호는 window 1.2 이상 앱에서 사용할 수 있어요."),
+        );
+      return call<T>("window", method, args);
+    };
     const deck: Deck = {
       get module() {
         return requireInit().module;
@@ -565,6 +584,19 @@ export function connect(options: ConnectOptions = {}): Promise<Deck> {
         openRead: (args) => callFs11<FileRead>("openRead", args),
         closeRead: (args) => callFs11("closeRead", args).then(() => undefined),
         createOutputFolder: (args) => callFs11<OutputBatch>("createOutputFolder", args),
+        openOutputFolder: (args) => {
+          const version = /^1\.(\d+)\.\d+$/.exec(requireInit().host.caps["fs"] ?? "");
+          if (requireInit().granted.includes("fs") && (!version || Number(version[1]) < 4))
+            return Promise.reject(
+              new DeckCallError("VERSION_MISMATCH", "원본 폴더 저장은 fs 1.4 이상 앱에서 사용할 수 있어요."),
+            );
+          if (
+            (args.sourceHandle !== undefined) === (args.parentHandle !== undefined) ||
+            args.sourceHandle === "" || args.parentHandle === ""
+          )
+            return Promise.reject(new DeckCallError("INVALID_ARGS", "원본 파일 또는 저장 폴더 하나를 지정해 주세요."));
+          return call<OutputBatch>("fs", "openOutputFolder", args);
+        },
         beginWrite: (args) => callFs11<FileWrite>("beginWrite", args),
         writeChunk: (args) => callFs11<WriteChunkResult>("writeChunk", args),
         commitWrite: (args) => callFs11<FileHandleInfo>("commitWrite", args),
@@ -574,6 +606,9 @@ export function connect(options: ConnectOptions = {}): Promise<Deck> {
         writeBlob: (args, opts) => createFileTransfer(deck.fs, () => win.location?.origin).writeBlob(args, opts),
       },
       window: {
+        registerDocument: () => callWindow12<DocumentRegistration>("registerDocument", {}),
+        setDocumentState: (args) => callWindow12("setDocumentState", args).then(() => undefined),
+        completeDocumentSave: (args) => callWindow12("completeDocumentSave", args).then(() => undefined),
         listDisplays: () => callWindow11<PresentationDisplay[]>("listDisplays", {}),
         openPresentation: (args) => callWindow11<PresentationSession>("openPresentation", args),
         updatePresentation: (args) => callWindow11<PresentationSession>("updatePresentation", args),

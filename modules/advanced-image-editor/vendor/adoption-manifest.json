@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "project": "Klecks",
+  "license": "MIT",
+  "commit": "7b1d4744b648de6133b0d45073af4efd2f998148",
+  "upstreamLicense": "vendor/klecks/LICENSE.original",
+  "upstreamLicenseSha256": "0234a0861b38c1f3c9198b0f048a1b713bf3b1b198b5cced343acc7335b90785",
+  "files": [
+    {
+      "source": "src/app/script/klecks/image-operations/flood-fill.ts",
+      "sourceUrl": "https://github.com/bitbof/klecks/blob/7b1d4744b648de6133b0d45073af4efd2f998148/src/app/script/klecks/image-operations/flood-fill.ts",
+      "original": "vendor/klecks/flood-fill.ts.original.txt",
+      "originalSha256": "c571c4fbc0ff4f4f1df1aedd01af02aadabc7226af187d1001fd26487875a5c0",
+      "adapted": "src/core/klecks-flood-fill.ts",
+      "adaptedSha256": "18c4a1cc7fded2af37aaa3e338bbce9c08adca254c5fe0df91af2a137228ef21"
+    },
+    {
+      "source": "src/app/script/klecks/history/push-helpers/changed-tiles.ts",
+      "sourceUrl": "https://github.com/bitbof/klecks/blob/7b1d4744b648de6133b0d45073af4efd2f998148/src/app/script/klecks/history/push-helpers/changed-tiles.ts",
+      "original": "vendor/klecks/changed-tiles.ts.original.txt",
+      "originalSha256": "b7fba50e881d93c5a983a1e09aaee84a6a25b4cc8fe9e20661fd2e31bccb7f62",
+      "adapted": "src/core/klecks-tiles.ts",
+      "adaptedSha256": "86917a0d2674093d9a8c18617542f8467c908dfd0c1eccd35cdf4c8dbd7fe13c"
+    },
+    {
+      "source": "src/app/script/klecks/image-operations/render-text.ts",
+      "sourceUrl": "https://github.com/bitbof/klecks/blob/7b1d4744b648de6133b0d45073af4efd2f998148/src/app/script/klecks/image-operations/render-text.ts",
+      "original": "vendor/klecks/render-text.ts.original.txt",
+      "originalSha256": "74d426e71d7acb91c73a0a93418bb18d000d29333d0ac4665417cd771b6c565b",
+      "adapted": "src/core/render.ts",
+      "adaptedSha256": "f1a1ae4141909999d18fd074813c158111c8f85cb4543a5e15ecc0ef1de5430a"
+    }
+  ]
+}

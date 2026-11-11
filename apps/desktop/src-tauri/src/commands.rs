@@ -70,10 +70,15 @@ pub fn module_visibility(
     app: AppHandle,
     state: State<'_, AppState>,
     module_id: String,
-    visible: bool,
-) {
-    if !visible {
+    visible: Option<bool>,
+    document_action: Option<deck_core::caps::window::DocumentAction>,
+) -> Result<deck_core::caps::window::DocumentActionResult, deck_core::DeckError> {
+    if visible == Some(false) {
         restore(&app, &state, &module_id);
+    }
+    match document_action {
+        Some(action) => crate::document_host::shell_action(&app, &state, &module_id, action),
+        None => Ok(Default::default()),
     }
 }
 
@@ -83,26 +88,39 @@ pub async fn module_unloaded(
     app: AppHandle,
     state: State<'_, AppState>,
     module_id: String,
+    module_ids: Option<Vec<String>>,
 ) -> Result<(), ()> {
-    restore(&app, &state, &module_id);
-    crate::caps::school_data::unload(&app, &module_id);
-    crate::presentation_host::unload(&app, &module_id);
-    crate::caps::office::cancel_owner(&app, &module_id);
-    crate::caps::media_download::cancel_owner(&app, &module_id);
-    crate::messaging_host::cancel_owner(&app, &module_id);
-    if let Ok(mut plans) = state.file_ops.lock() {
-        plans.unload(&module_id);
+    let owners = module_ids.unwrap_or_else(|| vec![module_id]);
+    if owners.len() > 4 {
+        return Err(());
     }
-    if let Ok(mut listings) = state.folder_listings.lock() {
-        listings.unload(&module_id);
+    state
+        .documents
+        .lock()
+        .map_err(|_| ())?
+        .unload_many(&owners.iter().map(String::as_str).collect::<Vec<_>>())
+        .map_err(|_| ())?;
+    for module_id in owners {
+        restore(&app, &state, &module_id);
+        crate::caps::school_data::unload(&app, &module_id);
+        crate::presentation_host::unload(&app, &module_id);
+        crate::caps::office::cancel_owner(&app, &module_id);
+        crate::caps::media_download::cancel_owner(&app, &module_id);
+        crate::messaging_host::cancel_owner(&app, &module_id);
+        if let Ok(mut plans) = state.file_ops.lock() {
+            plans.unload(&module_id);
+        }
+        if let Ok(mut listings) = state.folder_listings.lock() {
+            listings.unload(&module_id);
+        }
+        if let Ok(mut transfers) = state.transfers.lock() {
+            transfers.unload(&module_id);
+        }
+        if let Ok(mut table) = state.handles.lock() {
+            table.release_module(&module_id);
+        }
+        state.storage.forget(&module_id);
     }
-    if let Ok(mut transfers) = state.transfers.lock() {
-        transfers.unload(&module_id);
-    }
-    if let Ok(mut table) = state.handles.lock() {
-        table.release_module(&module_id);
-    }
-    state.storage.forget(&module_id);
     Ok(())
 }
 
@@ -164,7 +182,12 @@ pub async fn install_update(app: AppHandle) -> Result<(), String> {
 /// Restarts the app (only after the user chose to apply an update).
 #[tauri::command]
 pub fn restart_app(app: AppHandle) {
-    app.restart();
+    if !crate::document_host::request_exit(
+        &app,
+        deck_core::caps::window::DocumentExitAction::Restart,
+    ) {
+        app.restart();
+    }
 }
 
 /// Debug-only SEC-004 probe result (docs/security/sec-004.md). Ignored in release builds.

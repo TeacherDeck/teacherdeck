@@ -14,6 +14,7 @@ export interface Extraction {
 }
 export interface PlannedPhoto extends Photo {
   id: string;
+  sourceHandle: string;
   filename: string;
   label: string;
   confirmed: boolean;
@@ -79,6 +80,7 @@ export function planPhotos(
       result.push({
         ...photo,
         id,
+        sourceHandle: extraction.file.handle,
         filename: name,
         confirmed: Boolean(student),
         label: student
@@ -180,7 +182,8 @@ export async function readExtraction(
 export interface SaveResult {
   destinationExpired?: boolean;
   outputs?: Record<string, string>;
-  folder: FolderHandleInfo;
+  folder: FolderHandleInfo | null;
+  folders?: Record<string, FolderHandleInfo>;
   saved: string[];
   failed: string[];
   cancelled: boolean;
@@ -193,9 +196,9 @@ export async function savePhotos(
   session?: OutputSession,
 ): Promise<SaveResult | null> {
   if (signal.aborted || !photos.length) return null;
-  const destination = session ?? new OutputSession(deck, "명렬표 사진");
-  const batch = await destination.get(signal);
-  if (!batch) return null;
+  const destination = session ?? new OutputSession(deck);
+  let folder: FolderHandleInfo | null = null;
+  const folders: Record<string, FolderHandleInfo> = {};
   let destinationExpired = false;
   const outputs: Record<string, string> = {};
   const saved: string[] = [],
@@ -203,7 +206,13 @@ export async function savePhotos(
   try {
     for (const photo of photos) {
       if (signal.aborted) break;
+      let acquired = false;
       try {
+        const batch = await destination.get(signal, photo.sourceHandle);
+        if (!batch) break;
+        acquired = true;
+        folder = batch.folder;
+        folders[photo.id] = batch.folder;
         let name = photo.filename;
         let suffix = 2;
         while (destination.usedNames.has(name.toLocaleLowerCase("en-US")))
@@ -221,7 +230,7 @@ export async function savePhotos(
         saved.push(photo.id);
       } catch (error) {
         if (!signal.aborted) failed.push(photo.id);
-        if (error && typeof error === "object" && "code" in error && error.code === "NOT_FOUND") {
+        if (error && typeof error === "object" && "code" in error && error.code === "NOT_FOUND" && acquired) {
           destinationExpired = true;
           break;
         }
@@ -231,5 +240,5 @@ export async function savePhotos(
   } finally {
     if (!session) await destination.close();
   }
-  return { folder: batch.folder, outputs, destinationExpired, saved, failed, cancelled: signal.aborted };
+  return { folder, folders, outputs, destinationExpired, saved, failed, cancelled: signal.aborted };
 }

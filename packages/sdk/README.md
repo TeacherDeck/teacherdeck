@@ -59,3 +59,11 @@ TimeAlert 전체 암호화 백업과 원형 기록·사진 보존은 신뢰 셸 
 ## 영상 다운로드
 
 media-download 1.0의 `mediaDownload.start({ url, folderHandle })`은 작업 핸들을 즉시 돌려줘요. `status`로 진행과 완료 파일을 확인하고 `cancel`로 중지할 수 있어요. 선택한 폴더의 새 MP4만 게시하며 완료 파일은 `fs.reveal`로 열 수 있어요. 모듈 종료시 진행 중인 작업은 취소돼요. 임의 주소·로그인 쿠키·실행기 인자는 외부 도구로 전달하지 않아요.
+
+## 문서 수명
+
+`createDocumentSession(deck, { save, isSaved?, onError? })`는 window 1.2의 문서 등록과 저장 요청을 처리해요. 효과 설정에서 `session.ready`를 기다리고, 입력은 `session.change(() => 적용)` 안에서 적용해 최초 변경 승인 전 편집을 막아요. 이미 변경된 문서의 연속 입력은 동기 적용해요. `session.save()`는 저장 함수가 성공하고 전체 저장이 끝난 경우에만 clean으로 표시해요. `session.settle()`은 앞선 입력·저장 완료를 기다리며, 언마운트 때 `session.dispose()`를 호출해요. StrictMode 효과 재실행에서는 `ready`를 다시 읽어 연결해요. 생성만으로 호스트 요청이나 구독을 만들지 않아요.
+
+초안을 저장하는 도구의 `save`는 입력 중인 값까지 복원 가능한 작업 상태를 보관해야 해요. 저장 중 요청된 편집은 저장 뒤 새 dirty 승인을 받고 적용되므로 이전 저장이 뒤늦은 입력을 저장 완료로 표시하지 않아요.
+
+부분 출력 뒤에도 미저장 작업이 남는 도구는 `isSaved` 콜백으로 전체 저장 여부를 알려 주세요. 생략하면 저장 함수 성공을 전체 저장으로 취급해요. `false`이면 출력 실패 오류를 만들지 않고 dirty 상태와 이탈 보호를 유지하며 `session.save()`도 `false`를 반환해요.

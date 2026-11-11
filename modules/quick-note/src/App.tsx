@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
-import type { Deck } from "@deck/sdk";
+import { createDocumentSession, type Deck, type FileHandleInfo } from "@deck/sdk";
 import {
   Body,
   BodyStrong,
@@ -18,7 +18,7 @@ import {
   makeStyles,
   tokens,
 } from "@deck/ui";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import {
   STATE_KEY,
   emptyDocument,
@@ -29,6 +29,7 @@ import {
   type Item,
 } from "./logic.ts";
 import { exportBackup, pickBackup, replaceDocument } from "./files.ts";
+import { readDraft } from "./draft.ts";
 const useStyles = makeStyles({
   page: {
     padding: deckTokens.pagePadding,
@@ -96,7 +97,7 @@ function blankItem(): Item {
 export function App({ deck }: { deck: Deck }) {
   const s = useStyles(),
     [document, setDocument] = useState<Document>(emptyDocument),
-    [draft, setDraft] = useState<Item>(blankItem);
+    [draft, applyDraft] = useState<Item>(blankItem);
   const [ready, setReady] = useState(false),
     [blocked, setBlocked] = useState(false),
     [busy, setBusy] = useState(false),
@@ -108,6 +109,39 @@ export function App({ deck }: { deck: Deck }) {
   const [preview, setPreview] = useState<Document | null>(null),
     [previewOpen, setPreviewOpen] = useState(false),
     [addToList, setAddToList] = useState(true);
+  const draftRef = useRef(draft);
+  const draftChanged = useRef(false);
+  const session = useMemo(
+    () =>
+      createDocumentSession(deck, {
+        save: async () => {
+          await deck.storage.set("draft.v1", draftRef.current);
+        },
+        onError: () => setMessage("초안을 저장하지 못했어요. 입력을 유지했으니 다시 저장해 주세요."),
+      }),
+    [deck],
+  );
+  function setDraft(value: SetStateAction<Item>) {
+    void session.change(() => {
+      const next = typeof value === "function" ? value(draftRef.current) : value;
+      draftRef.current = next;
+      draftChanged.current = true;
+      applyDraft(next);
+    });
+  }
+  useEffect(() => {
+    void session.ready.catch(() => undefined);
+    return () => session.dispose();
+  }, [session]);
+  useEffect(() => {
+    if (!ready || !draftChanged.current) return;
+    const timer = setTimeout(() => {
+      void session.save();
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [draft, ready, session]);
+  const sourceFile = useRef<FileHandleInfo | undefined>(undefined);
+  const pendingSource = useRef<FileHandleInfo | undefined>(undefined);
   const raw = useRef<unknown>(null),
     lock = useRef(false),
     active = useRef(true);
@@ -145,11 +179,20 @@ export function App({ deck }: { deck: Deck }) {
     setBusy(true);
     setReady(false);
     try {
-      const value = await deck.storage.get(STATE_KEY);
+      const [value, savedDraft] = await Promise.all([
+        deck.storage.get(STATE_KEY),
+        deck.storage.get("draft.v1"),
+        session.ready,
+      ]);
       raw.current = value;
       const next = value === null ? emptyDocument() : readDocument(value);
       if (active.current) {
         setDocument(next);
+        if (savedDraft !== null) {
+          const restored = readDraft(savedDraft);
+          draftRef.current = restored;
+          applyDraft(restored);
+        }
         setBlocked(false);
         setReady(true);
         setMessage("");
@@ -170,6 +213,7 @@ export function App({ deck }: { deck: Deck }) {
     lock.current = true;
     setBusy(true);
     try {
+      await session.settle();
       await action();
     } catch {
       if (active.current)
@@ -191,6 +235,7 @@ export function App({ deck }: { deck: Deck }) {
     }
   }
   async function saveDraft() {
+    const draft = draftRef.current;
     if (!draft.title.trim() && !draft.body.trim()) {
       setMessage("제목이나 메모 내용을 적어 주세요.");
       return;
@@ -204,7 +249,7 @@ export function App({ deck }: { deck: Deck }) {
     };
     await commit(next);
     if (active.current) {
-      if (editing) revealItem(next, draft.id);
+      if (document.items.some((item) => item.id === draft.id)) revealItem(next, draft.id);
       else pendingFocus.current = "input";
       setDraft(blankItem());
     }
@@ -233,7 +278,9 @@ export function App({ deck }: { deck: Deck }) {
       revealItem(next, nextId);
     });
   }
-  function editItem(item: Item) {
+  async function editItem(item: Item) {
+    await session.settle();
+    const draft = draftRef.current;
     const original = document.items.find((entry) => entry.id === draft.id);
     const changed = original ? JSON.stringify(original) !== JSON.stringify(draft) : !!(draft.title || draft.body);
     if (changed) {
@@ -243,6 +290,40 @@ export function App({ deck }: { deck: Deck }) {
     setDraft({ ...item });
     input.current?.focus();
   }
+  const importFile = (file?: FileHandleInfo) =>
+    task(async () => {
+      let sourceName = "";
+      pendingSource.current = undefined;
+      const next = await pickBackup(deck, file, (selected) => {
+        pendingSource.current = selected;
+        sourceName = selected.name;
+      });
+      if (next && active.current) {
+        setPreview(next);
+        setAddToList(!blocked);
+        setPreviewOpen(true);
+        setMessage(`${sourceName || "백업 파일"}을 읽었어요. 내용을 확인한 뒤 복원해 주세요.`);
+      }
+    });
+  const dropped = useRef({ importFile, ready, previewOpen });
+  dropped.current = { importFile, ready, previewOpen };
+  useEffect(
+    () =>
+      deck.on("fs.dropped", ({ files }) => {
+        const file = files[0];
+        if (lock.current || !dropped.current.ready || dropped.current.previewOpen) {
+          setMessage("현재 작업을 마친 뒤 백업 파일을 다시 놓아 주세요.");
+          return;
+        }
+        if (files.length !== 1 || !file || file?.ext.toLowerCase() !== "json") {
+          setMessage("JSON 백업 파일을 한 번에 1개씩 놓아 주세요.");
+          return;
+        }
+        setMessage(`${file.name}을 받았어요. 백업 내용을 읽고 있어요.`);
+        void dropped.current.importFile(file);
+      }),
+    [deck],
+  );
   const shown = visibleItems(document, query, archived),
     currentPage = Math.min(page, Math.max(0, Math.ceil(shown.length / 20) - 1)),
     pageItems = shown.slice(currentPage * 20, currentPage * 20 + 20),
@@ -262,7 +343,7 @@ export function App({ deck }: { deck: Deck }) {
             disabled={busy || raw.current === null}
             onClick={() =>
               void task(async () => {
-                if (await exportBackup(deck, raw.current)) setMessage("원자료 사본을 새 폴더에 저장했어요.");
+                if (await exportBackup(deck, raw.current)) setMessage("원자료 사본을 저장 폴더에 저장했어요.");
               })
             }
           >
@@ -278,7 +359,7 @@ export function App({ deck }: { deck: Deck }) {
             value={draft.title}
             disabled={disabled}
             onChange={(title) => {
-              if (title.length <= 120) setDraft({ ...draft, title });
+              if (title.length <= 120) setDraft((previous) => ({ ...previous, title }));
             }}
           />
           <TextBox
@@ -289,7 +370,7 @@ export function App({ deck }: { deck: Deck }) {
             value={draft.body}
             disabled={disabled}
             onChange={(body) => {
-              if (body.length <= 4000) setDraft({ ...draft, body });
+              if (body.length <= 4000) setDraft((previous) => ({ ...previous, body }));
             }}
             onKeyDown={(event) => {
               if (event.ctrlKey && event.key === "Enter" && !event.nativeEvent.isComposing) {
@@ -319,7 +400,7 @@ export function App({ deck }: { deck: Deck }) {
                   content="상단 고정"
                   checked={draft.pinned}
                   disabled={disabled}
-                  onChange={(pinned) => setDraft({ ...draft, pinned })}
+                  onChange={(pinned) => setDraft((previous) => ({ ...previous, pinned }))}
                 />
                 <ComboBox
                   header="메모 색"
@@ -331,14 +412,14 @@ export function App({ deck }: { deck: Deck }) {
                     { value: "blue", label: "파랑" },
                     { value: "green", label: "초록" },
                   ]}
-                  onChange={(tone) => setDraft({ ...draft, tone })}
+                  onChange={(tone) => setDraft((previous) => ({ ...previous, tone }))}
                 />
               </div>
             </SettingsExpander>
           </div>
         </div>
         <Caption secondary>
-          입력 중인 내용은 저장을 누르기 전까지 초안이에요. Ctrl+Enter로도 저장해요. 메모는 보관해도 사라지지 않아요.
+          입력 중인 초안은 이 PC에 자동으로 보관해요. Ctrl+Enter로도 저장해요. 메모는 보관해도 사라지지 않아요.
         </Caption>
       </section>
       <div className={s.row}>
@@ -405,15 +486,15 @@ export function App({ deck }: { deck: Deck }) {
               onChange={() => undefined}
             />
             <div className={s.row}>
-              <Button disabled={disabled} onClick={() => editItem(selected)}>
+              <Button disabled={disabled} onClick={() => void editItem(selected)}>
                 수정
               </Button>
               <Button
                 disabled={disabled}
                 onClick={() =>
                   void task(async () => {
-                    if (await exportBackup(deck, { ...document, items: [selected] }))
-                      setMessage("선택한 항목을 새 폴더에 저장했어요.");
+                    if (await exportBackup(deck, { ...document, items: [selected] }, sourceFile.current))
+                      setMessage("선택한 항목을 저장 폴더에 저장했어요.");
                   })
                 }
               >
@@ -451,24 +532,28 @@ export function App({ deck }: { deck: Deck }) {
             disabled={disabled}
             onClick={() =>
               void task(async () => {
-                if (await exportBackup(deck, document)) setMessage("백업을 새 폴더에 저장했어요.");
+                if (await exportBackup(deck, document, sourceFile.current))
+                  setMessage("백업을 저장 폴더에 저장했어요.");
               })
             }
           >
             JSON 백업 저장
           </Button>
           <Button
-            disabled={!ready || busy}
+            disabled={disabled}
             onClick={() =>
               void task(async () => {
-                const next = await pickBackup(deck);
-                if (next && active.current) {
-                  setPreview(next);
-                  setAddToList(!blocked);
-                  setPreviewOpen(true);
-                }
+                if (await exportBackup(deck, document, undefined, true)) setMessage("선택한 폴더에 백업을 저장했어요.");
               })
             }
+          >
+            다른 폴더에 백업 저장
+          </Button>
+          <Button
+            disabled={!ready || busy}
+            onClick={() => {
+              void importFile();
+            }}
           >
             JSON 백업 가져오기
           </Button>
@@ -504,7 +589,7 @@ export function App({ deck }: { deck: Deck }) {
               onClick={() =>
                 void task(async () => {
                   const value = await deck.storage.get(recoveryKey);
-                  if (await exportBackup(deck, value)) setMessage("이전 자료 사본을 새 폴더에 저장했어요.");
+                  if (await exportBackup(deck, value)) setMessage("이전 자료 사본을 저장 폴더에 저장했어요.");
                 })
               }
             >
@@ -515,6 +600,7 @@ export function App({ deck }: { deck: Deck }) {
               onClick={() =>
                 void task(async () => {
                   const value = readDocument(await deck.storage.get(recoveryKey));
+                  pendingSource.current = undefined;
                   setPreview(value);
                   setAddToList(false);
                   setPreviewOpen(true);
@@ -533,11 +619,14 @@ export function App({ deck }: { deck: Deck }) {
         closeButtonText="취소"
         defaultButton="close"
         onClose={(result) => {
+          const importedSource = pendingSource.current;
+          pendingSource.current = undefined;
           setPreviewOpen(false);
           if (result === "primary" && preview)
             void task(async () => {
               const next = addToList ? mergeDocuments(document, preview) : preview;
               await replaceDocument(deck, next);
+              sourceFile.current = importedSource;
               if (active.current) {
                 setDocument(next);
                 raw.current = next;
@@ -548,6 +637,7 @@ export function App({ deck }: { deck: Deck }) {
             });
         }}
       >
+        <Body>{pendingSource.current?.name ?? "백업 파일"}</Body>
         <Body>
           {preview?.items.length ?? 0}개 · 보관 {preview?.items.filter((item) => item.archived).length ?? 0}개예요.
         </Body>

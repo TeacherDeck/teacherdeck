@@ -192,8 +192,8 @@ export function validateSettings(settings: Settings): string[] {
     settings.wifi_rules.external_names.length === 0
   )
     errors.push("내부망 또는 외부망 이름을 입력해 주세요.");
-  const internalNames = new Set(settings.wifi_rules.internal_names.map(casefold));
-  if (settings.wifi_rules.external_names.some((name) => internalNames.has(casefold(name))))
+  const internalNames = new Set(settings.wifi_rules.internal_names.map(normalizeWifiName));
+  if (settings.wifi_rules.external_names.some((name) => internalNames.has(normalizeWifiName(name))))
     errors.push("같은 이름을 내부망과 외부망에 함께 넣을 수 없어요.");
   for (const day of DAY_KEYS) {
     try {

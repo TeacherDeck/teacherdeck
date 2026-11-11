@@ -128,7 +128,7 @@ describe("meeting file and archive safety", () => {
       granted: ["fs"],
       handlers: {
         "fs.pickFolder": () => ({ handle: "parent", name: "합성" }),
-        "fs.createOutputFolder": () => ({ batchId: "batch", folder: { handle: "folder", name: "합성" } }),
+        "fs.openOutputFolder": () => ({ batchId: "batch", folder: { handle: "folder", name: "합성" } }),
         "fs.beginWrite": () => ({ writeId: "write", chunkBytes: 65536 }),
         "fs.writeChunk": (value) => {
           const args = value as { offset: number; data: number[] };

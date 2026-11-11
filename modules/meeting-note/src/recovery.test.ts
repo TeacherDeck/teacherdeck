@@ -33,7 +33,7 @@ async function setup(fail?: string, cancel = false) {
         return null;
       },
       "fs.pickFolder": () => (cancel ? null : { handle: "parent", name: "합성" }),
-      "fs.createOutputFolder": () => ({ batchId: "batch", folder: { handle: "folder", name: "합성" } }),
+      "fs.openOutputFolder": () => ({ batchId: "batch", folder: { handle: "folder", name: "합성" } }),
       "fs.beginWrite": () => {
         if (fail === "begin") throw new DeckCallError("INTERNAL", "합성 오류");
         chunks.length = 0;

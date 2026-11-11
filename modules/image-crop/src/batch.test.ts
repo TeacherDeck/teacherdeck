@@ -16,11 +16,11 @@ const item = (handle: string): CropItem => ({
 async function setup(extra: Record<string, MockHandler> = {}) {
   const host = createMockHost({
     module: { id: "image-crop", version: "0.1.0" },
-    caps: { fs: "1.1.0" },
+    caps: { fs: "1.4.0" },
     granted: ["fs"],
     handlers: {
       "fs.pickFolder": () => ({ handle: "parent", name: "합성 폴더" }),
-      "fs.createOutputFolder": () => ({ batchId: "batch", folder: { handle: "output", name: "합성 결과" } }),
+      "fs.openOutputFolder": () => ({ batchId: "batch", folder: { handle: "output", name: "합성 결과" } }),
       "fs.beginWrite": () => ({ writeId: "write", chunkBytes: 65536 }),
       "fs.writeChunk": (args) => {
         const a = args as { offset: number; data: number[] };
@@ -42,6 +42,78 @@ const renderer: Renderer = async (request) => ({
   imageHeight: 100,
 });
 describe("crop SDK output lifecycle", () => {
+  it("preserves each mixed source format and exact JPEG suffix unless another format is selected", async () => {
+    const png = new Uint8Array(45);
+    png.set([137, 80, 78, 71, 13, 10, 26, 10]);
+    png.set([73, 72, 68, 82], 12);
+    const pngView = new DataView(png.buffer);
+    pngView.setUint32(8, 13);
+    pngView.setUint32(16, 100);
+    pngView.setUint32(20, 80);
+    const jpeg = new Uint8Array([255, 216, 255, 192, 0, 8, 8, 0, 80, 0, 100, 0]);
+    const webp = new Uint8Array(30);
+    webp.set([82, 73, 70, 70, 22, 0, 0, 0, 87, 69, 66, 80, 86, 80, 56, 88, 10]);
+    webp[24] = 99;
+    webp[27] = 79;
+    const sources = [
+      { extension: "jpg", format: "jpeg", bytes: jpeg },
+      { extension: "jpeg", format: "jpeg", bytes: jpeg },
+      { extension: "JPEG", format: "jpeg", bytes: jpeg },
+      { extension: "png", format: "png", bytes: png },
+      { extension: "webp", format: "webp", bytes: webp },
+    ];
+    const items = sources.map((source, index) => ({
+      ...item(`input-${index}`),
+      file: { ...item(`input-${index}`).file, name: `합성${index}.${source.extension}`, ext: source.extension },
+      bytes: source.bytes,
+    }));
+    for (const selection of ["original", "png", "jpeg", "webp"] as const) {
+      const { deck, host } = await setup();
+      const render = vi.fn(renderer);
+      const result = await saveCrops(deck, items, selection, new AbortController().signal, () => undefined, render);
+      expect(result?.failed).toEqual([]);
+      expect(render.mock.calls.map(([request]) => request.format)).toEqual(
+        sources.map((source) => (selection === "original" ? source.format : selection)),
+      );
+      expect(
+        host.requests
+          .filter((request) => request.method === "beginWrite")
+          .map((request) => (request.args as { suggestedName: string }).suggestedName),
+      ).toEqual(
+        sources.map(
+          (source, i) =>
+            `합성${i}_자르기.${selection === "original" ? source.extension : selection === "jpeg" ? "jpg" : selection}`,
+        ),
+      );
+      deck.dispose();
+    }
+  });
+  it("keeps an unsupported source or unavailable encoder out of saved results", async () => {
+    const { deck, host } = await setup();
+    const render = vi.fn(renderer);
+    const result = await saveCrops(
+      deck,
+      [item("unknown")],
+      "original",
+      new AbortController().signal,
+      () => undefined,
+      render,
+    );
+    expect(result?.failed).toEqual(["unknown"]);
+    expect(render).not.toHaveBeenCalled();
+    render.mockRejectedValue(new Error("ENCODER_UNAVAILABLE"));
+    const unavailable = await saveCrops(
+      deck,
+      [item("valid")],
+      "webp",
+      new AbortController().signal,
+      () => undefined,
+      render,
+    );
+    expect(unavailable?.formatUnavailable).toEqual(["valid"]);
+    expect(host.requests.some((request) => request.method === "beginWrite")).toBe(false);
+    deck.dispose();
+  });
   it("supplies the shared font token from the UI thread instead of importing UI inside the Worker", async () => {
     let sent: unknown;
     vi.stubGlobal(
@@ -73,7 +145,7 @@ describe("crop SDK output lifecycle", () => {
       vi.unstubAllGlobals();
     }
   });
-  it("preserves originals and edits, saves all distinct names to a new batch", async () => {
+  it("preserves originals and resolves every source parent without a picker", async () => {
     const { deck, host } = await setup();
     const items = [item("first"), item("second")];
     const result = await saveCrops(deck, items, "png", new AbortController().signal, () => undefined, renderer);
@@ -83,16 +155,21 @@ describe("crop SDK output lifecycle", () => {
         .filter((r) => r.method === "beginWrite")
         .map((r) => (r.args as { suggestedName: string }).suggestedName),
     ).toEqual(["합성_자르기.png", "합성_자르기_2.png"]);
+    expect(host.requests.filter((r) => r.method === "openOutputFolder").map((r) => r.args)).toEqual([
+      { sourceHandle: "first" },
+      { sourceHandle: "second" },
+    ]);
+    expect(host.requests.some((r) => ["pickFolder", "createOutputFolder", "pickFiles"].includes(r.method))).toBe(false);
     expect(host.requests.at(-1)?.method).toBe("closeOutputFolder");
     expect(items[0]?.bytes).toEqual(new Uint8Array([1, 2, 3, 4]));
     expect(items[0]?.edit.rect).toEqual({ x: 10, y: 20, width: 30, height: 40 });
     deck.dispose();
   });
   it("folder cancellation writes nothing and per-file errors do not discard following items", async () => {
-    const cancelled = await setup({ "fs.pickFolder": () => null });
-    expect(
-      await saveCrops(cancelled.deck, [item("a")], "png", new AbortController().signal, () => undefined, renderer),
-    ).toBeNull();
+    const cancelled = await setup();
+    const aborted = new AbortController();
+    aborted.abort();
+    expect(await saveCrops(cancelled.deck, [item("a")], "png", aborted.signal, () => undefined, renderer)).toBeNull();
     expect(cancelled.host.requests.some((r) => r.method === "createOutputFolder")).toBe(false);
     cancelled.deck.dispose();
     const { deck, host } = await setup();
@@ -138,13 +215,13 @@ describe("crop SDK output lifecycle", () => {
 });
 
 describe("continuous crop output session", () => {
-  it("picks and creates once, gives repeated saves distinct names, and closes once at task end", async () => {
+  it("opens one explicit destination, gives repeated saves distinct names, and closes once at task end", async () => {
     const { deck, host } = await setup();
-    const session = new OutputSession(deck, "잘라낸 이미지");
+    const session = new OutputSession(deck, "parent");
     for (const handle of ["first", "second", "first"])
       await saveCrops(deck, [item(handle)], "png", new AbortController().signal, () => undefined, renderer, session);
-    expect(host.requests.filter((request) => request.method === "pickFolder")).toHaveLength(1);
-    expect(host.requests.filter((request) => request.method === "createOutputFolder")).toHaveLength(1);
+    expect(host.requests.filter((request) => request.method === "pickFolder")).toHaveLength(0);
+    expect(host.requests.filter((request) => request.method === "openOutputFolder")).toHaveLength(1);
     expect(host.requests.filter((request) => request.method === "closeOutputFolder")).toHaveLength(0);
     expect(
       host.requests
@@ -160,13 +237,13 @@ describe("continuous crop output session", () => {
   it("closes a batch acquired after the editor has already been disposed", async () => {
     let resolveCreation: ((value: { batchId: string; folder: { handle: string; name: string } }) => void) | undefined;
     const { deck, host } = await setup({
-      "fs.createOutputFolder": () =>
+      "fs.openOutputFolder": () =>
         new Promise((resolve) => {
           resolveCreation = resolve;
         }),
     });
-    const session = new OutputSession(deck, "잘라낸 이미지");
-    const opening = session.get(new AbortController().signal);
+    const session = new OutputSession(deck);
+    const opening = session.get(new AbortController().signal, "source");
     while (!resolveCreation) await new Promise((resolve) => setTimeout(resolve, 0));
     const closing = session.close();
     resolveCreation({ batchId: "late-batch", folder: { handle: "late-folder", name: "합성 결과" } });
@@ -180,7 +257,7 @@ describe("continuous crop output session", () => {
     const { deck, host } = await setup({
       "fs.pickFolder": () => (++picks === 1 ? null : { handle: "parent", name: "합성 폴더" }),
     });
-    const session = new OutputSession(deck, "잘라낸 이미지");
+    const session = new OutputSession(deck);
     expect(await session.get(new AbortController().signal)).toBeNull();
     expect(host.requests.filter((request) => request.method === "createOutputFolder")).toHaveLength(0);
     expect(await session.get(new AbortController().signal)).not.toBeNull();
@@ -198,7 +275,7 @@ describe("expired crop output recovery", () => {
         return { writeId: "write", chunkBytes: 65536 };
       },
     });
-    const session = new OutputSession(deck, "잘라낸 이미지");
+    const session = new OutputSession(deck, "parent");
     const result = await saveCrops(
       deck,
       [item("first"), item("expired"), item("pending")],
@@ -233,7 +310,7 @@ describe("lazy large crop batches", () => {
     };
     const fs = {
       pickFolder: async () => ({ handle: "parent", name: "합성 폴더" }),
-      createOutputFolder: async () => ({ batchId: "batch", folder: { handle: "output", name: "합성 결과" } }),
+      openOutputFolder: async () => ({ batchId: "batch", folder: { handle: "output", name: "합성 결과" } }),
       closeOutputFolder: async () => undefined,
       readChunks: async function* () {
         reads++;

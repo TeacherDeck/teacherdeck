@@ -5,7 +5,7 @@ export const MAX_PIXELS = 48_000_000;
 export interface Options {
   quality: number;
   maxEdge: number;
-  format: "webp" | "jpeg";
+  format: "original" | "webp" | "jpeg" | "png";
 }
 export interface ImageHeader {
   width: number;
@@ -116,7 +116,7 @@ export function validateOptions(options: Options): void {
     !Number.isInteger(options.maxEdge) ||
     options.maxEdge < 100 ||
     options.maxEdge > 10000 ||
-    !["webp", "jpeg"].includes(options.format)
+    !["original", "webp", "jpeg", "png"].includes(options.format)
   )
     throw new Error("INVALID_OPTIONS");
 }
@@ -133,4 +133,17 @@ export function signatureExtension(bytes: Uint8Array): "png" | "jpg" | "webp" {
   )
     return "webp";
   throw new Error("INVALID_IMAGE");
+}
+
+/** Preserve a valid source suffix, including .jpeg and its letter case. */
+export function sourceExtension(name: string, bytes: Uint8Array): string {
+  const encoded = signatureExtension(bytes);
+  const suffix = name.match(/\.([^.]+)$/)?.[1];
+  return suffix && (encoded === "jpg" ? /^(jpg|jpeg)$/i.test(suffix) : suffix.toLowerCase() === encoded)
+    ? suffix
+    : encoded;
+}
+
+export function extensionMime(extension: string): string {
+  return /^(jpg|jpeg)$/i.test(extension) ? "image/jpeg" : `image/${extension.toLowerCase()}`;
 }

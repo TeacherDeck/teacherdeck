@@ -5,7 +5,7 @@
 import type { FolderHandleInfo } from "./FolderHandleInfo.ts";
 
 /**
- * A newly created output directory and write grant.
+ * An output directory and its append-new-only write grant.
  */
 export type OutputBatch = { 
 /**
@@ -13,6 +13,6 @@ export type OutputBatch = {
  */
 batchId: string, 
 /**
- * Display info for the new folder.
+ * Display info for the output folder.
  */
 folder: FolderHandleInfo, };

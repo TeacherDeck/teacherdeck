@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 import type { Deck, FileHandleInfo, FolderHandleInfo } from "@deck/sdk";
+import { createDocumentSession } from "@deck/sdk";
 import {
   Body,
   Button,
@@ -8,6 +9,7 @@ import {
   CheckBox,
   ComboBox,
   ColorPicker,
+  ContentDialog,
   DropZone,
   ImageCropPreview,
   InfoBar,
@@ -21,7 +23,7 @@ import {
   createDeckTheme,
   makeStyles,
 } from "@deck/ui";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   RATIOS,
   DEFAULT_ANNOTATION,
@@ -30,6 +32,9 @@ import {
   orientedSize,
   outputSize,
   transferRect,
+  rotateEdit,
+  flipEdit,
+  rotateRatio,
   type Edit,
   type Rect,
 } from "./edit.ts";
@@ -71,10 +76,58 @@ export function App({ deck }: { deck: Deck }) {
   const [message, setMessage] = useState("");
   const [preview, setPreview] = useState("");
   const [previewing, setPreviewing] = useState(false);
-  const [format, setFormat] = useState<"png" | "jpeg">("png");
+  const [format, setFormat] = useState<"original" | "png" | "jpeg" | "webp">("original");
   const [advance, setAdvance] = useState(true);
   const destination = useRef<OutputSession | null>(null);
+  const [parent, setParent] = useState<FolderHandleInfo | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<FileHandleInfo[]>([]);
   const [saveStatuses, setSaveStatuses] = useState<Record<string, SaveStatus>>({});
+  const statusesRef = useRef(saveStatuses);
+  statusesRef.current = saveStatuses;
+  const formatRef = useRef(format);
+  formatRef.current = format;
+  const savedEdits = useRef(new Map<string, string>());
+  const saveAction = useRef<() => Promise<void>>(async () => undefined);
+  const saveChoice = useRef<{ all: boolean; retry: boolean; handle: string } | null>(null);
+  const [ready, setReady] = useState(false);
+  const [clearPrompt, setClearPrompt] = useState(false);
+  const signature = (item: Item) => JSON.stringify([item.edit, formatRef.current]);
+  const unsaved = (item: Item) =>
+    savedEdits.current.get(item.file.handle) !== signature(item) ||
+    (statusesRef.current[item.file.handle] !== undefined && statusesRef.current[item.file.handle]?.state !== "saved");
+  const isSaved = useRef<() => boolean>(() => true);
+  isSaved.current = () => !itemsRef.current.some(unsaved);
+  const session = useMemo(
+    () =>
+      createDocumentSession(deck, {
+        save: () => saveAction.current(),
+        isSaved: () => isSaved.current(),
+        onError: () => setMessage("편집 내용을 보호하거나 저장하지 못했어요. 내용을 유지하고 다시 시도해 주세요."),
+      }),
+    [deck],
+  );
+  useEffect(() => {
+    let active = true;
+    void session.ready
+      .then(() => {
+        if (active) setReady(true);
+      })
+      .catch(() => {
+        if (active) setMessage("편집 보호를 준비하지 못했어요. 이 도구를 다시 열어 주세요.");
+      });
+    return () => {
+      active = false;
+      session.dispose();
+    };
+  }, [session]);
+  function commitItems(next: Item[]) {
+    itemsRef.current = next;
+    setItems(next);
+  }
+  function commitStatuses(next: Record<string, SaveStatus>) {
+    statusesRef.current = next;
+    setSaveStatuses(next);
+  }
   const [folder, setFolder] = useState<FolderHandleInfo | null>(null);
   const [done, setDone] = useState(0);
   const [total, setTotal] = useState(0);
@@ -157,40 +210,50 @@ export function App({ deck }: { deck: Deck }) {
   useEffect(
     () =>
       deck.on("fs.dropped", ({ files }) => {
+        if (!files.length) {
+          setMessage("폴더나 읽을 수 없는 파일은 추가하지 않았어요. 지원하는 파일을 놓아주세요.");
+          return;
+        }
         void addFiles(files);
       }),
     [deck],
   );
   function changeCurrent(change: (item: Item) => Item) {
     if (locked.current || !current) return;
-    setItems((all) =>
-      all.map((item, i) =>
-        i === index
-          ? {
-              ...change(item),
-              past: [...item.past.slice(-19), { edit: structuredClone(item.edit), ratio: item.ratio }],
-              future: [],
-            }
-          : item,
+    const selectedHandle = current.file.handle;
+    void session.change(() =>
+      commitItems(
+        itemsRef.current.map((item) =>
+          item.file.handle === selectedHandle
+            ? {
+                ...change(item),
+                past: [...item.past.slice(-19), { edit: structuredClone(item.edit), ratio: item.ratio }],
+                future: [],
+              }
+            : item,
+        ),
       ),
     );
   }
   function undo(redo = false) {
     if (locked.current || !current) return;
-    setItems((all) =>
-      all.map((item, i) => {
-        if (i !== index) return item;
-        const from = redo ? item.future : item.past;
-        const previous = from.at(-1);
-        if (!previous) return item;
-        const now = { edit: structuredClone(item.edit), ratio: item.ratio };
-        return {
-          ...item,
-          ...previous,
-          past: redo ? [...item.past.slice(-19), now] : item.past.slice(0, -1),
-          future: redo ? item.future.slice(0, -1) : [...item.future.slice(-19), now],
-        };
-      }),
+    const selectedHandle = current.file.handle;
+    void session.change(() =>
+      commitItems(
+        itemsRef.current.map((item) => {
+          if (item.file.handle !== selectedHandle) return item;
+          const from = redo ? item.future : item.past;
+          const previous = from.at(-1);
+          if (!previous) return item;
+          const now = { edit: structuredClone(item.edit), ratio: item.ratio };
+          return {
+            ...item,
+            ...previous,
+            past: redo ? [...item.past.slice(-19), now] : item.past.slice(0, -1),
+            future: redo ? item.future.slice(0, -1) : [...item.future.slice(-19), now],
+          };
+        }),
+      ),
     );
   }
   function replaceRect(rect: Rect) {
@@ -207,7 +270,11 @@ export function App({ deck }: { deck: Deck }) {
         !queued.current.has(file.handle),
     );
     if (!incoming.length) {
-      setMessage("JPG·PNG·WebP 정지 이미지를 추가해 주세요.");
+      setMessage(
+        files.every(accepted)
+          ? "이미 추가한 사진이에요. 입력 목록에서 확인해 주세요."
+          : "JPG·PNG·WebP 정지 이미지를 추가해 주세요.",
+      );
       return;
     }
     if (new Set([...admitted.current, ...incoming.map((f) => f.handle)]).size > 1000) {
@@ -218,6 +285,8 @@ export function App({ deck }: { deck: Deck }) {
       queued.current.set(file.handle, file);
       admitted.current.add(file.handle);
     }
+    setPendingFiles((current) => [...new Map([...current, ...incoming].map((file) => [file.handle, file])).values()]);
+    setMessage(`${incoming.length}개 사진을 입력했어요. 사진을 읽는 중이에요.`);
     if (locked.current) return;
     locked.current = true;
     setBusy(true);
@@ -251,26 +320,26 @@ export function App({ deck }: { deck: Deck }) {
           const cachedPreview = previewBytes + image.blob.size <= 32 * 1024 * 1024 ? image.blob : undefined;
           previewBytes += cachedPreview?.size ?? 0;
           readyHandles.current.add(file.handle);
-          setItems((all) => [
-            ...all,
-            {
-              file,
-              bytes: cachedBytes,
-              sourceWidth: image.sourceWidth,
-              sourceHeight: image.sourceHeight,
-              edit,
-              ratio: "free",
-              initialPreview: cachedPreview,
-              past: [],
-              future: [],
-            },
-          ]);
+          const item: Item = {
+            file,
+            bytes: cachedBytes,
+            sourceWidth: image.sourceWidth,
+            sourceHeight: image.sourceHeight,
+            edit,
+            ratio: "free",
+            initialPreview: cachedPreview,
+            past: [],
+            future: [],
+          };
+          savedEdits.current.set(file.handle, signature(item));
+          commitItems([...itemsRef.current, item]);
           setFailed((all) => all.filter((f) => f.handle !== file.handle));
           count++;
         } catch {
           setFailed((all) => [...new Map([...all, file].map((f) => [f.handle, f])).values()]);
         }
         readingHandle.current = null;
+        setPendingFiles((current) => current.filter((input) => input.handle !== file.handle));
         setDone(++attempted);
         setTotal((n) => Math.max(n, attempted + queued.current.size));
       }
@@ -284,6 +353,7 @@ export function App({ deck }: { deck: Deck }) {
         setFailed((all) => [...new Map([...all, ...pending].map((f) => [f.handle, f])).values()]);
       }
       locked.current = false;
+      setPendingFiles([]);
       readingHandle.current = null;
       setBusy(false);
       controller.current = null;
@@ -303,72 +373,123 @@ export function App({ deck }: { deck: Deck }) {
   }
   function rotate() {
     if (!current || locked.current) return;
-    const turns = (current.edit.turns + 1) % 4;
-    const nextSize = orientedSize(current.sourceWidth, current.sourceHeight, turns);
     changeCurrent((item) => ({
       ...item,
-      edit: { ...item.edit, turns, rect: centeredRect(nextSize.width, nextSize.height, ratio) },
+      ratio: rotateRatio(item.ratio),
+      edit: rotateEdit(item.edit, item.sourceWidth, item.sourceHeight),
     }));
   }
   function flip(axis: "flipX" | "flipY") {
     if (!current || locked.current) return;
-    changeCurrent((item) => ({ ...item, edit: { ...item.edit, [axis]: !item.edit[axis] } }));
+    changeCurrent((item) => ({ ...item, edit: flipEdit(item.edit, item.sourceWidth, item.sourceHeight, axis) }));
   }
   function applyAll() {
     if (!current || locked.current) return;
-    setItems((all) =>
-      all.map((item) => {
-        const target = orientedSize(item.sourceWidth, item.sourceHeight, current.edit.turns);
-        return {
-          ...item,
-          past: [...item.past.slice(-19), { edit: structuredClone(item.edit), ratio: item.ratio }],
-          future: [],
-          ratio: current.ratio,
-          edit: { ...current.edit, rect: transferRect(current.edit.rect, size, target, ratio) },
-        };
-      }),
-    );
+    const selectedHandle = current.file.handle;
+    void session.change(() => {
+      const source = itemsRef.current.find((item) => item.file.handle === selectedHandle);
+      if (!source) return;
+      const from = orientedSize(source.sourceWidth, source.sourceHeight, source.edit.turns);
+      const selectedRatio = RATIOS.find((entry) => entry.value === source.ratio)?.ratio ?? 0;
+      commitItems(
+        itemsRef.current.map((item) => {
+          const target = orientedSize(item.sourceWidth, item.sourceHeight, source.edit.turns);
+          return {
+            ...item,
+            past: [...item.past.slice(-19), { edit: structuredClone(item.edit), ratio: item.ratio }],
+            future: [],
+            ratio: source.ratio,
+            edit: { ...source.edit, rect: transferRect(source.edit.rect, from, target, selectedRatio) },
+          };
+        }),
+      );
+    });
     setMessage("회전·반전·비율과 사진 안의 상대적인 자르기 범위를 모두 적용했어요. 사진을 하나씩 확인해 주세요.");
   }
+  async function chooseDestination() {
+    if (locked.current) return;
+    locked.current = true;
+    setBusy(true);
+    try {
+      const picked = await deck.fs.pickFolder();
+      if (picked) {
+        resetDestination();
+        setParent(picked);
+      }
+    } catch {
+      setMessage("폴더를 선택하지 못했어요. 다시 선택해 주세요.");
+    } finally {
+      locked.current = false;
+      setBusy(false);
+      if (queued.current.size) {
+        const pending = [...queued.current.values()];
+        queued.current.clear();
+        void addFiles(pending);
+      }
+    }
+  }
   async function save(all = false, retry = false) {
-    if (locked.current || !current) return;
+    if (locked.current || !current || saveChoice.current) return;
+    saveChoice.current = { all, retry, handle: current.file.handle };
+    try {
+      await session.save();
+    } finally {
+      saveChoice.current = null;
+    }
+  }
+  async function performSave() {
+    if (locked.current) throw new Error("BUSY");
+    const choice = saveChoice.current;
+    const selected =
+      choice === null
+        ? itemsRef.current.filter(unsaved)
+        : choice.retry
+          ? itemsRef.current.filter((item) => statusesRef.current[item.file.handle] && unsaved(item))
+          : choice.all
+            ? itemsRef.current
+            : itemsRef.current.filter((item) => item.file.handle === choice.handle);
+    if (!selected.length) return;
     locked.current = true;
     setBusy(true);
     const abort = new AbortController();
     controller.current = abort;
-    const selected = retry
-      ? items.filter((item) => saveStatuses[item.file.handle] && saveStatuses[item.file.handle]?.state !== "saved")
-      : all
-        ? items
-        : [current];
-    if (!selected.length) {
-      locked.current = false;
-      setBusy(false);
-      return;
-    }
-    destination.current ??= new OutputSession(deck, "잘라낸 이미지");
+    destination.current ??= new OutputSession(deck, parent?.handle);
     setTotal(selected.length);
     setDone(0);
     try {
-      const result = await saveCrops(deck, selected, format, abort.signal, setDone, renderCrop, destination.current);
+      const result = await saveCrops(
+        deck,
+        selected,
+        formatRef.current,
+        abort.signal,
+        setDone,
+        renderCrop,
+        destination.current,
+      );
+      if (!result) throw new Error("SAVE_CANCELLED");
       if (result) {
         setFolder(result.folder);
-        setSaveStatuses((previous) => {
-          const next = { ...previous };
-          const saved = new Set(result.saved);
-          const failed = new Set(result.failed);
-          for (const item of selected) {
-            if (!saved.has(item.file.handle) && !failed.has(item.file.handle) && previous[item.file.handle]) continue;
-            next[item.file.handle] = {
-              file: item.file,
-              state: saved.has(item.file.handle) ? "saved" : failed.has(item.file.handle) ? "failed" : "pending",
-              folder: result.folder,
-            };
-          }
-          return next;
-        });
+        commitStatuses(
+          (() => {
+            const previous = statusesRef.current;
+            const next = { ...previous };
+            const saved = new Set(result.saved);
+            const failed = new Set(result.failed);
+            for (const item of selected) {
+              if (saved.has(item.file.handle)) savedEdits.current.set(item.file.handle, signature(item));
+              if (!saved.has(item.file.handle) && !failed.has(item.file.handle) && previous[item.file.handle]) continue;
+              const savedFolder = result.folders?.[item.file.handle];
+              next[item.file.handle] = {
+                file: item.file,
+                state: saved.has(item.file.handle) ? "saved" : failed.has(item.file.handle) ? "failed" : "pending",
+                ...(savedFolder ? { folder: savedFolder } : {}),
+              };
+            }
+            return next;
+          })(),
+        );
         setMessage(
-          `${result.saved.length}개 저장했어요.${result.failed.length ? ` ${result.failed.length}개는 저장하지 못했어요. 현재 편집은 유지해요.` : ""}${result.cancelled ? " 취소했어요. 저장된 결과는 새 폴더에 남아요." : ""}`,
+          `${result.saved.length}개 저장했어요.${result.failed.length ? ` ${result.failed.length}개는 저장하지 못했어요. 현재 편집은 유지해요.` : ""}${result.formatUnavailable?.length ? " 이 PC에서 지원하지 않는 저장 형식이 있어요. 저장 형식을 직접 선택해 다시 시도해 주세요." : ""}${result.cancelled ? " 취소했어요. 저장된 결과는 각 저장 위치에 남아요." : ""}`,
         );
         if (result.destinationExpired) {
           resetDestination();
@@ -376,16 +497,21 @@ export function App({ deck }: { deck: Deck }) {
             "저장 작업이 만료됐거나 결과 폴더를 사용할 수 없어요. 저장하지 못한 사진 재시도를 누르고 폴더를 다시 선택해 주세요. 이전 결과는 유지해요.",
           );
         }
-        if (!all && !retry && advance && result.saved.includes(current.file.handle) && index < items.length - 1)
-          setIndex(index + 1);
+        if (choice && !choice.all && !choice.retry && advance && result.saved.includes(choice.handle)) {
+          const savedIndex = itemsRef.current.findIndex((item) => item.file.handle === choice.handle);
+          if (savedIndex >= 0 && savedIndex < itemsRef.current.length - 1) setIndex(savedIndex + 1);
+        }
       }
     } catch {
-      setSaveStatuses((previous) => {
-        const next = { ...previous };
-        for (const item of selected) next[item.file.handle] = { file: item.file, state: "failed" };
-        return next;
-      });
+      commitStatuses(
+        (() => {
+          const next = { ...statusesRef.current };
+          for (const item of selected) next[item.file.handle] = { file: item.file, state: "failed" };
+          return next;
+        })(),
+      );
       setMessage("결과를 저장하지 못했어요. 편집 내용은 유지해요. 폴더와 저장 공간을 확인해 주세요.");
+      throw new Error("SAVE_FAILED");
     } finally {
       locked.current = false;
       setBusy(false);
@@ -399,10 +525,52 @@ export function App({ deck }: { deck: Deck }) {
       }
     }
   }
-  const disabled = busy || previewing;
+  saveAction.current = performSave;
+  function clearItems() {
+    commitItems([]);
+    savedEdits.current.clear();
+    queued.current.clear();
+    admitted.current.clear();
+    readyHandles.current.clear();
+    setIndex(0);
+    setFailed([]);
+    resetDestination();
+    commitStatuses({});
+    setFolder(null);
+    setMessage("");
+    // The user explicitly discarded the edits; the now-empty workspace has no pending output.
+    void session.save();
+  }
+  const disabled = !ready || busy || previewing;
   return (
     <ToolLayout title="이미지 자르기" description="사진 위를 끌어 영역을 고르고, 회전·반전해 새 파일로 저장해요.">
       <ToolLayout.Section step="input" title="사진 추가">
+        <div className={s.actions}>
+          <Button disabled={busy} onClick={() => void chooseDestination()}>
+            저장 폴더 선택
+          </Button>
+          <Button
+            disabled={busy || !parent}
+            onClick={() => {
+              resetDestination();
+              setParent(null);
+            }}
+          >
+            원본 폴더에 저장
+          </Button>
+          <Caption>{parent ? `저장 위치: ${parent.name}` : "원본 파일과 같은 폴더에 저장해요."}</Caption>
+        </div>
+        {pendingFiles.length > 0 && (
+          <div>
+            <Caption aria-live="polite">입력한 파일 {pendingFiles.length}개 · 읽는 중</Caption>
+            <ListView
+              header={`입력한 파일 ${pendingFiles.length}개 · 읽는 중`}
+              items={pendingFiles}
+              getKey={(file) => file.handle}
+              renderItem={(file) => <Body>{file.name} · 파일 입력됨</Body>}
+            />
+          </div>
+        )}
         <div className={s.actions}>
           <Button
             appearance={items.length ? "secondary" : "primary"}
@@ -436,17 +604,13 @@ export function App({ deck }: { deck: Deck }) {
           <Button
             disabled={busy || (!items.length && !failed.length)}
             onClick={() => {
-              setItems([]);
-              itemsRef.current = [];
-              queued.current.clear();
-              admitted.current.clear();
-              readyHandles.current.clear();
-              setIndex(0);
-              setFailed([]);
-              resetDestination();
-              setSaveStatuses({});
-              setFolder(null);
-              setMessage("");
+              void session
+                .settle()
+                .then(() => {
+                  if (isSaved.current()) clearItems();
+                  else setClearPrompt(true);
+                })
+                .catch(() => setMessage("편집 보호 상태를 확인하지 못했어요. 다시 시도해 주세요."));
             }}
           >
             목록 비우기
@@ -504,15 +668,25 @@ export function App({ deck }: { deck: Deck }) {
             value={format}
             disabled={busy}
             options={[
+              { value: "original", label: "원본 형식 유지" },
               { value: "png", label: "PNG · 투명도 유지" },
               { value: "jpeg", label: "JPG · 흰 배경" },
+              { value: "webp", label: "WebP · 투명도 유지" },
             ]}
-            onChange={(value) => setFormat(value === "jpeg" ? "jpeg" : "png")}
+            onChange={(value) => {
+              const next = value === "jpeg" || value === "png" || value === "webp" ? value : "original";
+              if (next === formatRef.current) return;
+              void session.change(() => {
+                formatRef.current = next;
+                setFormat(next);
+              });
+            }}
           />
         </div>
         <Caption secondary>
-          회전하면 자르기 영역을 선택한 비율로 다시 잡아요. 결과 파일에는 촬영 정보가 들어가지 않아요.
+          회전·반전해도 같은 대상을 자르도록 영역을 함께 옮겨요. 결과 파일에는 촬영 정보가 들어가지 않아요.
         </Caption>
+        {items.some(unsaved) && <Caption>저장하지 않은 편집이 있어요.</Caption>}
       </ToolLayout.Section>
       <ToolLayout.Section step="preview" title="자르기 영역">
         {current ? (
@@ -772,18 +946,10 @@ export function App({ deck }: { deck: Deck }) {
           onChange={setAdvance}
         />
         <Caption secondary>
-          처음 저장할 때만 폴더를 선택해요. 같은 작업은 한 결과 폴더에 모으고, 같은 사진을 다시 저장하면 새 이름을
-          붙여요. 원본은 수정하지 않아요.
+          각 원본과 같은 폴더에 저장해요. 저장 폴더를 따로 선택하면 그 폴더에 직접 저장해요. 같은 사진을 다시 저장하면
+          새 이름을 붙여요. 원본은 수정하지 않아요.
         </Caption>
-        <Button
-          disabled={busy || !folder}
-          onClick={() => {
-            resetDestination();
-            setMessage("다음 저장 때 새 저장 폴더를 선택해요. 이전 결과는 그대로 유지해요.");
-          }}
-        >
-          다음 저장 폴더 변경
-        </Button>
+
         {busy && <ProgressBar header="처리 진행" value={total ? (done / total) * 100 : 0} />}
       </ToolLayout.Section>
       <ToolLayout.Section step="result" title="처리 결과">
@@ -797,11 +963,17 @@ export function App({ deck }: { deck: Deck }) {
               <div className={s.actions}>
                 <Body>
                   {result.file.name} ·{" "}
-                  {result.state === "saved"
-                    ? "저장했어요"
-                    : result.state === "failed"
-                      ? "저장 실패 · 폴더 권한과 저장 공간을 확인해 주세요"
-                      : "아직 저장하지 않았어요"}
+                  {items.some(
+                    (item) =>
+                      item.file.handle === result.file.handle &&
+                      savedEdits.current.get(item.file.handle) !== signature(item),
+                  )
+                    ? "편집 변경 · 다시 저장해 주세요"
+                    : result.state === "saved"
+                      ? "저장했어요"
+                      : result.state === "failed"
+                        ? "저장 실패 · 폴더 권한과 저장 공간을 확인해 주세요"
+                        : "아직 저장하지 않았어요"}
                 </Body>
                 {result.folder && (
                   <Button
@@ -820,7 +992,7 @@ export function App({ deck }: { deck: Deck }) {
           />
         )}
         <Button
-          disabled={busy || !Object.values(saveStatuses).some((result) => result.state !== "saved")}
+          disabled={busy || !items.some((item) => saveStatuses[item.file.handle] && unsaved(item))}
           onClick={() => {
             void save(false, true);
           }}
@@ -839,6 +1011,20 @@ export function App({ deck }: { deck: Deck }) {
           </Button>
         )}
       </ToolLayout.Section>
+      {clearPrompt && (
+        <ContentDialog
+          open
+          title="편집 내용을 버리고 목록을 비울까요?"
+          primaryButtonText="버리기"
+          closeButtonText="계속 편집"
+          onClose={(result) => {
+            setClearPrompt(false);
+            if (result === "primary") clearItems();
+          }}
+        >
+          저장하지 않은 자르기·회전·표시 설정이 사라져요. 원본과 이미 저장한 파일은 유지해요.
+        </ContentDialog>
+      )}
     </ToolLayout>
   );
 }

@@ -14,7 +14,8 @@ import {
   deckTokens,
   makeStyles,
 } from "@deck/ui";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type SetStateAction } from "react";
+import type { DetailedDraft } from "./detailed-draft.ts";
 import { calendar, counts, type PlanInput, type PlanResult } from "./planner.ts";
 import {
   detailedCounts,
@@ -39,28 +40,33 @@ export function DetailedEditor({
   busy,
   onBusy,
   onChange,
+  draft,
+  onDraftChange,
 }: {
   state: PlannerState;
   input: PlanInput;
   busy: boolean;
   onBusy: (busy: boolean) => void;
   onChange: (detailed: DetailedState) => void;
+  draft: DetailedDraft;
+  onDraftChange: (draft: SetStateAction<DetailedDraft>) => void;
 }) {
   const s = useStyles(),
     d = state.detailed ?? EMPTY_DETAILS;
-  const [blockLabel, setBlockLabel] = useState("1교시"),
-    [start, setStart] = useState("09:00"),
-    [end, setEnd] = useState("09:50");
-  const [day, setDay] = useState(1),
-    [block, setBlock] = useState(""),
-    [task, setTask] = useState("시험감독"),
-    [rooms, setRooms] = useState(""),
-    [required, setRequired] = useState(1);
-  const [selected, setSelected] = useState(""),
-    [teacher, setTeacher] = useState(""),
-    [message, setMessage] = useState("");
-  const [manual, setManual] = useState<string[]>([]),
-    [actual, setActual] = useState<string[]>([]);
+  const { blockLabel, start, end, day, block, task, rooms, required, selected, teacher, manual, actual } = draft;
+  const [message, setMessage] = useState("");
+  const setBlockLabel = (value: string) => onDraftChange((previous) => ({ ...previous, blockLabel: value }));
+  const setStart = (value: string) => onDraftChange((previous) => ({ ...previous, start: value }));
+  const setEnd = (value: string) => onDraftChange((previous) => ({ ...previous, end: value }));
+  const setDay = (value: number) => onDraftChange((previous) => ({ ...previous, day: value }));
+  const setBlock = (value: string) => onDraftChange((previous) => ({ ...previous, block: value }));
+  const setTask = (value: string) => onDraftChange((previous) => ({ ...previous, task: value }));
+  const setRooms = (value: string) => onDraftChange((previous) => ({ ...previous, rooms: value }));
+  const setRequired = (value: number) => onDraftChange((previous) => ({ ...previous, required: value }));
+  const setSelected = (value: string) => onDraftChange((previous) => ({ ...previous, selected: value }));
+  const setTeacher = (value: string) => onDraftChange((previous) => ({ ...previous, teacher: value }));
+  const setManual = (value: string[]) => onDraftChange((previous) => ({ ...previous, manual: value }));
+  const setActual = (value: string[]) => onDraftChange((previous) => ({ ...previous, actual: value }));
   const worker = useRef<Worker | null>(null);
   const job = d.jobs.find((j) => j.id === selected),
     locked = busy || !!state.closed;
@@ -78,7 +84,11 @@ export function DetailedEditor({
     },
     [],
   );
+  const draftSource = useRef({ job, assignments: d.assignments, actual: d.actual });
   useEffect(() => {
+    const prior = draftSource.current;
+    draftSource.current = { job, assignments: d.assignments, actual: d.actual };
+    if (prior.job === job && prior.assignments === d.assignments && prior.actual === d.actual) return;
     setManual(job ? (d.assignments[job.id] ?? []) : []);
     setActual(job ? (d.actual[job.id] ?? []) : []);
   }, [job, d.assignments, d.actual]);

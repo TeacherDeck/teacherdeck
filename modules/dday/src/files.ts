@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see LICENSE-ADDITIONAL-TERMS
 
-import type { Deck } from "@deck/sdk";
+import type { Deck, FileHandleInfo } from "@deck/sdk";
 import { MAX_BYTES, STATE_KEY, readDocument, type Document } from "./logic.ts";
-export async function pickBackup(deck: Deck): Promise<Document | null> {
-  const file = (
-    await deck.fs.pickFiles({ filters: [{ name: "JSON 백업", extensions: ["json"] }], multiple: false })
-  )[0];
+export async function pickBackup(
+  deck: Deck,
+  provided?: FileHandleInfo,
+  onSource?: (file: FileHandleInfo) => void,
+): Promise<Document | null> {
+  const file =
+    provided ??
+    (await deck.fs.pickFiles({ filters: [{ name: "JSON 백업", extensions: ["json"] }], multiple: false }))[0];
   if (!file) return null;
   if (file.size > MAX_BYTES) throw new Error("DOCUMENT_TOO_LARGE");
   const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -18,14 +22,24 @@ export async function pickBackup(deck: Deck): Promise<Document | null> {
     text += decoder.decode(chunk, { stream: true });
   }
   text += decoder.decode();
-  return readDocument(JSON.parse(text.replace(/^\uFEFF/, "")));
+  const document = readDocument(JSON.parse(text.replace(/^\uFEFF/, "")));
+  onSource?.(file);
+  return document;
 }
-export async function exportBackup(deck: Deck, value: unknown): Promise<boolean> {
+export async function exportBackup(
+  deck: Deck,
+  value: unknown,
+  source?: FileHandleInfo,
+  chooseFolder = false,
+): Promise<boolean> {
   const text = JSON.stringify(value);
   if (new TextEncoder().encode(text).length > 256 * 1024) throw new Error("DOCUMENT_TOO_LARGE");
-  const parent = await deck.fs.pickFolder();
-  if (!parent) return false;
-  const batch = await deck.fs.createOutputFolder({ parentHandle: parent.handle, suggestedName: "D-day 백업" });
+  const location =
+    source && !chooseFolder
+      ? { sourceHandle: source.handle }
+      : await deck.fs.pickFolder().then((folder) => (folder ? { parentHandle: folder.handle } : null));
+  if (!location) return false;
+  const batch = await deck.fs.openOutputFolder(location);
   try {
     await deck.fs.writeBlob({
       batchId: batch.batchId,
